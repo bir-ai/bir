@@ -4,4 +4,26 @@
 
 # bir
 
-LLM Evaluation, Tracing &amp; Observability Platform
+LLM Evaluation, Tracing & Observability Platform
+
+Bir is an early-stage toolkit for tracing and evaluating LLM applications.
+
+Current focus:
+
+- Python SDK
+- Local trace storage
+- Trace, span, and score recording
+- Safe opt-in input/output capture
+
+## Python SDK
+
+```python
+from bir import observe, score, span
+
+@observe()
+def answer_question(question: str) -> str:
+    with span("retrieve_context"):
+        context = "local context"
+
+    score("helpfulness", 0.82)
+    return f"{context}: {question}"
