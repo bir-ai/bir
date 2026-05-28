@@ -27,3 +27,13 @@ def answer_question(question: str) -> str:
 
     score("helpfulness", 0.82)
     return f"{context}: {question}"
+```
+
+Traces are written locally to `.bir/traces.jsonl`. Run the FastAPI server and
+send local events when you want to inspect them through the ingestion API:
+
+```python
+from bir import send_events
+
+send_events("http://127.0.0.1:8000")
+```

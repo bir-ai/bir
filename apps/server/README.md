@@ -16,6 +16,14 @@ server writes to `.bir/server-events.jsonl`. Override that path with:
 export BIR_SERVER_EVENT_STORE=tmp/server-events.jsonl
 ```
 
+The Python SDK can send locally recorded events to the server:
+
+```python
+from bir import send_events
+
+send_events("http://127.0.0.1:8000")
+```
+
 ## Development
 
 ```bash
