@@ -16,6 +16,9 @@ server writes to `.bir/server-events.jsonl`. Override that path with:
 export BIR_SERVER_EVENT_STORE=tmp/server-events.jsonl
 ```
 
+Ingesting an event with an ID that is already present is idempotent: the server
+returns `accepted: 0` and does not append a duplicate row.
+
 The Python SDK can send locally recorded events to the server:
 
 ```python

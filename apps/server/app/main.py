@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -27,10 +27,12 @@ def create_app(*, event_store_path: str | Path | None = None) -> FastAPI:
         return HealthResponse(status="ok")
 
     @app.post("/v1/events", response_model=IngestEventResponse, status_code=201)
-    def ingest_event(event: TraceEventPayload, request: Request) -> IngestEventResponse:
+    def ingest_event(event: TraceEventPayload, request: Request, response: Response) -> IngestEventResponse:
         store = _get_event_store(request)
-        store.append(event)
-        return IngestEventResponse(accepted=1, id=event.id)
+        accepted = 1 if store.append(event) else 0
+        if accepted == 0:
+            response.status_code = 200
+        return IngestEventResponse(accepted=accepted, id=event.id)
 
     @app.get("/v1/events", response_model=list[TraceEventPayload])
     def list_events(request: Request) -> list[TraceEventPayload]:

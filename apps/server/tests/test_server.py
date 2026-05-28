@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+
+ROOT = Path(__file__).resolve().parents[3]
+SDK_SRC = ROOT / "packages" / "python-sdk" / "src"
+sys.path.insert(0, str(SDK_SRC))
+
+from bir import configure, generation, load_events, observe, score, span, tool_call
+from bir._sdk import _reset_config_for_tests
 
 from app.main import create_app
 
@@ -53,6 +61,21 @@ def test_ingests_valid_event_to_jsonl(tmp_path: Path) -> None:
     assert len(stored_events) == 1
     assert stored_events[0]["id"] == "trace-1"
     assert stored_events[0]["schema_version"] == "1.0"
+
+
+def test_duplicate_event_id_is_idempotent(tmp_path: Path) -> None:
+    client, event_store_path = make_client(tmp_path)
+
+    first_response = client.post("/v1/events", json=make_event())
+    second_response = client.post("/v1/events", json=make_event())
+
+    assert first_response.status_code == 201
+    assert first_response.json() == {"accepted": 1, "id": "trace-1"}
+    assert second_response.status_code == 200
+    assert second_response.json() == {"accepted": 0, "id": "trace-1"}
+    stored_events = [json.loads(line) for line in event_store_path.read_text(encoding="utf-8").splitlines()]
+    assert len(stored_events) == 1
+    assert stored_events[0]["id"] == "trace-1"
 
 
 def test_rejects_invalid_event_payload(tmp_path: Path) -> None:
@@ -132,3 +155,44 @@ def test_lists_traces_with_root_first_event_order(tmp_path: Path) -> None:
     assert len(traces) == 1
     assert traces[0]["id"] == "trace-1"
     assert [event["type"] for event in traces[0]["events"]] == ["trace", "score"]
+
+
+def test_ingests_sdk_generated_events(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    trace_path = tmp_path / "sdk-traces.jsonl"
+    configure(trace_path=trace_path, capture_inputs=True, capture_outputs=True)
+
+    try:
+
+        @observe()
+        def answer(question: str) -> str:
+            with span("retrieve_context"):
+                with tool_call("search_docs", input={"query": question}) as tool:
+                    tool.set_output(["doc-1"])
+            with generation("local.llm", model="demo", input={"question": question}) as gen:
+                gen.set_output("ok")
+                gen.set_usage(input_tokens=1, output_tokens=2)
+            score("helpfulness", 0.9)
+            return "ok"
+
+        answer("hello")
+
+        for event in load_events(trace_path):
+            response = client.post("/v1/events", json=event.raw)
+            assert response.status_code == 201
+            assert response.json()["accepted"] == 1
+
+        traces_response = client.get("/v1/traces")
+        assert traces_response.status_code == 200
+        traces = traces_response.json()
+        assert len(traces) == 1
+        assert traces[0]["name"] == "answer"
+        assert [event["type"] for event in traces[0]["events"]] == [
+            "trace",
+            "span",
+            "tool_call",
+            "generation",
+            "score",
+        ]
+    finally:
+        _reset_config_for_tests()

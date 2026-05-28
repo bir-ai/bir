@@ -20,12 +20,35 @@ class JsonlEventStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
 
-    def append(self, event: TraceEventPayload) -> None:
+    def append(self, event: TraceEventPayload) -> bool:
+        if self.has_event(event.id):
+            return False
+
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = event.model_dump(mode="json", exclude_none=False)
         with self.path.open("a", encoding="utf-8") as events_file:
             events_file.write(json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False))
             events_file.write("\n")
+        return True
+
+    def has_event(self, event_id: str) -> bool:
+        if not self.path.exists():
+            return False
+
+        with self.path.open("r", encoding="utf-8") as events_file:
+            for line_number, line in enumerate(events_file, start=1):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    payload = json.loads(stripped)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"Invalid JSON in event store {self.path} at line {line_number}") from exc
+                if not isinstance(payload, dict):
+                    raise ValueError(f"Event store {self.path} line {line_number} must contain a JSON object")
+                if payload.get("id") == event_id:
+                    return True
+        return False
 
     def load_events(self) -> list[TraceEventPayload]:
         if not self.path.exists():
