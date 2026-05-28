@@ -1,0 +1,25 @@
+# Bir Server
+
+Minimal FastAPI ingestion server for Bir trace events.
+
+## API
+
+- `GET /health`
+- `POST /v1/events`
+- `GET /v1/events`
+- `GET /v1/traces`
+
+Events are validated with Pydantic and persisted as JSONL. By default, the
+server writes to `.bir/server-events.jsonl`. Override that path with:
+
+```bash
+export BIR_SERVER_EVENT_STORE=tmp/server-events.jsonl
+```
+
+## Development
+
+```bash
+python3 -m pip install -e ".[dev]"
+pytest
+uvicorn app.main:app --reload
+```
