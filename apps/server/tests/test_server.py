@@ -11,7 +11,7 @@ SDK_SRC = ROOT / "packages" / "python-sdk" / "src"
 sys.path.insert(0, str(SDK_SRC))
 CONTRACT_EVENTS_PATH = ROOT / "tests" / "fixtures" / "valid-events.jsonl"
 
-from bir import configure, generation, load_events, observe, score, span, tool_call
+from bir import configure, generation, load_traces, observe, score, span, tool_call
 from bir._sdk import _reset_config_for_tests
 
 from app.main import create_app
@@ -217,7 +217,16 @@ def test_ingests_sdk_generated_events(tmp_path: Path) -> None:
 
         answer("hello")
 
-        for event in load_events(trace_path):
+        sdk_trace = load_traces(trace_path)[0]
+        assert [event.type for event in sdk_trace.events] == [
+            "trace",
+            "span",
+            "tool_call",
+            "generation",
+            "score",
+        ]
+
+        for event in sdk_trace.events:
             response = client.post("/v1/events", json=event.raw)
             assert response.status_code == 201
             assert response.json()["accepted"] == 1
