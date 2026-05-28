@@ -2,7 +2,9 @@
   <img src="bir_logo.png" alt="bir logo" width="160">
 </p>
 
-# bir /biɾ/
+# bir
+
+**/biɾ/** · Turkish for "one"
 
 LLM Evaluation, Tracing & Observability Platform
 
