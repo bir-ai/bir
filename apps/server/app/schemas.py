@@ -54,6 +54,8 @@ class TraceEventPayload(BaseModel):
                 raise ValueError("trace event id must match trace_id")
             if self.parent_id is not None:
                 raise ValueError("trace event parent_id must be null")
+        elif self.parent_id is None:
+            raise ValueError(f"{self.type} event requires parent_id")
         if self.type == "score" and self.value is None:
             raise ValueError("score event requires value")
         _validate_json_value(self.metadata, "metadata")

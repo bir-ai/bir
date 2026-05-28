@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 ROOT = Path(__file__).resolve().parents[3]
 SDK_SRC = ROOT / "packages" / "python-sdk" / "src"
 sys.path.insert(0, str(SDK_SRC))
+CONTRACT_EVENTS_PATH = ROOT / "tests" / "fixtures" / "valid-events.jsonl"
 
 from bir import configure, generation, load_events, observe, score, span, tool_call
 from bir._sdk import _reset_config_for_tests
@@ -39,6 +40,10 @@ def make_event(**overrides: object) -> dict[str, object]:
 def make_client(tmp_path: Path) -> tuple[TestClient, Path]:
     event_store_path = tmp_path / "events.jsonl"
     return TestClient(create_app(event_store_path=event_store_path)), event_store_path
+
+
+def load_contract_events() -> list[dict[str, object]]:
+    return [json.loads(line) for line in CONTRACT_EVENTS_PATH.read_text(encoding="utf-8").splitlines()]
 
 
 def test_health_returns_ok(tmp_path: Path) -> None:
@@ -91,6 +96,18 @@ def test_rejects_trace_with_parent_id(tmp_path: Path) -> None:
     client, event_store_path = make_client(tmp_path)
 
     response = client.post("/v1/events", json=make_event(parent_id="parent-1"))
+
+    assert response.status_code == 422
+    assert not event_store_path.exists()
+
+
+def test_rejects_child_event_without_parent_id(tmp_path: Path) -> None:
+    client, event_store_path = make_client(tmp_path)
+
+    response = client.post(
+        "/v1/events",
+        json=make_event(id="span-1", type="span", parent_id=None),
+    )
 
     assert response.status_code == 422
     assert not event_store_path.exists()
@@ -155,6 +172,29 @@ def test_lists_traces_with_root_first_event_order(tmp_path: Path) -> None:
     assert len(traces) == 1
     assert traces[0]["id"] == "trace-1"
     assert [event["type"] for event in traces[0]["events"]] == ["trace", "score"]
+
+
+def test_ingests_schema_contract_fixtures(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+
+    for event in load_contract_events():
+        response = client.post("/v1/events", json=event)
+        assert response.status_code == 201
+        assert response.json() == {"accepted": 1, "id": event["id"]}
+
+    traces_response = client.get("/v1/traces")
+
+    assert traces_response.status_code == 200
+    traces = traces_response.json()
+    assert len(traces) == 1
+    assert traces[0]["id"] == "trace-fixture-1"
+    assert [event["type"] for event in traces[0]["events"]] == [
+        "trace",
+        "span",
+        "tool_call",
+        "generation",
+        "score",
+    ]
 
 
 def test_ingests_sdk_generated_events(tmp_path: Path) -> None:
