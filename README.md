@@ -2,7 +2,7 @@
   <img src="bir_logo.png" alt="bir logo" width="160">
 </p>
 
-# bir
+# bir /biɾ/
 
 LLM Evaluation, Tracing & Observability Platform
 
