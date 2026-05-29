@@ -31,18 +31,20 @@ class TraceEventPayload(BaseModel):
     model: str | None = None
     usage: dict[str, int | float] | None = None
 
-    @field_validator("value")
+    @field_validator("value", mode="before")
     @classmethod
-    def validate_score_value(cls, value: int | float | None) -> int | float | None:
+    def validate_score_value(cls, value: Any) -> int | float | None:
         if value is None:
             return None
         return _validate_number(value, "value")
 
-    @field_validator("usage")
+    @field_validator("usage", mode="before")
     @classmethod
-    def validate_usage(cls, usage: dict[str, int | float] | None) -> dict[str, int | float] | None:
+    def validate_usage(cls, usage: Any) -> Any:
         if usage is None:
             return None
+        if not isinstance(usage, dict):
+            return usage
         return {key: _validate_number(value, f"usage.{key}") for key, value in usage.items()}
 
     @model_validator(mode="after")

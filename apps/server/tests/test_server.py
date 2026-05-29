@@ -134,6 +134,56 @@ def test_rejects_non_finite_json_values(tmp_path: Path) -> None:
     assert not event_store_path.exists()
 
 
+def test_rejects_bool_score_value(tmp_path: Path) -> None:
+    client, event_store_path = make_client(tmp_path)
+
+    response = client.post(
+        "/v1/events",
+        json=make_event(
+            id="score-1",
+            type="score",
+            parent_id="trace-1",
+            value=True,
+        ),
+    )
+
+    assert response.status_code == 422
+    assert not event_store_path.exists()
+
+
+def test_rejects_missing_score_value(tmp_path: Path) -> None:
+    client, event_store_path = make_client(tmp_path)
+
+    response = client.post(
+        "/v1/events",
+        json=make_event(
+            id="score-1",
+            type="score",
+            parent_id="trace-1",
+        ),
+    )
+
+    assert response.status_code == 422
+    assert not event_store_path.exists()
+
+
+def test_rejects_bool_usage_value(tmp_path: Path) -> None:
+    client, event_store_path = make_client(tmp_path)
+
+    response = client.post(
+        "/v1/events",
+        json=make_event(
+            id="generation-1",
+            type="generation",
+            parent_id="trace-1",
+            usage={"input_tokens": True},
+        ),
+    )
+
+    assert response.status_code == 422
+    assert not event_store_path.exists()
+
+
 def test_lists_events(tmp_path: Path) -> None:
     client, _ = make_client(tmp_path)
 
