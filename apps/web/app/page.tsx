@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 
 type EventStatus = "success" | "error";
@@ -115,10 +116,10 @@ export default function DashboardPage() {
 
   return (
     <main className="shell">
+      <Image className="side-brand-mark" src="/bir_mark.png" alt="" width={109} height={1185} priority />
       <header className="topbar">
-        <div>
-          <p className="eyebrow">Bir Observability</p>
-          <h1>Trace Dashboard</h1>
+        <div className="brand-lockup" aria-label="bir">
+          <h1>bir</h1>
         </div>
         <button className="refresh-button" type="button" onClick={() => void loadTraces()} disabled={isLoading}>
           {isLoading ? "Refreshing" : "Refresh"}
