@@ -16,6 +16,7 @@ Current focus:
 - Local trace storage
 - Trace, span, and score recording
 - Safe opt-in input/output capture
+- FastAPI ingestion and a minimal local dashboard
 
 ## Python SDK
 
@@ -39,3 +40,45 @@ from bir import send_events
 
 send_events("http://127.0.0.1:8000")
 ```
+
+## Local MVP Loop
+
+Install server and web dependencies once if they are not already available:
+
+```bash
+cd apps/server
+python3 -m pip install -e ".[dev]"
+
+cd ../web
+npm install
+```
+
+From the repository root, run the dependency-free OpenAI-style demo:
+
+```bash
+cd examples/openai-demo
+PYTHONPATH=../../packages/python-sdk/src python3 demo.py
+```
+
+Start the ingestion server in another terminal from the repository root:
+
+```bash
+cd apps/server
+uvicorn app.main:app --reload
+```
+
+Send the demo trace to the server from the repository root:
+
+```bash
+cd examples/openai-demo
+PYTHONPATH=../../packages/python-sdk/src python3 demo.py --send
+```
+
+Start the dashboard in another terminal from the repository root:
+
+```bash
+cd apps/web
+npm run dev
+```
+
+Open `http://localhost:3000` to inspect traces.
