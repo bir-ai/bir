@@ -29,11 +29,72 @@ export type Trace = {
   events: TraceEvent[];
 };
 
+export type TraceTimelineRow = {
+  event: TraceEvent;
+  depth: number;
+  isOrphan: boolean;
+};
+
 export function normalizeTraces(value: unknown): Trace[] {
   if (!Array.isArray(value)) {
     return [];
   }
   return value.filter(isTrace).sort((a, b) => b.start_time.localeCompare(a.start_time));
+}
+
+export function buildTraceTimelineRows(events: TraceEvent[]): TraceTimelineRow[] {
+  const eventsById = new Map<string, TraceEvent>();
+  const childrenByParentId = new Map<string, TraceEvent[]>();
+  const roots: TraceEvent[] = [];
+  const orphans: TraceEvent[] = [];
+
+  for (const event of events) {
+    eventsById.set(event.id, event);
+  }
+
+  for (const event of events) {
+    if (event.parent_id === null) {
+      roots.push(event);
+      continue;
+    }
+
+    if (eventsById.has(event.parent_id)) {
+      const children = childrenByParentId.get(event.parent_id) ?? [];
+      children.push(event);
+      childrenByParentId.set(event.parent_id, children);
+      continue;
+    }
+
+    orphans.push(event);
+  }
+
+  const rows: TraceTimelineRow[] = [];
+  const visitedEventIds = new Set<string>();
+
+  function appendEvent(event: TraceEvent, depth: number, isOrphan: boolean) {
+    if (visitedEventIds.has(event.id)) {
+      return;
+    }
+
+    visitedEventIds.add(event.id);
+    rows.push({ event, depth, isOrphan });
+
+    for (const child of childrenByParentId.get(event.id) ?? []) {
+      appendEvent(child, depth + 1, isOrphan);
+    }
+  }
+
+  for (const root of roots) {
+    appendEvent(root, 0, false);
+  }
+  for (const orphan of orphans) {
+    appendEvent(orphan, 0, true);
+  }
+  for (const event of events) {
+    appendEvent(event, 0, true);
+  }
+
+  return rows;
 }
 
 function isTrace(value: unknown): value is Trace {

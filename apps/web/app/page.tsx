@@ -1,8 +1,16 @@
 "use client";
 
 import Image from "next/image";
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { normalizeTraces, type EventStatus, type EventType, type Trace, type TraceEvent } from "./trace-contract";
+import {
+  buildTraceTimelineRows,
+  normalizeTraces,
+  type EventStatus,
+  type EventType,
+  type Trace,
+  type TraceTimelineRow,
+} from "./trace-contract";
 
 type ApiResponse = {
   traces?: unknown;
@@ -72,6 +80,10 @@ export default function DashboardPage() {
   const selectedTrace = useMemo(
     () => traces.find((trace) => trace.id === selectedTraceId) ?? traces[0] ?? null,
     [selectedTraceId, traces],
+  );
+  const timelineRows = useMemo(
+    () => (selectedTrace ? buildTraceTimelineRows(selectedTrace.events) : []),
+    [selectedTrace],
   );
 
   const stats = useMemo(() => {
@@ -154,8 +166,8 @@ export default function DashboardPage() {
               </div>
 
               <div className="timeline">
-                {selectedTrace.events.map((event) => (
-                  <EventRow event={event} key={event.id} />
+                {timelineRows.map((row) => (
+                  <EventRow row={row} key={row.event.id} />
                 ))}
               </div>
             </>
@@ -194,14 +206,19 @@ function Fact({
   );
 }
 
-function EventRow({ event }: { event: TraceEvent }) {
+function EventRow({ row }: { row: TraceTimelineRow }) {
+  const { event } = row;
+  const eventIndent = Math.min(row.depth, 6) * 28;
   const hasInput = event.input !== null && event.input !== undefined;
   const hasOutput = event.output !== null && event.output !== undefined;
   const hasMetadata = Object.keys(event.metadata ?? {}).length > 0;
   const hasUsage = event.usage && Object.keys(event.usage).length > 0;
 
   return (
-    <article className={`event-row ${event.type}`}>
+    <article
+      className={`event-row ${event.type}${row.isOrphan ? " orphan" : ""}`}
+      style={{ "--event-indent": `${eventIndent}px` } as CSSProperties}
+    >
       <div className="timeline-rail">
         <span className={`event-node ${event.status}`} />
       </div>
@@ -212,6 +229,7 @@ function EventRow({ event }: { event: TraceEvent }) {
             <h3>{event.name}</h3>
           </div>
           <div className="event-badges">
+            {row.isOrphan ? <span className="orphan-pill">Orphan</span> : null}
             <span className={`status-pill ${event.status}`}>{statusLabels[event.status]}</span>
             <span className="duration-pill">{formatDuration(event.start_time, event.end_time)}</span>
           </div>

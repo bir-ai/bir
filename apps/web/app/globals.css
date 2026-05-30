@@ -51,7 +51,7 @@ button {
 .side-brand-mark {
   position: fixed;
   top: 20px;
-  left: 30px;
+  left: 60px;
   z-index: 0;
   width: auto;
   height: 560px;
@@ -300,7 +300,8 @@ h3 {
 }
 
 .status-pill,
-.duration-pill {
+.duration-pill,
+.orphan-pill {
   display: inline-flex;
   align-items: center;
   min-height: 24px;
@@ -312,6 +313,11 @@ h3 {
   font-size: 0.74rem;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.orphan-pill {
+  border-color: rgba(242, 181, 55, 0.36);
+  color: var(--yellow);
 }
 
 .status-pill.success {
@@ -378,7 +384,7 @@ h3 {
 
 .event-row {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
+  grid-template-columns: calc(24px + var(--event-indent, 0px)) minmax(0, 1fr);
   gap: 10px;
 }
 
@@ -389,14 +395,25 @@ h3 {
 .timeline-rail {
   position: relative;
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
   padding-top: 19px;
+}
+
+.timeline-rail::before {
+  content: "";
+  position: absolute;
+  top: 24px;
+  right: 10px;
+  width: var(--event-indent, 0px);
+  height: 1px;
+  background: var(--border);
 }
 
 .timeline-rail::after {
   content: "";
   position: absolute;
   top: 34px;
+  right: 5px;
   bottom: -18px;
   width: 1px;
   background: var(--border);
@@ -412,10 +429,18 @@ h3 {
   box-shadow: 0 0 0 4px rgb(39, 40, 43);
 }
 
+.event-row.orphan .event-node {
+  background: var(--yellow);
+}
+
 .event-body {
   min-width: 0;
   padding: 12px 0 16px;
   border-bottom: 1px solid rgba(67, 70, 75, 0.72);
+}
+
+.event-row.orphan .event-body {
+  border-bottom-color: rgba(242, 181, 55, 0.42);
 }
 
 .event-title-line {
