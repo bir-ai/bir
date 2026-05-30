@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -15,6 +16,8 @@ from bir import configure, generation, load_traces, observe, score, span, tool_c
 from bir._sdk import _reset_config_for_tests
 
 from app.main import create_app
+from app.schemas import TraceEventPayload
+from app.storage import JsonlEventStore
 
 
 def make_event(**overrides: object) -> dict[str, object]:
@@ -79,6 +82,21 @@ def test_duplicate_event_id_is_idempotent(tmp_path: Path) -> None:
     assert second_response.status_code == 200
     assert second_response.json() == {"accepted": 0, "id": "trace-1"}
     stored_events = [json.loads(line) for line in event_store_path.read_text(encoding="utf-8").splitlines()]
+    assert len(stored_events) == 1
+    assert stored_events[0]["id"] == "trace-1"
+
+
+def test_concurrent_duplicate_event_id_appends_once(tmp_path: Path) -> None:
+    event_store_path = tmp_path / "events.jsonl"
+    store = JsonlEventStore(event_store_path)
+    event = TraceEventPayload.model_validate(make_event())
+
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        results = list(executor.map(store.append, [event] * 32))
+
+    stored_events = [json.loads(line) for line in event_store_path.read_text(encoding="utf-8").splitlines()]
+    assert results.count(True) == 1
+    assert results.count(False) == 31
     assert len(stored_events) == 1
     assert stored_events[0]["id"] == "trace-1"
 
