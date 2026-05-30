@@ -70,3 +70,11 @@ def answer_question(question: str) -> str:
 
 Input and output capture is disabled by default. Enable it only when you want to
 store request and response payloads locally.
+
+## Event Contract
+
+Trace events use schema version `1.0`. The shared contract artifact lives at
+`tests/fixtures/event-schema-v1.json`, and `tests/fixtures/valid-events.jsonl`
+contains a representative trace with trace, span, tool call, generation, and
+score events. Keep the SDK, server, and dashboard aligned with those fixtures
+when changing event fields.

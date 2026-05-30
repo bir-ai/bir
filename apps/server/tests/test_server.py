@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SDK_SRC = ROOT / "packages" / "python-sdk" / "src"
 sys.path.insert(0, str(SDK_SRC))
 CONTRACT_EVENTS_PATH = ROOT / "tests" / "fixtures" / "valid-events.jsonl"
+CONTRACT_SCHEMA_PATH = ROOT / "tests" / "fixtures" / "event-schema-v1.json"
 
 from bir import configure, generation, load_traces, observe, score, span, tool_call
 from bir._sdk import _reset_config_for_tests
@@ -49,6 +50,13 @@ def load_contract_events() -> list[dict[str, object]]:
     return [json.loads(line) for line in CONTRACT_EVENTS_PATH.read_text(encoding="utf-8").splitlines()]
 
 
+def load_contract_schema() -> dict[str, object]:
+    payload = json.loads(CONTRACT_SCHEMA_PATH.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise TypeError("expected event schema to be a JSON object")
+    return payload
+
+
 def test_health_returns_ok(tmp_path: Path) -> None:
     client, _ = make_client(tmp_path)
 
@@ -69,6 +77,38 @@ def test_ingests_valid_event_to_jsonl(tmp_path: Path) -> None:
     assert len(stored_events) == 1
     assert stored_events[0]["id"] == "trace-1"
     assert stored_events[0]["schema_version"] == "1.0"
+
+
+def test_server_event_contract_matches_schema_artifact() -> None:
+    schema = load_contract_schema()
+    properties = schema["properties"]
+    if not isinstance(properties, dict):
+        raise TypeError("expected schema properties to be an object")
+
+    event_type = properties["type"]
+    event_status = properties["status"]
+    schema_version = properties["schema_version"]
+    if not isinstance(event_type, dict) or not isinstance(event_status, dict) or not isinstance(schema_version, dict):
+        raise TypeError("expected schema property definitions to be objects")
+
+    assert schema["required"] == [
+        "schema_version",
+        "id",
+        "trace_id",
+        "parent_id",
+        "name",
+        "type",
+        "start_time",
+        "end_time",
+        "status",
+        "metadata",
+        "input",
+        "output",
+        "error",
+    ]
+    assert schema_version["const"] == "1.0"
+    assert event_type["enum"] == ["trace", "span", "generation", "tool_call", "score"]
+    assert event_status["enum"] == ["success", "error"]
 
 
 def test_duplicate_event_id_is_idempotent(tmp_path: Path) -> None:
@@ -263,6 +303,9 @@ def test_ingests_schema_contract_fixtures(tmp_path: Path) -> None:
         "generation",
         "score",
     ]
+    assert traces[0]["events"][3]["model"] == "demo-model"
+    assert traces[0]["events"][3]["usage"] == {"input_tokens": 12, "output_tokens": 24, "total_tokens": 36}
+    assert traces[0]["events"][4]["value"] == 0.82
 
 
 def test_ingests_sdk_generated_events(tmp_path: Path) -> None:
