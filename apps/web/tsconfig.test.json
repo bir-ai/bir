@@ -10,7 +10,6 @@
   },
   "include": [
     "app/trace-contract.ts",
-    "app/trace-contract.fixture.ts",
     "app/trace-contract.test.ts"
   ],
   "exclude": ["node_modules", ".test-build"]

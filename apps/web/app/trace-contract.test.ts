@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -7,9 +9,10 @@ import {
   type Trace,
   type TraceEvent,
 } from "./trace-contract";
-import { contractTraceResponseFixture } from "./trace-contract.fixture";
 
-const [contractTrace] = contractTraceResponseFixture;
+const contractTraceResponseFixture = loadSharedContractTraceResponse();
+const [contractTrace] = normalizeTraces(contractTraceResponseFixture);
+assert.ok(contractTrace);
 
 test("normalizes valid trace responses from the shared contract fixture", () => {
   const traces = normalizeTraces(contractTraceResponseFixture);
@@ -57,8 +60,11 @@ test("builds nested timeline rows from parent-child event relationships", () => 
 });
 
 test("marks events whose parent is missing as orphan timeline rows", () => {
+  const spanEvent = contractTrace.events.find((event) => event.type === "span");
+  assert.ok(spanEvent);
+
   const orphanEvent: TraceEvent = {
-    ...contractTrace.events[1],
+    ...spanEvent,
     id: "orphan-span",
     parent_id: "missing-parent",
     name: "orphan_step",
@@ -75,3 +81,32 @@ test("marks events whose parent is missing as orphan timeline rows", () => {
   assert.equal(orphanRow.depth, 0);
   assert.equal(orphanRow.isOrphan, true);
 });
+
+function loadSharedContractTraceResponse(): unknown[] {
+  const fixturePath = path.resolve(process.cwd(), "../../tests/fixtures/valid-events.jsonl");
+  const events = readFileSync(fixturePath, "utf-8")
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as unknown);
+
+  const rootEvent = events.find(
+    (event): event is Record<string, unknown> =>
+      isRecord(event) && event.type === "trace" && event.id === event.trace_id,
+  );
+  assert.ok(rootEvent);
+
+  return [
+    {
+      id: rootEvent.id,
+      name: rootEvent.name,
+      start_time: rootEvent.start_time,
+      end_time: rootEvent.end_time,
+      status: rootEvent.status,
+      events,
+    },
+  ];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
