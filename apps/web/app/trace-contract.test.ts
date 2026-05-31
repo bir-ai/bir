@@ -5,6 +5,7 @@ import test from "node:test";
 
 import {
   buildTraceTimelineRows,
+  getRetrievalDetails,
   normalizeTraces,
   type Trace,
   type TraceEvent,
@@ -38,6 +39,39 @@ test("normalizes valid trace responses from the shared contract fixture", () => 
   const generationEvent = traces[0].events.find((event) => event.type === "generation");
   assert.deepEqual(generationEvent?.cost, { input_cost: 0.000012, output_cost: 0.000048, total_cost: 0.00006 });
   assert.equal(generationEvent?.currency, "USD");
+});
+
+test("extracts retrieval query and documents from the shared contract fixture", () => {
+  const retrievalEvent = contractTrace.events.find(
+    (event) => event.type === "tool_call" && event.metadata.kind === "retrieval",
+  );
+  assert.ok(retrievalEvent);
+
+  const details = getRetrievalDetails(retrievalEvent);
+
+  assert.deepEqual(details, {
+    query: "hello",
+    documents: [
+      {
+        id: "doc-1",
+        rank: 1,
+        score: 0.82,
+        source: "docs",
+        text: "Bir records local traces with JSONL.",
+      },
+    ],
+  });
+});
+
+test("does not treat ordinary tool calls as retrieval events", () => {
+  const retrievalEvent = contractTrace.events.find((event) => event.type === "tool_call");
+  assert.ok(retrievalEvent);
+  const ordinaryToolEvent: TraceEvent = {
+    ...retrievalEvent,
+    metadata: { kind: "calculator" },
+  };
+
+  assert.equal(getRetrievalDetails(ordinaryToolEvent), null);
 });
 
 test("ignores malformed trace responses without throwing", () => {

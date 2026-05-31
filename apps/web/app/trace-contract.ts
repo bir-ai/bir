@@ -37,11 +37,36 @@ export type TraceTimelineRow = {
   isOrphan: boolean;
 };
 
+export type RetrievalDocument = {
+  id?: string;
+  rank?: number;
+  score?: number;
+  source?: string;
+  text?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type RetrievalDetails = {
+  query: unknown;
+  documents: RetrievalDocument[];
+};
+
 export function normalizeTraces(value: unknown): Trace[] {
   if (!Array.isArray(value)) {
     return [];
   }
   return value.filter(isTrace).sort((a, b) => b.start_time.localeCompare(a.start_time));
+}
+
+export function getRetrievalDetails(event: TraceEvent): RetrievalDetails | null {
+  if (event.type !== "tool_call" || event.metadata.kind !== "retrieval") {
+    return null;
+  }
+
+  return {
+    query: retrievalQuery(event.input),
+    documents: retrievalDocuments(event.output),
+  };
 }
 
 export function buildTraceTimelineRows(events: TraceEvent[]): TraceTimelineRow[] {
@@ -97,6 +122,42 @@ export function buildTraceTimelineRows(events: TraceEvent[]): TraceTimelineRow[]
   }
 
   return rows;
+}
+
+function retrievalQuery(input: unknown): unknown {
+  if (!isRecord(input) || !("query" in input)) {
+    return null;
+  }
+  return input.query;
+}
+
+function retrievalDocuments(output: unknown): RetrievalDocument[] {
+  if (!isRecord(output) || !Array.isArray(output.documents)) {
+    return [];
+  }
+
+  return output.documents.filter(isRecord).map((document) => {
+    const normalized: RetrievalDocument = {};
+    if (typeof document.id === "string") {
+      normalized.id = document.id;
+    }
+    if (typeof document.rank === "number") {
+      normalized.rank = document.rank;
+    }
+    if (typeof document.score === "number") {
+      normalized.score = document.score;
+    }
+    if (typeof document.source === "string") {
+      normalized.source = document.source;
+    }
+    if (typeof document.text === "string") {
+      normalized.text = document.text;
+    }
+    if (isRecord(document.metadata)) {
+      normalized.metadata = document.metadata;
+    }
+    return normalized;
+  });
 }
 
 function isTrace(value: unknown): value is Trace {

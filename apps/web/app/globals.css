@@ -534,6 +534,107 @@ h3 {
   color: rgb(255, 179, 169);
 }
 
+.retrieval-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.75fr) minmax(280px, 1.25fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.retrieval-query,
+.retrieval-docs {
+  min-width: 0;
+  border: 1px solid rgba(48, 106, 248, 0.34);
+  border-radius: 8px;
+  background: rgba(32, 33, 36, 0.82);
+}
+
+.retrieval-query h4,
+.retrieval-docs h4 {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(48, 106, 248, 0.24);
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+}
+
+.retrieval-query pre,
+.retrieval-query p,
+.retrieval-docs > p {
+  margin: 0;
+  padding: 10px;
+  color: rgb(224, 230, 238);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.retrieval-query pre,
+.retrieval-metadata {
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  white-space: pre-wrap;
+}
+
+.retrieval-doc-list {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+}
+
+.retrieval-doc {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(67, 70, 75, 0.74);
+  border-radius: 8px;
+  background: rgba(45, 47, 51, 0.72);
+}
+
+.retrieval-doc-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.retrieval-doc-head strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
+.doc-chip {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  padding: 0 7px;
+  border: 1px solid rgba(173, 179, 189, 0.22);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.retrieval-text {
+  margin-top: 8px;
+  color: rgb(224, 230, 238);
+  font-size: 0.83rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.retrieval-metadata {
+  margin: 8px 0 0;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgb(32, 33, 36);
+  color: rgb(224, 230, 238);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
 .state-box,
 .empty-detail {
   display: grid;
@@ -628,6 +729,10 @@ h3 {
 
   .event-title-line {
     flex-direction: column;
+  }
+
+  .retrieval-panel {
+    grid-template-columns: 1fr;
   }
 
   .trace-row {

@@ -5,9 +5,11 @@ import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
   buildTraceTimelineRows,
+  getRetrievalDetails,
   normalizeTraces,
   type EventStatus,
   type EventType,
+  type RetrievalDetails,
   type Trace,
   type TraceTimelineRow,
 } from "./trace-contract";
@@ -214,6 +216,7 @@ function EventRow({ row }: { row: TraceTimelineRow }) {
   const hasMetadata = Object.keys(event.metadata ?? {}).length > 0;
   const hasUsage = event.usage && Object.keys(event.usage).length > 0;
   const hasCost = event.cost && Object.keys(event.cost).length > 0;
+  const retrievalDetails = getRetrievalDetails(event);
 
   return (
     <article
@@ -248,13 +251,56 @@ function EventRow({ row }: { row: TraceTimelineRow }) {
 
         {event.error ? <pre className="error-block">{event.error}</pre> : null}
 
+        {retrievalDetails ? <RetrievalPanel details={retrievalDetails} /> : null}
+
         <div className="payload-grid">
-          {hasInput ? <Payload title="Input" value={event.input} /> : null}
-          {hasOutput ? <Payload title="Output" value={event.output} /> : null}
+          {hasInput && !retrievalDetails ? <Payload title="Input" value={event.input} /> : null}
+          {hasOutput && !retrievalDetails ? <Payload title="Output" value={event.output} /> : null}
           {hasMetadata ? <Payload title="Metadata" value={event.metadata} /> : null}
         </div>
       </div>
     </article>
+  );
+}
+
+function RetrievalPanel({ details }: { details: RetrievalDetails }) {
+  const hasQuery = details.query !== null && details.query !== undefined;
+
+  return (
+    <section className="retrieval-panel">
+      <div className="retrieval-query">
+        <h4>Query</h4>
+        {hasQuery ? <pre>{formatPayloadValue(details.query)}</pre> : <p>No query captured.</p>}
+      </div>
+
+      <div className="retrieval-docs">
+        <h4>Documents</h4>
+        {details.documents.length > 0 ? (
+          <div className="retrieval-doc-list">
+            {details.documents.map((document, index) => (
+              <article className="retrieval-doc" key={`${document.id ?? "document"}-${index}`}>
+                <div className="retrieval-doc-head">
+                  <strong>{document.id ?? `Document ${index + 1}`}</strong>
+                  <div className="event-badges">
+                    {typeof document.rank === "number" ? (
+                      <span className="doc-chip">Rank {formatNumber(document.rank)}</span>
+                    ) : null}
+                    {typeof document.score === "number" ? (
+                      <span className="doc-chip">Score {formatNumber(document.score)}</span>
+                    ) : null}
+                    {document.source ? <span className="doc-chip">{document.source}</span> : null}
+                  </div>
+                </div>
+                {document.text ? <p className="retrieval-text">{document.text}</p> : null}
+                {document.metadata ? <pre className="retrieval-metadata">{JSON.stringify(document.metadata, null, 2)}</pre> : null}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p>No documents captured.</p>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -274,6 +320,13 @@ function Payload({ title, value }: { title: string; value: unknown }) {
       <pre>{JSON.stringify(value, null, 2)}</pre>
     </section>
   );
+}
+
+function formatPayloadValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  return JSON.stringify(value, null, 2);
 }
 
 function TraceSkeleton() {
