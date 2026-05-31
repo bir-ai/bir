@@ -14,19 +14,21 @@ Current focus:
 
 - Python SDK
 - Local trace storage
-- Trace, span, and score recording
+- Trace, span, generation, retrieval, tool call, and score recording
 - Safe opt-in input/output capture
 - FastAPI ingestion and a minimal local dashboard
 
 ## Python SDK
 
 ```python
-from bir import observe, score, span
+from bir import observe, retrieval, score, span
 
 @observe()
 def answer_question(question: str) -> str:
     with span("retrieve_context"):
-        context = "local context"
+        with retrieval("search_docs", query=question) as result:
+            result.add_document(id="doc-1", text="local context")
+            context = "local context"
 
     score("helpfulness", 0.82)
     return f"{context}: {question}"

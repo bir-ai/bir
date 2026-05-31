@@ -49,15 +49,15 @@ Open `http://localhost:3000`.
 ## Core SDK Pattern
 
 ```python
-from bir import generation, observe, score, span, tool_call
+from bir import generation, observe, retrieval, score, span
 
 
 @observe(capture_inputs=True, capture_outputs=True)
 def answer_question(question: str) -> str:
     with span("retrieve_context"):
-        with tool_call("search_docs", input={"query": question}) as tool:
+        with retrieval("search_docs", query=question) as result:
             documents = ["local context"]
-            tool.set_output(documents)
+            result.add_document(id="doc-1", text=documents[0])
 
     with generation("openai.chat.completions", model="demo-gpt-4o-mini") as gen:
         answer = f"{documents[0]}: {question}"
@@ -84,39 +84,33 @@ when changing event fields.
 
 ## Retrieval Events
 
-RAG retrieval inspection should build on the current event contract before adding
-a new event type. For the next small slice, represent retrieval as a `tool_call`
-inside a retrieval span:
+RAG retrieval inspection builds on the current event contract instead of adding
+a new event type. Use `retrieval()` to emit a `tool_call` inside a retrieval
+span:
 
 ```python
 with span("retrieve_context"):
-    with tool_call(
+    with retrieval(
         "vector_search",
-        input={"query": question},
-        metadata={"kind": "retrieval", "provider": "local"},
+        query=question,
+        metadata={"provider": "local"},
         capture_input=True,
         capture_output=True,
-    ) as retrieval:
-        retrieval.set_output(
-            {
-                "documents": [
-                    {
-                        "id": "doc-1",
-                        "rank": 1,
-                        "score": 0.82,
-                        "source": "docs",
-                        "text": "Bir records local traces with JSONL.",
-                        "metadata": {"section": "quickstart"},
-                    }
-                ]
-            }
+    ) as result:
+        result.add_document(
+            id="doc-1",
+            rank=1,
+            score=0.82,
+            source="docs",
+            text="Bir records local traces with JSONL.",
+            metadata={"section": "quickstart"},
         )
 ```
 
 Recommended retrieval payload rules:
 
-- Use `metadata.kind = "retrieval"` so the dashboard can distinguish retrieval
-  tool calls from other tools.
+- `retrieval()` sets `metadata.kind = "retrieval"` so the dashboard can
+  distinguish retrieval tool calls from other tools.
 - Put the retrieval query in `input.query` only when input capture is enabled.
 - Put retrieved records in `output.documents` only when output capture is
   enabled.
@@ -127,5 +121,5 @@ Recommended retrieval payload rules:
 - Do not add vector database integrations or provider-specific dependencies in
   this slice.
 
-If this shape proves useful, a later SDK helper can wrap it as `retrieval()`
-without breaking the underlying event contract.
+The underlying event type remains `tool_call`, so the server and dashboard can
+continue using the same schema.

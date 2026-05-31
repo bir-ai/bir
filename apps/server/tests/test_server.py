@@ -13,7 +13,7 @@ sys.path.insert(0, str(SDK_SRC))
 CONTRACT_EVENTS_PATH = ROOT / "tests" / "fixtures" / "valid-events.jsonl"
 CONTRACT_SCHEMA_PATH = ROOT / "tests" / "fixtures" / "event-schema-v1.json"
 
-from bir import configure, generation, load_traces, observe, score, span, tool_call
+from bir import configure, generation, load_traces, observe, retrieval, score, span
 from bir._sdk import _reset_config_for_tests
 
 from app.main import create_app
@@ -405,6 +405,17 @@ def test_ingests_schema_contract_fixtures(tmp_path: Path) -> None:
         "output_cost": 0.000048,
         "total_cost": 0.00006,
     }
+    assert traces[0]["events"][2]["output"] == {
+        "documents": [
+            {
+                "id": "doc-1",
+                "rank": 1,
+                "score": 0.82,
+                "source": "docs",
+                "text": "Bir records local traces with JSONL.",
+            }
+        ]
+    }
     assert traces[0]["events"][3]["currency"] == "USD"
     assert traces[0]["events"][4]["value"] == 0.82
 
@@ -432,8 +443,8 @@ def test_ingests_sdk_generated_events(tmp_path: Path) -> None:
         @observe()
         def answer(question: str) -> str:
             with span("retrieve_context"):
-                with tool_call("search_docs", input={"query": question}) as tool:
-                    tool.set_output(["doc-1"])
+                with retrieval("search_docs", query=question) as result:
+                    result.add_document(id="doc-1", text="local context")
             with generation("local.llm", model="demo", input={"question": question}) as gen:
                 gen.set_output("ok")
                 gen.set_usage(input_tokens=1, output_tokens=2)

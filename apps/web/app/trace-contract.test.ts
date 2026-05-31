@@ -23,6 +23,18 @@ test("normalizes valid trace responses from the shared contract fixture", () => 
     traces[0].events.map((event) => event.type),
     ["trace", "span", "tool_call", "generation", "score"],
   );
+  const retrievalEvent = traces[0].events.find((event) => event.type === "tool_call");
+  assert.deepEqual(retrievalEvent?.output, {
+    documents: [
+      {
+        id: "doc-1",
+        rank: 1,
+        score: 0.82,
+        source: "docs",
+        text: "Bir records local traces with JSONL.",
+      },
+    ],
+  });
   const generationEvent = traces[0].events.find((event) => event.type === "generation");
   assert.deepEqual(generationEvent?.cost, { input_cost: 0.000012, output_cost: 0.000048, total_cost: 0.00006 });
   assert.equal(generationEvent?.currency, "USD");
