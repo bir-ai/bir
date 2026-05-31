@@ -81,3 +81,51 @@ Trace events use schema version `1.0`. The shared contract artifact lives at
 contains a representative trace with trace, span, tool call, generation, and
 score events. Keep the SDK, server, and dashboard aligned with those fixtures
 when changing event fields.
+
+## Retrieval Events
+
+RAG retrieval inspection should build on the current event contract before adding
+a new event type. For the next small slice, represent retrieval as a `tool_call`
+inside a retrieval span:
+
+```python
+with span("retrieve_context"):
+    with tool_call(
+        "vector_search",
+        input={"query": question},
+        metadata={"kind": "retrieval", "provider": "local"},
+        capture_input=True,
+        capture_output=True,
+    ) as retrieval:
+        retrieval.set_output(
+            {
+                "documents": [
+                    {
+                        "id": "doc-1",
+                        "rank": 1,
+                        "score": 0.82,
+                        "source": "docs",
+                        "text": "Bir records local traces with JSONL.",
+                        "metadata": {"section": "quickstart"},
+                    }
+                ]
+            }
+        )
+```
+
+Recommended retrieval payload rules:
+
+- Use `metadata.kind = "retrieval"` so the dashboard can distinguish retrieval
+  tool calls from other tools.
+- Put the retrieval query in `input.query` only when input capture is enabled.
+- Put retrieved records in `output.documents` only when output capture is
+  enabled.
+- Each document should include `id` when available, plus optional `rank`,
+  `score`, `source`, `text`, and `metadata`.
+- Keep document text/snippets opt-in because retrieved context can contain
+  sensitive user or business data.
+- Do not add vector database integrations or provider-specific dependencies in
+  this slice.
+
+If this shape proves useful, a later SDK helper can wrap it as `retrieval()`
+without breaking the underlying event contract.
