@@ -320,6 +320,63 @@ def test_lists_traces_with_root_first_event_order(tmp_path: Path) -> None:
     assert [event["type"] for event in traces[0]["events"]] == ["trace", "score"]
 
 
+def test_gets_trace_detail_with_root_first_event_order(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    score_event = make_event(
+        id="score-1",
+        trace_id="trace-1",
+        parent_id="trace-1",
+        name="helpfulness",
+        type="score",
+        start_time="2026-01-01T00:00:00+00:00",
+        end_time="2026-01-01T00:00:00+00:00",
+        value=0.9,
+    )
+    trace_event = make_event()
+
+    score_response = client.post("/v1/events", json=score_event)
+    trace_response = client.post("/v1/events", json=trace_event)
+    response = client.get("/v1/traces/trace-1")
+
+    assert score_response.status_code == 201
+    assert trace_response.status_code == 201
+    assert response.status_code == 200
+    trace = response.json()
+    assert trace["id"] == "trace-1"
+    assert trace["name"] == "answer"
+    assert [event["type"] for event in trace["events"]] == ["trace", "score"]
+
+
+def test_get_trace_detail_returns_404_for_missing_trace(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+
+    response = client.get("/v1/traces/missing-trace")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Trace not found"}
+
+
+def test_get_trace_detail_returns_404_for_events_without_root_trace(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    score_event = make_event(
+        id="score-1",
+        trace_id="trace-1",
+        parent_id="trace-1",
+        name="helpfulness",
+        type="score",
+        start_time="2026-01-01T00:00:00+00:00",
+        end_time="2026-01-01T00:00:00+00:00",
+        value=0.9,
+    )
+
+    ingest_response = client.post("/v1/events", json=score_event)
+    response = client.get("/v1/traces/trace-1")
+
+    assert ingest_response.status_code == 201
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Trace not found"}
+
+
 def test_ingests_schema_contract_fixtures(tmp_path: Path) -> None:
     client, _ = make_client(tmp_path)
 
@@ -350,6 +407,19 @@ def test_ingests_schema_contract_fixtures(tmp_path: Path) -> None:
     }
     assert traces[0]["events"][3]["currency"] == "USD"
     assert traces[0]["events"][4]["value"] == 0.82
+
+    trace_response = client.get("/v1/traces/trace-fixture-1")
+
+    assert trace_response.status_code == 200
+    trace = trace_response.json()
+    assert trace["id"] == "trace-fixture-1"
+    assert [event["type"] for event in trace["events"]] == [
+        "trace",
+        "span",
+        "tool_call",
+        "generation",
+        "score",
+    ]
 
 
 def test_ingests_sdk_generated_events(tmp_path: Path) -> None:

@@ -87,21 +87,29 @@ class JsonlEventStore:
 
         traces: list[LoadedTrace] = []
         for trace_id, events in events_by_trace_id.items():
-            sorted_events = sorted(events, key=_event_sort_key)
-            root = next((event for event in sorted_events if event.type == "trace" and event.id == trace_id), None)
-            if root is None:
-                continue
-            traces.append(
-                LoadedTrace(
-                    id=trace_id,
-                    name=root.name,
-                    start_time=root.start_time,
-                    end_time=root.end_time,
-                    status=root.status,
-                    events=sorted_events,
-                )
-            )
+            trace = _loaded_trace(trace_id, events)
+            if trace is not None:
+                traces.append(trace)
         return sorted(traces, key=lambda trace: (trace.start_time, trace.id))
+
+    def load_trace(self, trace_id: str) -> LoadedTrace | None:
+        events = [event for event in self.load_events() if event.trace_id == trace_id]
+        return _loaded_trace(trace_id, events)
+
+
+def _loaded_trace(trace_id: str, events: list[TraceEventPayload]) -> LoadedTrace | None:
+    sorted_events = sorted(events, key=_event_sort_key)
+    root = next((event for event in sorted_events if event.type == "trace" and event.id == trace_id), None)
+    if root is None:
+        return None
+    return LoadedTrace(
+        id=trace_id,
+        name=root.name,
+        start_time=root.start_time,
+        end_time=root.end_time,
+        status=root.status,
+        events=sorted_events,
+    )
 
 
 def _event_sort_key(event: TraceEventPayload) -> tuple[str, int, str, str]:

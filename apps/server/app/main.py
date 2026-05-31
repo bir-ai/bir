@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -43,6 +43,14 @@ def create_app(*, event_store_path: str | Path | None = None) -> FastAPI:
     def list_traces(request: Request) -> list[LoadedTrace]:
         store = _get_event_store(request)
         return store.load_traces()
+
+    @app.get("/v1/traces/{trace_id}", response_model=LoadedTrace)
+    def get_trace(trace_id: str, request: Request) -> LoadedTrace:
+        store = _get_event_store(request)
+        trace = store.load_trace(trace_id)
+        if trace is None:
+            raise HTTPException(status_code=404, detail="Trace not found")
+        return trace
 
     return app
 

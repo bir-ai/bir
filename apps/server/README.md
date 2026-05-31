@@ -8,6 +8,7 @@ Minimal FastAPI ingestion server for Bir trace events.
 - `POST /v1/events`
 - `GET /v1/events`
 - `GET /v1/traces`
+- `GET /v1/traces/{trace_id}`
 
 Events are validated with Pydantic and persisted as JSONL. By default, the
 server writes to `.bir/server-events.jsonl`. Override that path with:
