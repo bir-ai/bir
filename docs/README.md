@@ -73,6 +73,9 @@ Input and output capture is disabled by default. Enable it only when you want to
 store request and response payloads locally.
 Generation token usage and cost are optional user-provided values. Bir records
 the values you pass and does not calculate provider pricing automatically.
+The SDK and server both apply best-effort redaction for common secret-like keys
+and text patterns before events are written, but capture should still stay
+opt-in for sensitive payloads.
 
 ## Event Contract
 

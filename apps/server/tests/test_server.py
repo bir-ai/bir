@@ -79,6 +79,85 @@ def test_ingests_valid_event_to_jsonl(tmp_path: Path) -> None:
     assert stored_events[0]["schema_version"] == "1.0"
 
 
+def test_ingestion_redacts_secret_like_values_before_persisting(tmp_path: Path) -> None:
+    client, event_store_path = make_client(tmp_path)
+
+    response = client.post(
+        "/v1/events",
+        json=make_event(
+            metadata={
+                "provider": "openai",
+                "authorization": "Bearer metadata-secret",
+                "note": "client_secret=metadata-client-secret",
+            },
+            input={
+                "api_key": "sk-inputsecret",
+                "messages": ["Authorization: Bearer message-secret"],
+            },
+            output={
+                "token": "output-token",
+                "text": "secret=response-secret",
+            },
+            error="provider failed authorization: Bearer error-secret",
+            provider_payload={"password": "extra-password", "text": "use sk-extrasecret"},
+        ),
+    )
+
+    assert response.status_code == 201
+    raw_store = event_store_path.read_text(encoding="utf-8")
+    for secret in (
+        "metadata-secret",
+        "metadata-client-secret",
+        "sk-inputsecret",
+        "message-secret",
+        "output-token",
+        "response-secret",
+        "error-secret",
+        "extra-password",
+        "sk-extrasecret",
+    ):
+        assert secret not in raw_store
+
+    stored_event = json.loads(raw_store)
+    assert stored_event["metadata"] == {
+        "authorization": "[redacted]",
+        "note": "client_secret=[redacted]",
+        "provider": "openai",
+    }
+    assert stored_event["input"] == {
+        "api_key": "[redacted]",
+        "messages": ["Authorization: Bearer [redacted]"],
+    }
+    assert stored_event["output"] == {
+        "text": "secret=[redacted]",
+        "token": "[redacted]",
+    }
+    assert stored_event["error"] == "provider failed authorization: Bearer [redacted]"
+    assert stored_event["provider_payload"] == {"password": "[redacted]", "text": "use [redacted]"}
+
+
+def test_list_endpoints_return_redacted_events(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+
+    response = client.post(
+        "/v1/events",
+        json=make_event(
+            input={"authorization": "Bearer input-secret"},
+            output={"text": "api_key=output-secret"},
+        ),
+    )
+    events_response = client.get("/v1/events")
+    traces_response = client.get("/v1/traces")
+
+    assert response.status_code == 201
+    assert events_response.status_code == 200
+    assert traces_response.status_code == 200
+    assert events_response.json()[0]["input"] == {"authorization": "[redacted]"}
+    assert events_response.json()[0]["output"] == {"text": "api_key=[redacted]"}
+    assert traces_response.json()[0]["events"][0]["input"] == {"authorization": "[redacted]"}
+    assert traces_response.json()[0]["events"][0]["output"] == {"text": "api_key=[redacted]"}
+
+
 def test_server_event_contract_matches_schema_artifact() -> None:
     schema = load_contract_schema()
     properties = schema["properties"]

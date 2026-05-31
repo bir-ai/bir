@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .redaction import redact_secret_text, redact_value
+
 SCHEMA_VERSION = "1.0"
 EventType = Literal["trace", "span", "generation", "tool_call", "score"]
 EventStatus = Literal["success", "error"]
@@ -79,6 +81,14 @@ class TraceEventPayload(BaseModel):
         if self.__pydantic_extra__:
             for key, value in self.__pydantic_extra__.items():
                 _validate_json_value(value, key)
+        self.metadata = redact_value(self.metadata)
+        self.input = redact_value(self.input)
+        self.output = redact_value(self.output)
+        if self.error is not None:
+            self.error = redact_secret_text(self.error)
+        if self.__pydantic_extra__:
+            for key, value in list(self.__pydantic_extra__.items()):
+                self.__pydantic_extra__[key] = redact_value(value, key=key)
         return self
 
 

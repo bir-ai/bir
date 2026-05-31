@@ -20,6 +20,11 @@ export BIR_SERVER_EVENT_STORE=tmp/server-events.jsonl
 Ingesting an event with an ID that is already present is idempotent: the server
 returns `accepted: 0` and does not append a duplicate row.
 
+Before accepted events are written, the server applies best-effort redaction to
+common secret-like keys and text patterns in event metadata, input, output,
+error, and extra payload fields. Capture should still stay opt-in because
+redaction is not a substitute for reviewing what applications send.
+
 The Python SDK can send locally recorded events to the server:
 
 ```python
