@@ -213,6 +213,7 @@ function EventRow({ row }: { row: TraceTimelineRow }) {
   const hasOutput = event.output !== null && event.output !== undefined;
   const hasMetadata = Object.keys(event.metadata ?? {}).length > 0;
   const hasUsage = event.usage && Object.keys(event.usage).length > 0;
+  const hasCost = event.cost && Object.keys(event.cost).length > 0;
 
   return (
     <article
@@ -241,6 +242,7 @@ function EventRow({ row }: { row: TraceTimelineRow }) {
             <InlineField label="Score" value={formatNumber(event.value)} />
           ) : null}
           {hasUsage ? <InlineField label="Usage" value={formatUsage(event.usage)} /> : null}
+          {hasCost ? <InlineField label="Cost" value={formatCost(event.cost, event.currency)} /> : null}
           {event.parent_id ? <InlineField label="Parent" value={event.parent_id} /> : null}
         </div>
 
@@ -320,8 +322,18 @@ function formatUsage(usage: Record<string, number> | null | undefined): string {
     .join(", ");
 }
 
+function formatCost(cost: Record<string, number> | null | undefined, currency: string | null | undefined): string {
+  if (!cost) {
+    return "";
+  }
+  const suffix = currency ? ` ${currency}` : "";
+  return Object.entries(cost)
+    .map(([key, value]) => `${key}: ${formatNumber(value)}${suffix}`)
+    .join(", ");
+}
+
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("en", {
-    maximumFractionDigits: 3,
+    maximumFractionDigits: 6,
   }).format(value);
 }

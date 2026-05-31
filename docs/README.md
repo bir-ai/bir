@@ -63,6 +63,7 @@ def answer_question(question: str) -> str:
         answer = f"{documents[0]}: {question}"
         gen.set_output(answer)
         gen.set_usage(input_tokens=12, output_tokens=24)
+        gen.set_cost(input_cost=0.000012, output_cost=0.000048)
 
     score("helpfulness", 0.82)
     return answer
@@ -70,6 +71,8 @@ def answer_question(question: str) -> str:
 
 Input and output capture is disabled by default. Enable it only when you want to
 store request and response payloads locally.
+Generation token usage and cost are optional user-provided values. Bir records
+the values you pass and does not calculate provider pricing automatically.
 
 ## Event Contract
 

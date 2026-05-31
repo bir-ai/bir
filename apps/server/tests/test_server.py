@@ -242,6 +242,44 @@ def test_rejects_bool_usage_value(tmp_path: Path) -> None:
     assert not event_store_path.exists()
 
 
+def test_accepts_generation_cost_with_default_currency(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+
+    response = client.post(
+        "/v1/events",
+        json=make_event(
+            id="generation-1",
+            type="generation",
+            parent_id="trace-1",
+            cost={"input_cost": 0.000012, "output_cost": 0.000048, "total_cost": 0.00006},
+        ),
+    )
+
+    assert response.status_code == 201
+    events_response = client.get("/v1/events")
+    assert events_response.status_code == 200
+    event = events_response.json()[0]
+    assert event["cost"] == {"input_cost": 0.000012, "output_cost": 0.000048, "total_cost": 0.00006}
+    assert event["currency"] == "USD"
+
+
+def test_rejects_bool_cost_value(tmp_path: Path) -> None:
+    client, event_store_path = make_client(tmp_path)
+
+    response = client.post(
+        "/v1/events",
+        json=make_event(
+            id="generation-1",
+            type="generation",
+            parent_id="trace-1",
+            cost={"input_cost": True},
+        ),
+    )
+
+    assert response.status_code == 422
+    assert not event_store_path.exists()
+
+
 def test_lists_events(tmp_path: Path) -> None:
     client, _ = make_client(tmp_path)
 
@@ -305,6 +343,12 @@ def test_ingests_schema_contract_fixtures(tmp_path: Path) -> None:
     ]
     assert traces[0]["events"][3]["model"] == "demo-model"
     assert traces[0]["events"][3]["usage"] == {"input_tokens": 12, "output_tokens": 24, "total_tokens": 36}
+    assert traces[0]["events"][3]["cost"] == {
+        "input_cost": 0.000012,
+        "output_cost": 0.000048,
+        "total_cost": 0.00006,
+    }
+    assert traces[0]["events"][3]["currency"] == "USD"
     assert traces[0]["events"][4]["value"] == 0.82
 
 
@@ -323,6 +367,7 @@ def test_ingests_sdk_generated_events(tmp_path: Path) -> None:
             with generation("local.llm", model="demo", input={"question": question}) as gen:
                 gen.set_output("ok")
                 gen.set_usage(input_tokens=1, output_tokens=2)
+                gen.set_cost(input_cost=0.000001, output_cost=0.000002)
             score("helpfulness", 0.9)
             return "ok"
 

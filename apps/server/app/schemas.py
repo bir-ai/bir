@@ -30,6 +30,8 @@ class TraceEventPayload(BaseModel):
     value: int | float | None = None
     model: str | None = None
     usage: dict[str, int | float] | None = None
+    cost: dict[str, int | float] | None = None
+    currency: str | None = None
 
     @field_validator("value", mode="before")
     @classmethod
@@ -47,6 +49,15 @@ class TraceEventPayload(BaseModel):
             return usage
         return {key: _validate_number(value, f"usage.{key}") for key, value in usage.items()}
 
+    @field_validator("cost", mode="before")
+    @classmethod
+    def validate_cost(cls, cost: Any) -> Any:
+        if cost is None:
+            return None
+        if not isinstance(cost, dict):
+            return cost
+        return {key: _validate_number(value, f"cost.{key}") for key, value in cost.items()}
+
     @model_validator(mode="after")
     def validate_event_shape(self) -> TraceEventPayload:
         if self.end_time < self.start_time:
@@ -60,6 +71,8 @@ class TraceEventPayload(BaseModel):
             raise ValueError(f"{self.type} event requires parent_id")
         if self.type == "score" and self.value is None:
             raise ValueError("score event requires value")
+        if self.cost is not None and self.currency is None:
+            self.currency = "USD"
         _validate_json_value(self.metadata, "metadata")
         _validate_json_value(self.input, "input")
         _validate_json_value(self.output, "output")

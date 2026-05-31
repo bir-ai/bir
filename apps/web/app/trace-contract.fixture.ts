@@ -69,6 +69,8 @@ export const contractTraceResponseFixture = [
         error: null,
         model: "demo-model",
         usage: { input_tokens: 12, output_tokens: 24, total_tokens: 36 },
+        cost: { input_cost: 0.000012, output_cost: 0.000048, total_cost: 0.00006 },
+        currency: "USD",
       },
       {
         schema_version: "1.0",

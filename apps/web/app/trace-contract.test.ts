@@ -20,6 +20,9 @@ test("normalizes valid trace responses from the shared contract fixture", () => 
     traces[0].events.map((event) => event.type),
     ["trace", "span", "tool_call", "generation", "score"],
   );
+  const generationEvent = traces[0].events.find((event) => event.type === "generation");
+  assert.deepEqual(generationEvent?.cost, { input_cost: 0.000012, output_cost: 0.000048, total_cost: 0.00006 });
+  assert.equal(generationEvent?.currency, "USD");
 });
 
 test("ignores malformed trace responses without throwing", () => {

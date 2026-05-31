@@ -18,6 +18,8 @@ export type TraceEvent = {
   value?: number;
   model?: string | null;
   usage?: Record<string, number> | null;
+  cost?: Record<string, number> | null;
+  currency?: string | null;
 };
 
 export type Trace = {
