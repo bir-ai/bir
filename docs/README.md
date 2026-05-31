@@ -127,6 +127,29 @@ Recommended retrieval payload rules:
 The underlying event type remains `tool_call`, so the server and dashboard can
 continue using the same schema.
 
+## Prompt Version Metadata
+
+Attach prompt identity to generation events with `prompt()`:
+
+```python
+from bir import generation, prompt
+
+answer_prompt = prompt(
+    "answer_question",
+    version="v1",
+    template="Answer using this context: {context}",
+    variables={"context": "local context"},
+)
+
+with generation("local.llm", prompt=answer_prompt) as gen:
+    gen.set_output("ok")
+```
+
+By default, Bir stores the prompt name, version, and template hash in
+`metadata.prompt`. Template text, variables, and rendered prompt text remain
+opt-in through `capture_template=True`, `capture_variables=True`, and
+`capture_rendered=True`.
+
 ## Local Evaluation Experiments
 
 Use `bir.evals` for small deterministic checks before adding LLM-as-judge or

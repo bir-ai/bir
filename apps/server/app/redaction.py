@@ -52,7 +52,8 @@ def redact_secret_text(value: str) -> str:
     redacted = re.sub(
         (
             r"(?i)\b(access[_-]?key|api[_-]?key|apikey|auth|client[_-]?secret|credential|credentials|password|"
-            r"private[_-]?key|secret|token)(\s*[:=]\s*)(?!\[redacted\])[^\s,;\)\]\}]+"
+            r"private[_-]?key|secret|token)(\s*[:=]\s*)(?!\[redacted\])(?!\{[A-Za-z_][A-Za-z0-9_]*\})"
+            r"[^\s,;\)\]\}]+"
         ),
         _redact_labeled_secret_match,
         redacted,
