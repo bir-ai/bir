@@ -155,6 +155,9 @@ opt-in through `capture_template=True`, `capture_variables=True`, and
 Use `bir.evals` for small deterministic checks before adding LLM-as-judge or
 external evaluation services.
 
+For the detailed evaluator implementation plan, see
+`docs/EVALUATOR_IMPLEMENTATION_GUIDE.md`.
+
 ```python
 from bir.evals import Dataset, DatasetExample, contains, exact_match, run_experiment
 
