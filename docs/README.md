@@ -126,3 +126,48 @@ Recommended retrieval payload rules:
 
 The underlying event type remains `tool_call`, so the server and dashboard can
 continue using the same schema.
+
+## Local Evaluation Experiments
+
+Use `bir.evals` for small deterministic checks before adding LLM-as-judge or
+external evaluation services.
+
+```python
+from bir.evals import Dataset, DatasetExample, contains, exact_match, run_experiment
+
+
+dataset = Dataset(
+    [
+        DatasetExample(
+            id="q1",
+            input={"question": "What is Bir?"},
+            expected="observability",
+        )
+    ]
+)
+
+
+def answer_question(question: str) -> str:
+    return "Bir adds local observability to LLM apps."
+
+
+result = run_experiment(
+    "prompt-v1",
+    dataset=dataset,
+    task=answer_question,
+    evaluators=[contains(), exact_match("Bir adds local observability to LLM apps.")],
+)
+
+print(result.aggregate_scores)
+```
+
+Dataset JSONL rows use this shape:
+
+```json
+{"id":"q1","input":{"question":"What is Bir?"},"expected":"observability"}
+```
+
+`run_experiment()` writes one JSONL result per dataset example to
+`.bir/experiments/` unless a custom path is provided. Keep this layer
+deterministic for now; provider-backed LLM judges can come later after local
+evaluators are stable.
