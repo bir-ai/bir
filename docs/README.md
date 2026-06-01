@@ -159,7 +159,7 @@ For the detailed evaluator implementation plan, see
 `docs/EVALUATOR_IMPLEMENTATION_GUIDE.md`.
 
 ```python
-from bir.evals import Dataset, DatasetExample, contains, exact_match, run_experiment
+from bir.evals import Dataset, DatasetExample, contains, exact_match, list_experiments, load_experiment, run_experiment
 
 
 dataset = Dataset(
@@ -185,6 +185,8 @@ result = run_experiment(
 )
 
 print(result.aggregate_scores)
+print(load_experiment(result.path).status)
+print([summary.name for summary in list_experiments()])
 ```
 
 Dataset JSONL rows use this shape:
@@ -194,6 +196,9 @@ Dataset JSONL rows use this shape:
 ```
 
 `run_experiment()` writes one JSONL result per dataset example to
-`.bir/experiments/` unless a custom path is provided. Keep this layer
-deterministic for now; provider-backed LLM judges can come later after local
-evaluators are stable.
+`.bir/experiments/` unless a custom path is provided. It also writes a sibling
+`.summary.json` file containing the experiment id, status, example count, error
+count, aggregate scores, and result path. Use `load_experiment()` for result
+rows and `list_experiments()` for local summaries. Keep this layer deterministic
+for now; provider-backed LLM judges can come later after local evaluators are
+stable.
