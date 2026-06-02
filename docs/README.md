@@ -159,7 +159,7 @@ For the detailed evaluator implementation plan, see
 `docs/EVALUATOR_IMPLEMENTATION_GUIDE.md`.
 
 ```python
-from bir.evals import Dataset, DatasetExample, contains, exact_match, list_experiments, load_experiment, run_experiment
+from bir.evals import Dataset, DatasetExample, contains, exact_match, latency_under, list_experiments, load_experiment, run_experiment
 
 
 dataset = Dataset(
@@ -181,7 +181,11 @@ result = run_experiment(
     "prompt-v1",
     dataset=dataset,
     task=answer_question,
-    evaluators=[contains(), exact_match("Bir adds local observability to LLM apps.")],
+    evaluators=[
+        contains(),
+        exact_match("Bir adds local observability to LLM apps."),
+        latency_under(1000),
+    ],
 )
 
 print(result.aggregate_scores)
@@ -202,3 +206,20 @@ count, aggregate scores, and result path. Use `load_experiment()` for result
 rows and `list_experiments()` for local summaries. Keep this layer deterministic
 for now; provider-backed LLM judges can come later after local evaluators are
 stable.
+
+Use threshold evaluators for local operational gates:
+
+```python
+from bir.evals import cost_under, latency_under, numeric_between
+
+evaluators = [
+    latency_under(1000),
+    cost_under(0.05),
+    numeric_between(min_value=0.0, max_value=1.0),
+]
+```
+
+`latency_under()` uses the measured task duration in `run_experiment()`.
+`cost_under()` reads explicit user-provided cost fields from task output, either
+as `{"total_cost": 0.01}` or `{"cost": {"total_cost": 0.01}}`; Bir does not
+calculate provider pricing. `numeric_between()` evaluates numeric task outputs.
