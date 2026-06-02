@@ -222,4 +222,21 @@ evaluators = [
 `latency_under()` uses the measured task duration in `run_experiment()`.
 `cost_under()` reads explicit user-provided cost fields from task output, either
 as `{"total_cost": 0.01}` or `{"cost": {"total_cost": 0.01}}`; Bir does not
-calculate provider pricing. `numeric_between()` evaluates numeric task outputs.
+calculate provider pricing. `numeric_between()` evaluates numeric task outputs,
+or a numeric field when `field=` is provided.
+
+Use structured output evaluators for JSON-like task results:
+
+```python
+from bir.evals import field_contains, field_equals, numeric_between
+
+evaluators = [
+    field_contains("answer", "observability"),
+    field_equals("citations[0].id", "doc-1"),
+    numeric_between(min_value=0.7, max_value=1.0, field="confidence"),
+]
+```
+
+Field paths support dot paths and list indexes, such as `answer`,
+`usage.total_tokens`, and `items[0].name`. Missing paths produce a `0.0` score
+with failure metadata instead of failing the experiment.
