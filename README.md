@@ -84,3 +84,15 @@ npm run dev
 ```
 
 Open `http://localhost:3000` to inspect traces.
+
+## License
+
+Bir is source-available under the Functional Source License 1.1 with Apache 2.0
+as the future license (`FSL-1.1-ALv2`). You may use it for permitted purposes
+such as internal use, non-commercial education, non-commercial research, and
+professional services for licensees. You may not use it to offer a competing
+commercial product or service with the same or substantially similar
+functionality.
+
+Each version becomes available under Apache License 2.0 two years after it is
+made available. FSL is not an OSI-approved open source license.
