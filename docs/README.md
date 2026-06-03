@@ -240,3 +240,26 @@ evaluators = [
 Field paths support dot paths and list indexes, such as `answer`,
 `usage.total_tokens`, and `items[0].name`. Missing paths produce a `0.0` score
 with failure metadata instead of failing the experiment.
+
+Use `custom_evaluator()` for local checks that are specific to your task:
+
+```python
+from bir.evals import EvalResult, custom_evaluator
+
+has_citation = custom_evaluator(
+    "has_citation",
+    lambda output, expected: "[1]" in str(output),
+)
+
+debuggable = custom_evaluator(
+    "debuggable",
+    lambda output, expected: EvalResult(
+        name="debuggable",
+        value=1.0,
+        metadata={"expected": expected},
+    ),
+)
+```
+
+Custom evaluators may return `bool`, `int`, `float`, or `EvalResult`. Exceptions
+from custom evaluator functions surface normally during development.
