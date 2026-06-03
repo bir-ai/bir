@@ -119,6 +119,8 @@ Recommended retrieval payload rules:
   enabled.
 - Each document should include `id` when available, plus optional `rank`,
   `score`, `source`, `text`, and `metadata`.
+- `rank` must be a non-negative integer, and `score` must be a non-negative
+  finite number.
 - Keep document text/snippets opt-in because retrieved context can contain
   sensitive user or business data.
 - Do not add vector database integrations or provider-specific dependencies in

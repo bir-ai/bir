@@ -49,7 +49,7 @@ class TraceEventPayload(BaseModel):
             return None
         if not isinstance(usage, dict):
             return usage
-        return {key: _validate_number(value, f"usage.{key}") for key, value in usage.items()}
+        return {key: _validate_non_negative_number(value, f"usage.{key}") for key, value in usage.items()}
 
     @field_validator("cost", mode="before")
     @classmethod
@@ -58,7 +58,7 @@ class TraceEventPayload(BaseModel):
             return None
         if not isinstance(cost, dict):
             return cost
-        return {key: _validate_number(value, f"cost.{key}") for key, value in cost.items()}
+        return {key: _validate_non_negative_number(value, f"cost.{key}") for key, value in cost.items()}
 
     @model_validator(mode="after")
     def validate_event_shape(self) -> TraceEventPayload:
@@ -75,6 +75,7 @@ class TraceEventPayload(BaseModel):
             raise ValueError("score event requires value")
         if self.cost is not None and self.currency is None:
             self.currency = "USD"
+        _validate_retrieval_document_numbers(self.type, self.metadata, self.output)
         _validate_json_value(self.metadata, "metadata")
         _validate_json_value(self.input, "input")
         _validate_json_value(self.output, "output")
@@ -198,6 +199,38 @@ def _validate_number(value: Any, field: str) -> int | float:
     if isinstance(value, float) and not math.isfinite(value):
         raise ValueError(f"{field} must be finite")
     return value
+
+
+def _validate_non_negative_number(value: Any, field: str) -> int | float:
+    numeric_value = _validate_number(value, field)
+    if numeric_value < 0:
+        raise ValueError(f"{field} must be non-negative")
+    return numeric_value
+
+
+def _validate_non_negative_int(value: Any, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field} must be an int")
+    if value < 0:
+        raise ValueError(f"{field} must be non-negative")
+    return value
+
+
+def _validate_retrieval_document_numbers(event_type: str, metadata: dict[str, Any], output: Any) -> None:
+    if event_type != "tool_call" or metadata.get("kind") != "retrieval":
+        return
+    if not isinstance(output, dict):
+        return
+    documents = output.get("documents")
+    if not isinstance(documents, list):
+        return
+    for index, document in enumerate(documents):
+        if not isinstance(document, dict):
+            continue
+        if document.get("rank") is not None:
+            _validate_non_negative_int(document["rank"], f"output.documents[{index}].rank")
+        if document.get("score") is not None:
+            _validate_non_negative_number(document["score"], f"output.documents[{index}].score")
 
 
 def _validate_json_value(value: Any, field: str) -> None:

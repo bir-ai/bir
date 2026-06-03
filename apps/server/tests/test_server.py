@@ -14,9 +14,10 @@ CONTRACT_EVENTS_PATH = ROOT / "tests" / "fixtures" / "valid-events.jsonl"
 CONTRACT_SCHEMA_PATH = ROOT / "tests" / "fixtures" / "event-schema-v1.json"
 
 from bir import configure, generation, load_traces, observe, retrieval, score, span
-from bir._sdk import _reset_config_for_tests
+from bir._sdk import _reset_config_for_tests, _safe_capture, _safe_error
 
 from app.main import create_app
+from app.redaction import redact_secret_text, redact_value
 from app.schemas import TraceEventPayload
 from app.storage import JsonlEventStore
 
@@ -228,6 +229,32 @@ def test_rejects_invalid_experiment_result_with_controlled_error(tmp_path: Path)
     assert "Invalid experiment result" in response.json()["detail"]
 
 
+def test_rejects_absolute_experiment_result_path_with_controlled_error(tmp_path: Path) -> None:
+    client, experiment_store_path = make_client_with_experiments(tmp_path)
+    experiment_store_path.mkdir(parents=True, exist_ok=True)
+    summary = make_experiment_summary(result_path=str(tmp_path / "outside.jsonl"))
+    summary_path = experiment_store_path / f"{summary['name']}-{summary['experiment_id']}.summary.json"
+    summary_path.write_text(json.dumps(summary, sort_keys=True) + "\n", encoding="utf-8")
+
+    response = client.get("/v1/experiments/experiment-1")
+
+    assert response.status_code == 500
+    assert "result_path" in response.json()["detail"]
+
+
+def test_rejects_experiment_result_path_traversal_with_controlled_error(tmp_path: Path) -> None:
+    client, experiment_store_path = make_client_with_experiments(tmp_path)
+    experiment_store_path.mkdir(parents=True, exist_ok=True)
+    summary = make_experiment_summary(result_path="../outside.jsonl")
+    summary_path = experiment_store_path / f"{summary['name']}-{summary['experiment_id']}.summary.json"
+    summary_path.write_text(json.dumps(summary, sort_keys=True) + "\n", encoding="utf-8")
+
+    response = client.get("/v1/experiments/experiment-1")
+
+    assert response.status_code == 500
+    assert "result_path" in response.json()["detail"]
+
+
 def test_ingests_valid_event_to_jsonl(tmp_path: Path) -> None:
     client, event_store_path = make_client(tmp_path)
 
@@ -318,6 +345,23 @@ def test_list_endpoints_return_redacted_events(tmp_path: Path) -> None:
     assert events_response.json()[0]["output"] == {"text": "api_key=[redacted]"}
     assert traces_response.json()[0]["events"][0]["input"] == {"authorization": "[redacted]"}
     assert traces_response.json()[0]["events"][0]["output"] == {"text": "api_key=[redacted]"}
+
+
+def test_sdk_and_server_redaction_match_for_common_secret_shapes() -> None:
+    payload = {
+        "api_key": "sk-inputsecret",
+        "headers": ["Authorization: Bearer message-secret"],
+        "nested": {
+            "client_secret": "metadata-client-secret",
+            "note": "token=response-token",
+        },
+    }
+    error = RuntimeError("provider failed authorization: Bearer error-secret")
+
+    assert _safe_capture(payload) == redact_value(payload)
+    assert _safe_error(error) == redact_secret_text(str(error))
+    assert "inputsecret" not in str(_safe_capture(payload))
+    assert "error-secret" not in _safe_error(error)
 
 
 def test_server_event_contract_matches_schema_artifact() -> None:
@@ -483,6 +527,23 @@ def test_rejects_bool_usage_value(tmp_path: Path) -> None:
     assert not event_store_path.exists()
 
 
+def test_rejects_negative_usage_value(tmp_path: Path) -> None:
+    client, event_store_path = make_client(tmp_path)
+
+    response = client.post(
+        "/v1/events",
+        json=make_event(
+            id="generation-1",
+            type="generation",
+            parent_id="trace-1",
+            usage={"input_tokens": -1},
+        ),
+    )
+
+    assert response.status_code == 422
+    assert not event_store_path.exists()
+
+
 def test_accepts_generation_cost_with_default_currency(tmp_path: Path) -> None:
     client, _ = make_client(tmp_path)
 
@@ -518,6 +579,63 @@ def test_rejects_bool_cost_value(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 422
+    assert not event_store_path.exists()
+
+
+def test_rejects_negative_cost_value(tmp_path: Path) -> None:
+    client, event_store_path = make_client(tmp_path)
+
+    response = client.post(
+        "/v1/events",
+        json=make_event(
+            id="generation-1",
+            type="generation",
+            parent_id="trace-1",
+            cost={"input_cost": -0.01},
+        ),
+    )
+
+    assert response.status_code == 422
+    assert not event_store_path.exists()
+
+
+def test_rejects_invalid_retrieval_document_numeric_fields(tmp_path: Path) -> None:
+    client, event_store_path = make_client(tmp_path)
+
+    negative_rank = client.post(
+        "/v1/events",
+        json=make_event(
+            id="tool-1",
+            type="tool_call",
+            parent_id="trace-1",
+            metadata={"kind": "retrieval"},
+            output={"documents": [{"id": "doc-1", "rank": -1}]},
+        ),
+    )
+    bool_rank = client.post(
+        "/v1/events",
+        json=make_event(
+            id="tool-2",
+            type="tool_call",
+            parent_id="trace-1",
+            metadata={"kind": "retrieval"},
+            output={"documents": [{"id": "doc-1", "rank": True}]},
+        ),
+    )
+    negative_score = client.post(
+        "/v1/events",
+        json=make_event(
+            id="tool-3",
+            type="tool_call",
+            parent_id="trace-1",
+            metadata={"kind": "retrieval"},
+            output={"documents": [{"id": "doc-1", "score": -0.1}]},
+        ),
+    )
+
+    assert negative_rank.status_code == 422
+    assert bool_rank.status_code == 422
+    assert negative_score.status_code == 422
     assert not event_store_path.exists()
 
 

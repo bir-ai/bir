@@ -93,10 +93,15 @@ class JsonlExperimentStore:
     def _resolve_result_path(self, result_path: str) -> Path:
         path = Path(result_path)
         if path.is_absolute():
-            return path
-        if path.exists():
-            return path
-        return self.directory / path.name
+            raise ValueError("Experiment result_path must be relative to the experiment store")
+
+        store_directory = self.directory.resolve(strict=False)
+        candidate = (store_directory / path).resolve(strict=False)
+        try:
+            candidate.relative_to(store_directory)
+        except ValueError as exc:
+            raise ValueError("Experiment result_path must stay within the experiment store") from exc
+        return candidate
 
 
 def _validate_experiment_row_metadata(

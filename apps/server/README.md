@@ -29,6 +29,10 @@ export BIR_EXPERIMENT_STORE=tmp/experiments
 Ingesting an event with an ID that is already present is idempotent: the server
 returns `accepted: 0` and does not append a duplicate row.
 
+Generation token usage and cost values must be non-negative finite numbers.
+Retrieval document `rank` values must be non-negative integers, and retrieval
+document `score` values must be non-negative finite numbers.
+
 Before accepted events are written, the server applies best-effort redaction to
 common secret-like keys and text patterns in event metadata, input, output,
 error, and extra payload fields. Capture should still stay opt-in because
