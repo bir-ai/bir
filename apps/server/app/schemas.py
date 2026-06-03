@@ -110,6 +110,88 @@ class LoadedTrace(BaseModel):
     events: list[TraceEventPayload]
 
 
+class EvalScorePayload(BaseModel):
+    name: str = Field(min_length=1)
+    value: int | float
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def validate_value(cls, value: Any) -> int | float:
+        return _validate_number(value, "value")
+
+    @model_validator(mode="after")
+    def validate_score_shape(self) -> EvalScorePayload:
+        _validate_json_value(self.metadata, "metadata")
+        self.metadata = redact_value(self.metadata)
+        return self
+
+
+class ExperimentExampleResultPayload(BaseModel):
+    id: str = Field(min_length=1)
+    example_id: str = Field(min_length=1)
+    input: Any
+    expected: Any
+    output: Any
+    scores: list[EvalScorePayload]
+    start_time: datetime
+    end_time: datetime
+    duration_ms: int | float | None = None
+    status: EventStatus
+    error: str | None
+
+    @field_validator("duration_ms", mode="before")
+    @classmethod
+    def validate_duration(cls, value: Any) -> int | float | None:
+        if value is None:
+            return None
+        return _validate_number(value, "duration_ms")
+
+    @model_validator(mode="after")
+    def validate_result_shape(self) -> ExperimentExampleResultPayload:
+        if self.end_time < self.start_time:
+            raise ValueError("end_time must be greater than or equal to start_time")
+        _validate_json_value(self.input, "input")
+        _validate_json_value(self.expected, "expected")
+        _validate_json_value(self.output, "output")
+        self.input = redact_value(self.input)
+        self.expected = redact_value(self.expected)
+        self.output = redact_value(self.output)
+        if self.error is not None:
+            self.error = redact_secret_text(self.error)
+        return self
+
+
+class ExperimentSummaryPayload(BaseModel):
+    schema_version: Literal["1.0"]
+    experiment_id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    start_time: datetime
+    end_time: datetime
+    status: EventStatus
+    example_count: int = Field(ge=0)
+    error_count: int = Field(ge=0)
+    aggregate_scores: dict[str, int | float]
+    result_path: str = Field(min_length=1)
+
+    @field_validator("aggregate_scores", mode="before")
+    @classmethod
+    def validate_aggregate_scores(cls, scores: Any) -> Any:
+        if not isinstance(scores, dict):
+            return scores
+        return {key: _validate_number(value, f"aggregate_scores.{key}") for key, value in scores.items()}
+
+    @model_validator(mode="after")
+    def validate_summary_shape(self) -> ExperimentSummaryPayload:
+        if self.end_time < self.start_time:
+            raise ValueError("end_time must be greater than or equal to start_time")
+        return self
+
+
+class LoadedExperiment(ExperimentSummaryPayload):
+    results: list[ExperimentExampleResultPayload]
+
+
 def _validate_number(value: Any, field: str) -> int | float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{field} must be an int or float")

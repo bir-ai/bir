@@ -10,6 +10,7 @@ import {
   type Trace,
   type TraceEvent,
 } from "./trace-contract";
+import { normalizeExperiment, normalizeExperimentSummaries } from "./experiment-contract";
 
 const contractTraceResponseFixture = loadSharedContractTraceResponse();
 const [contractTrace] = normalizeTraces(contractTraceResponseFixture);
@@ -128,6 +129,43 @@ test("marks events whose parent is missing as orphan timeline rows", () => {
   assert.equal(orphanRow.isOrphan, true);
 });
 
+test("normalizes valid experiment summary responses newest first", () => {
+  const summaries = normalizeExperimentSummaries([
+    makeExperimentSummary({ experiment_id: "experiment-1", start_time: "2026-01-01T00:00:00+00:00" }),
+    makeExperimentSummary({ experiment_id: "experiment-2", start_time: "2026-01-02T00:00:00+00:00" }),
+  ]);
+
+  assert.deepEqual(
+    summaries.map((summary) => summary.experiment_id),
+    ["experiment-2", "experiment-1"],
+  );
+  assert.deepEqual(summaries[0].aggregate_scores, { contains: 1 });
+});
+
+test("normalizes valid experiment detail responses", () => {
+  const experiment = normalizeExperiment({
+    ...makeExperimentSummary(),
+    results: [makeExperimentResult()],
+  });
+
+  assert.ok(experiment);
+  assert.equal(experiment.experiment_id, "experiment-1");
+  assert.equal(experiment.results[0].example_id, "q1");
+  assert.deepEqual(experiment.results[0].scores, [{ name: "contains", value: 1, metadata: { expected: "observability" } }]);
+});
+
+test("rejects malformed experiment responses without throwing", () => {
+  const malformedSummary = makeExperimentSummary({ aggregate_scores: { contains: true } });
+  const malformedDetail = {
+    ...makeExperimentSummary(),
+    results: [{ ...makeExperimentResult(), scores: [{ name: "contains", value: true, metadata: {} }] }],
+  };
+
+  assert.deepEqual(normalizeExperimentSummaries([malformedSummary, makeExperimentSummary()]), [makeExperimentSummary()]);
+  assert.equal(normalizeExperiment(malformedDetail), null);
+  assert.equal(normalizeExperiment(null), null);
+});
+
 function loadSharedContractTraceResponse(): unknown[] {
   const fixturePath = path.resolve(process.cwd(), "../../tests/fixtures/valid-events.jsonl");
   const events = readFileSync(fixturePath, "utf-8")
@@ -151,6 +189,39 @@ function loadSharedContractTraceResponse(): unknown[] {
       events,
     },
   ];
+}
+
+function makeExperimentSummary(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    schema_version: "1.0",
+    experiment_id: "experiment-1",
+    name: "prompt-v1",
+    start_time: "2026-01-01T00:00:00+00:00",
+    end_time: "2026-01-01T00:00:01+00:00",
+    status: "success",
+    example_count: 1,
+    error_count: 0,
+    aggregate_scores: { contains: 1 },
+    result_path: "prompt-v1-experiment-1.jsonl",
+    ...overrides,
+  };
+}
+
+function makeExperimentResult(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "result-1",
+    example_id: "q1",
+    input: { question: "What is Bir?" },
+    expected: "An observability SDK",
+    output: "Bir is an observability SDK.",
+    scores: [{ name: "contains", value: 1, metadata: { expected: "observability" } }],
+    start_time: "2026-01-01T00:00:00+00:00",
+    end_time: "2026-01-01T00:00:01+00:00",
+    duration_ms: 1000,
+    status: "success",
+    error: null,
+    ...overrides,
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

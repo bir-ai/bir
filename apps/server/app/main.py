@@ -8,15 +8,29 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from .schemas import HealthResponse, IngestEventResponse, LoadedTrace, TraceEventPayload
+from .experiments import JsonlExperimentStore
+from .schemas import (
+    ExperimentSummaryPayload,
+    HealthResponse,
+    IngestEventResponse,
+    LoadedExperiment,
+    LoadedTrace,
+    TraceEventPayload,
+)
 from .storage import JsonlEventStore
 
 DEFAULT_EVENT_STORE_PATH = Path(".bir/server-events.jsonl")
+DEFAULT_EXPERIMENT_STORE_PATH = Path(".bir/experiments")
 
 
-def create_app(*, event_store_path: str | Path | None = None) -> FastAPI:
+def create_app(
+    *,
+    event_store_path: str | Path | None = None,
+    experiment_store_path: str | Path | None = None,
+) -> FastAPI:
     app = FastAPI(title="Bir Ingestion Server", version="0.1.0")
     app.state.event_store = JsonlEventStore(event_store_path or _event_store_path_from_env())
+    app.state.experiment_store = JsonlExperimentStore(experiment_store_path or _experiment_store_path_from_env())
 
     @app.exception_handler(RequestValidationError)
     def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -52,6 +66,25 @@ def create_app(*, event_store_path: str | Path | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Trace not found")
         return trace
 
+    @app.get("/v1/experiments", response_model=list[ExperimentSummaryPayload])
+    def list_experiments(request: Request) -> list[ExperimentSummaryPayload]:
+        store = _get_experiment_store(request)
+        try:
+            return store.list_experiments()
+        except ValueError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.get("/v1/experiments/{experiment_id}", response_model=LoadedExperiment)
+    def get_experiment(experiment_id: str, request: Request) -> LoadedExperiment:
+        store = _get_experiment_store(request)
+        try:
+            experiment = store.load_experiment(experiment_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        if experiment is None:
+            raise HTTPException(status_code=404, detail="Experiment not found")
+        return experiment
+
     return app
 
 
@@ -62,10 +95,24 @@ def _event_store_path_from_env() -> Path:
     return DEFAULT_EVENT_STORE_PATH
 
 
+def _experiment_store_path_from_env() -> Path:
+    configured_path = os.environ.get("BIR_EXPERIMENT_STORE")
+    if configured_path:
+        return Path(configured_path)
+    return DEFAULT_EXPERIMENT_STORE_PATH
+
+
 def _get_event_store(request: Request) -> JsonlEventStore:
     store = request.app.state.event_store
     if not isinstance(store, JsonlEventStore):
         raise RuntimeError("Bir event store is not configured")
+    return store
+
+
+def _get_experiment_store(request: Request) -> JsonlExperimentStore:
+    store = request.app.state.experiment_store
+    if not isinstance(store, JsonlExperimentStore):
+        raise RuntimeError("Bir experiment store is not configured")
     return store
 
 

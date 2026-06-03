@@ -1,0 +1,114 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from threading import Lock
+from typing import Any
+
+from pydantic import ValidationError
+
+from .schemas import ExperimentExampleResultPayload, ExperimentSummaryPayload, LoadedExperiment
+
+
+class JsonlExperimentStore:
+    def __init__(self, directory: str | Path) -> None:
+        self.directory = Path(directory)
+        self._lock = Lock()
+
+    def list_experiments(self) -> list[ExperimentSummaryPayload]:
+        with self._lock:
+            if not self.directory.exists():
+                return []
+
+            summaries = [
+                self._load_summary(summary_path)
+                for summary_path in self.directory.glob("*.summary.json")
+                if summary_path.is_file()
+            ]
+            return sorted(summaries, key=lambda summary: (summary.start_time, summary.experiment_id), reverse=True)
+
+    def load_experiment(self, experiment_id: str) -> LoadedExperiment | None:
+        with self._lock:
+            summary_path = self._summary_path_for_experiment(experiment_id)
+            if summary_path is None:
+                return None
+
+            summary = self._load_summary(summary_path)
+            result_path = self._resolve_result_path(summary.result_path)
+            results = self._load_results(result_path, summary.experiment_id, summary.name)
+            return LoadedExperiment(**summary.model_dump(mode="python"), results=results)
+
+    def _summary_path_for_experiment(self, experiment_id: str) -> Path | None:
+        if not self.directory.exists():
+            return None
+
+        for summary_path in self.directory.glob("*.summary.json"):
+            if not summary_path.is_file():
+                continue
+            summary = self._load_summary(summary_path)
+            if summary.experiment_id == experiment_id:
+                return summary_path
+        return None
+
+    def _load_summary(self, path: Path) -> ExperimentSummaryPayload:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid JSON in experiment summary {path}") from exc
+        if not isinstance(payload, dict):
+            raise ValueError(f"Experiment summary {path} must contain a JSON object")
+        try:
+            return ExperimentSummaryPayload.model_validate(payload)
+        except ValidationError as exc:
+            raise ValueError(f"Invalid experiment summary {path}") from exc
+
+    def _load_results(
+        self,
+        path: Path,
+        experiment_id: str,
+        experiment_name: str,
+    ) -> list[ExperimentExampleResultPayload]:
+        if not path.exists():
+            raise ValueError(f"Experiment result file {path} does not exist")
+
+        results: list[ExperimentExampleResultPayload] = []
+        with path.open("r", encoding="utf-8") as result_file:
+            for line_number, line in enumerate(result_file, start=1):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    payload = json.loads(stripped)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"Invalid JSON in experiment {path} at line {line_number}") from exc
+                if not isinstance(payload, dict):
+                    raise ValueError(f"Experiment {path} line {line_number} must contain a JSON object")
+                _validate_experiment_row_metadata(payload, path, line_number, experiment_id, experiment_name)
+                try:
+                    results.append(ExperimentExampleResultPayload.model_validate(payload))
+                except ValidationError as exc:
+                    raise ValueError(f"Invalid experiment result in {path} at line {line_number}") from exc
+        return results
+
+    def _resolve_result_path(self, result_path: str) -> Path:
+        path = Path(result_path)
+        if path.is_absolute():
+            return path
+        if path.exists():
+            return path
+        return self.directory / path.name
+
+
+def _validate_experiment_row_metadata(
+    payload: dict[str, Any],
+    path: Path,
+    line_number: int,
+    experiment_id: str,
+    experiment_name: str,
+) -> None:
+    row_experiment_id = payload.get("experiment_id")
+    row_experiment_name = payload.get("experiment_name")
+    if row_experiment_id != experiment_id:
+        raise ValueError(f"Experiment {path} line {line_number} contains a different experiment_id")
+    if row_experiment_name != experiment_name:
+        raise ValueError(f"Experiment {path} line {line_number} contains a different experiment_name")

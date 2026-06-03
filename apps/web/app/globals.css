@@ -72,6 +72,38 @@ button {
   backdrop-filter: blur(10px);
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.view-tabs {
+  display: inline-flex;
+  gap: 4px;
+  min-height: 42px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgb(39, 40, 43);
+}
+
+.view-tabs button {
+  min-width: 112px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.view-tabs button.active,
+.view-tabs button:hover {
+  background: rgb(50, 53, 58);
+  color: var(--text);
+}
+
 .eyebrow {
   margin: 0 0 4px;
   color: var(--blue);
@@ -380,6 +412,35 @@ h3 {
 
 .timeline {
   padding: 12px 18px 20px;
+}
+
+.experiment-detail {
+  display: grid;
+  gap: 12px;
+  padding: 12px 18px 20px;
+}
+
+.score-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 46px;
+  align-items: center;
+  padding: 10px;
+  border-bottom: 1px solid rgba(67, 70, 75, 0.72);
+}
+
+.experiment-results {
+  display: grid;
+  gap: 10px;
+}
+
+.experiment-result {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(67, 70, 75, 0.74);
+  border-radius: 8px;
+  background: rgba(45, 47, 51, 0.5);
 }
 
 .event-row {
@@ -713,6 +774,21 @@ h3 {
   .topbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .view-tabs {
+    width: 100%;
+  }
+
+  .view-tabs button {
+    flex: 1;
+    min-width: 0;
   }
 
   .refresh-button {

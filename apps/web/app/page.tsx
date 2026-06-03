@@ -2,7 +2,15 @@
 
 import Image from "next/image";
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  normalizeExperiment,
+  normalizeExperimentSummaries,
+  type ExperimentExampleResult,
+  type ExperimentStatus,
+  type ExperimentSummary,
+  type LoadedExperiment,
+} from "./experiment-contract";
 import {
   buildTraceTimelineRows,
   getRetrievalDetails,
@@ -14,14 +22,30 @@ import {
   type TraceTimelineRow,
 } from "./trace-contract";
 
-type ApiResponse = {
+type ViewMode = "traces" | "experiments";
+
+type TraceApiResponse = {
   traces?: unknown;
   apiBaseUrl?: string;
   error?: string;
   detail?: unknown;
 };
 
-const statusLabels: Record<EventStatus, string> = {
+type ExperimentListApiResponse = {
+  experiments?: unknown;
+  apiBaseUrl?: string;
+  error?: string;
+  detail?: unknown;
+};
+
+type ExperimentDetailApiResponse = {
+  experiment?: unknown;
+  apiBaseUrl?: string;
+  error?: string;
+  detail?: unknown;
+};
+
+const statusLabels: Record<EventStatus | ExperimentStatus, string> = {
   success: "Success",
   error: "Error",
 };
@@ -35,24 +59,31 @@ const typeLabels: Record<EventType, string> = {
 };
 
 export default function DashboardPage() {
+  const [activeView, setActiveView] = useState<ViewMode>("traces");
   const [traces, setTraces] = useState<Trace[]>([]);
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
+  const [experiments, setExperiments] = useState<ExperimentSummary[]>([]);
+  const [selectedExperimentId, setSelectedExperimentId] = useState<string | null>(null);
+  const [selectedExperiment, setSelectedExperiment] = useState<LoadedExperiment | null>(null);
   const [apiBaseUrl, setApiBaseUrl] = useState("http://127.0.0.1:8000");
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [isTraceLoading, setIsTraceLoading] = useState(true);
+  const [isExperimentLoading, setIsExperimentLoading] = useState(true);
+  const [isExperimentDetailLoading, setIsExperimentDetailLoading] = useState(false);
+  const [traceError, setTraceError] = useState<string | null>(null);
+  const [experimentError, setExperimentError] = useState<string | null>(null);
 
-  async function loadTraces() {
-    setIsLoading(true);
-    setError(null);
+  const loadTraces = useCallback(async () => {
+    setIsTraceLoading(true);
+    setTraceError(null);
 
     try {
       const response = await fetch("/api/traces", { cache: "no-store" });
-      const payload = (await response.json()) as ApiResponse;
+      const payload = (await response.json()) as TraceApiResponse;
       if (typeof payload.apiBaseUrl === "string") {
         setApiBaseUrl(payload.apiBaseUrl);
       }
       if (!response.ok) {
-        setError(payload.error ?? "Trace request failed");
+        setTraceError(payload.error ?? "Trace request failed");
         setTraces([]);
         setSelectedTraceId(null);
         return;
@@ -67,17 +98,87 @@ export default function DashboardPage() {
         return nextTraces[0]?.id ?? null;
       });
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Trace request failed");
+      setTraceError(requestError instanceof Error ? requestError.message : "Trace request failed");
       setTraces([]);
       setSelectedTraceId(null);
     } finally {
-      setIsLoading(false);
+      setIsTraceLoading(false);
     }
-  }
+  }, []);
+
+  const loadExperiments = useCallback(async () => {
+    setIsExperimentLoading(true);
+    setExperimentError(null);
+
+    try {
+      const response = await fetch("/api/experiments", { cache: "no-store" });
+      const payload = (await response.json()) as ExperimentListApiResponse;
+      if (typeof payload.apiBaseUrl === "string") {
+        setApiBaseUrl(payload.apiBaseUrl);
+      }
+      if (!response.ok) {
+        setExperimentError(payload.error ?? "Experiment request failed");
+        setExperiments([]);
+        setSelectedExperimentId(null);
+        setSelectedExperiment(null);
+        return;
+      }
+
+      const nextExperiments = normalizeExperimentSummaries(payload.experiments);
+      setExperiments(nextExperiments);
+      setSelectedExperimentId((current) => {
+        if (current && nextExperiments.some((experiment) => experiment.experiment_id === current)) {
+          return current;
+        }
+        return nextExperiments[0]?.experiment_id ?? null;
+      });
+    } catch (requestError) {
+      setExperimentError(requestError instanceof Error ? requestError.message : "Experiment request failed");
+      setExperiments([]);
+      setSelectedExperimentId(null);
+      setSelectedExperiment(null);
+    } finally {
+      setIsExperimentLoading(false);
+    }
+  }, []);
+
+  const loadExperimentDetail = useCallback(async (experimentId: string) => {
+    setIsExperimentDetailLoading(true);
+    setExperimentError(null);
+
+    try {
+      const response = await fetch(`/api/experiments/${encodeURIComponent(experimentId)}`, { cache: "no-store" });
+      const payload = (await response.json()) as ExperimentDetailApiResponse;
+      if (typeof payload.apiBaseUrl === "string") {
+        setApiBaseUrl(payload.apiBaseUrl);
+      }
+      if (!response.ok) {
+        setExperimentError(payload.error ?? "Experiment detail request failed");
+        setSelectedExperiment(null);
+        return;
+      }
+
+      setSelectedExperiment(normalizeExperiment(payload.experiment));
+    } catch (requestError) {
+      setExperimentError(requestError instanceof Error ? requestError.message : "Experiment detail request failed");
+      setSelectedExperiment(null);
+    } finally {
+      setIsExperimentDetailLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     void loadTraces();
-  }, []);
+    void loadExperiments();
+  }, [loadExperiments, loadTraces]);
+
+  useEffect(() => {
+    if (selectedExperimentId) {
+      void loadExperimentDetail(selectedExperimentId);
+      return;
+    }
+    setSelectedExperiment(null);
+  }, [loadExperimentDetail, selectedExperimentId]);
 
   const selectedTrace = useMemo(
     () => traces.find((trace) => trace.id === selectedTraceId) ?? traces[0] ?? null,
@@ -88,7 +189,7 @@ export default function DashboardPage() {
     [selectedTrace],
   );
 
-  const stats = useMemo(() => {
+  const traceStats = useMemo(() => {
     const eventCount = traces.reduce((total, trace) => total + trace.events.length, 0);
     const errorCount = traces.filter((trace) => trace.status === "error").length;
     const generationCount = traces.reduce(
@@ -98,6 +199,26 @@ export default function DashboardPage() {
     return { eventCount, errorCount, generationCount };
   }, [traces]);
 
+  const experimentStats = useMemo(() => {
+    const exampleCount = experiments.reduce((total, experiment) => total + experiment.example_count, 0);
+    const errorCount = experiments.reduce((total, experiment) => total + experiment.error_count, 0);
+    const scoreCount = experiments.reduce(
+      (total, experiment) => total + Object.keys(experiment.aggregate_scores).length,
+      0,
+    );
+    return { exampleCount, errorCount, scoreCount };
+  }, [experiments]);
+
+  const isActiveLoading =
+    activeView === "traces" ? isTraceLoading : isExperimentLoading || isExperimentDetailLoading;
+  const refreshActiveView = useCallback(() => {
+    if (activeView === "traces") {
+      void loadTraces();
+      return;
+    }
+    void loadExperiments();
+  }, [activeView, loadExperiments, loadTraces]);
+
   return (
     <main className="shell">
       <Image className="side-brand-mark" src="/bir_mark.png" alt="" width={109} height={1185} priority />
@@ -105,11 +226,82 @@ export default function DashboardPage() {
         <div className="brand-lockup" aria-label="bir">
           <h1>bir</h1>
         </div>
-        <button className="refresh-button" type="button" onClick={() => void loadTraces()} disabled={isLoading}>
-          {isLoading ? "Refreshing" : "Refresh"}
-        </button>
+        <div className="topbar-actions">
+          <div className="view-tabs" role="tablist" aria-label="Dashboard views">
+            <button
+              aria-selected={activeView === "traces"}
+              className={activeView === "traces" ? "active" : ""}
+              role="tab"
+              type="button"
+              onClick={() => setActiveView("traces")}
+            >
+              Traces
+            </button>
+            <button
+              aria-selected={activeView === "experiments"}
+              className={activeView === "experiments" ? "active" : ""}
+              role="tab"
+              type="button"
+              onClick={() => setActiveView("experiments")}
+            >
+              Experiments
+            </button>
+          </div>
+          <button className="refresh-button" type="button" onClick={refreshActiveView} disabled={isActiveLoading}>
+            {isActiveLoading ? "Refreshing" : "Refresh"}
+          </button>
+        </div>
       </header>
 
+      {activeView === "traces" ? (
+        <TraceDashboard
+          apiBaseUrl={apiBaseUrl}
+          error={traceError}
+          isLoading={isTraceLoading}
+          selectedTrace={selectedTrace}
+          setSelectedTraceId={setSelectedTraceId}
+          stats={traceStats}
+          timelineRows={timelineRows}
+          traces={traces}
+        />
+      ) : (
+        <ExperimentDashboard
+          apiBaseUrl={apiBaseUrl}
+          error={experimentError}
+          experiments={experiments}
+          isDetailLoading={isExperimentDetailLoading}
+          isLoading={isExperimentLoading}
+          selectedExperiment={selectedExperiment}
+          selectedExperimentId={selectedExperimentId}
+          setSelectedExperimentId={setSelectedExperimentId}
+          stats={experimentStats}
+        />
+      )}
+    </main>
+  );
+}
+
+function TraceDashboard({
+  apiBaseUrl,
+  error,
+  isLoading,
+  selectedTrace,
+  setSelectedTraceId,
+  stats,
+  timelineRows,
+  traces,
+}: {
+  apiBaseUrl: string;
+  error: string | null;
+  isLoading: boolean;
+  selectedTrace: Trace | null;
+  setSelectedTraceId: (traceId: string) => void;
+  stats: { eventCount: number; errorCount: number; generationCount: number };
+  timelineRows: TraceTimelineRow[];
+  traces: Trace[];
+}) {
+  return (
+    <>
       <section className="metric-strip" aria-label="Trace summary">
         <Metric label="Traces" value={traces.length.toString()} />
         <Metric label="Events" value={stats.eventCount.toString()} />
@@ -119,13 +311,7 @@ export default function DashboardPage() {
 
       <section className="workspace">
         <aside className="trace-list" aria-label="Traces">
-          <div className="panel-head">
-            <div>
-              <h2>Traces</h2>
-              <p>{apiBaseUrl}</p>
-            </div>
-          </div>
-
+          <PanelHead title="Traces" subtitle={apiBaseUrl} />
           {error ? <div className="state-box error-state">{error}</div> : null}
           {!error && !isLoading && traces.length === 0 ? <div className="state-box">No traces found.</div> : null}
           {isLoading && traces.length === 0 ? <TraceSkeleton /> : null}
@@ -178,7 +364,129 @@ export default function DashboardPage() {
           )}
         </section>
       </section>
-    </main>
+    </>
+  );
+}
+
+function ExperimentDashboard({
+  apiBaseUrl,
+  error,
+  experiments,
+  isDetailLoading,
+  isLoading,
+  selectedExperiment,
+  selectedExperimentId,
+  setSelectedExperimentId,
+  stats,
+}: {
+  apiBaseUrl: string;
+  error: string | null;
+  experiments: ExperimentSummary[];
+  isDetailLoading: boolean;
+  isLoading: boolean;
+  selectedExperiment: LoadedExperiment | null;
+  selectedExperimentId: string | null;
+  setSelectedExperimentId: (experimentId: string) => void;
+  stats: { exampleCount: number; errorCount: number; scoreCount: number };
+}) {
+  const selectedSummary = experiments.find((experiment) => experiment.experiment_id === selectedExperimentId) ?? null;
+  const detail = selectedExperiment ?? selectedSummary;
+
+  return (
+    <>
+      <section className="metric-strip" aria-label="Experiment summary">
+        <Metric label="Experiments" value={experiments.length.toString()} />
+        <Metric label="Examples" value={stats.exampleCount.toString()} />
+        <Metric label="Scores" value={stats.scoreCount.toString()} />
+        <Metric label="Errors" value={stats.errorCount.toString()} tone={stats.errorCount > 0 ? "bad" : "good"} />
+      </section>
+
+      <section className="workspace">
+        <aside className="trace-list" aria-label="Experiments">
+          <PanelHead title="Experiments" subtitle={apiBaseUrl} />
+          {error ? <div className="state-box error-state">{error}</div> : null}
+          {!error && !isLoading && experiments.length === 0 ? (
+            <div className="state-box">No experiments found.</div>
+          ) : null}
+          {isLoading && experiments.length === 0 ? <TraceSkeleton /> : null}
+
+          <div className="trace-items">
+            {experiments.map((experiment) => (
+              <button
+                className={experiment.experiment_id === selectedExperimentId ? "trace-row active" : "trace-row"}
+                key={experiment.experiment_id}
+                type="button"
+                onClick={() => setSelectedExperimentId(experiment.experiment_id)}
+              >
+                <span className={`status-dot ${experiment.status}`} aria-hidden="true" />
+                <span className="trace-row-main">
+                  <span className="trace-name">{experiment.name}</span>
+                  <span className="trace-meta">
+                    {experiment.example_count} examples · {formatAggregateScores(experiment.aggregate_scores)}
+                  </span>
+                </span>
+                <span className={`status-pill ${experiment.status}`}>{statusLabels[experiment.status]}</span>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <section className="detail-panel" aria-label="Experiment details">
+          {detail ? (
+            <>
+              <div className="detail-head">
+                <div>
+                  <p className="eyebrow">Experiment Detail</p>
+                  <h2>{detail.name}</h2>
+                  <p className="subtle">{detail.experiment_id}</p>
+                </div>
+                <div className="detail-facts">
+                  <Fact label="Status" value={statusLabels[detail.status]} tone={detail.status} />
+                  <Fact label="Duration" value={formatDuration(detail.start_time, detail.end_time)} />
+                  <Fact label="Started" value={formatDate(detail.start_time)} />
+                </div>
+              </div>
+
+              <div className="experiment-detail">
+                <section className="score-grid" aria-label="Aggregate scores">
+                  {Object.entries(detail.aggregate_scores).length > 0 ? (
+                    Object.entries(detail.aggregate_scores).map(([name, value]) => (
+                      <InlineField label={name} value={formatNumber(value)} key={name} />
+                    ))
+                  ) : (
+                    <span className="subtle">No aggregate scores.</span>
+                  )}
+                </section>
+
+                {isDetailLoading && !selectedExperiment ? <TraceSkeleton /> : null}
+                {selectedExperiment ? (
+                  <div className="experiment-results">
+                    {selectedExperiment.results.map((result) => (
+                      <ExperimentResultRow result={result} key={result.id} />
+                    ))}
+                  </div>
+                ) : !isDetailLoading ? (
+                  <div className="empty-detail">No experiment detail loaded.</div>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <div className="empty-detail">No experiment selected.</div>
+          )}
+        </section>
+      </section>
+    </>
+  );
+}
+
+function PanelHead({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <div className="panel-head">
+      <div>
+        <h2>{title}</h2>
+        <p>{subtitle}</p>
+      </div>
+    </div>
   );
 }
 
@@ -198,7 +506,7 @@ function Fact({
 }: {
   label: string;
   value: string;
-  tone?: EventStatus;
+  tone?: EventStatus | ExperimentStatus;
 }) {
   return (
     <div className={`fact ${tone ?? ""}`}>
@@ -258,6 +566,42 @@ function EventRow({ row }: { row: TraceTimelineRow }) {
           {hasOutput && !retrievalDetails ? <Payload title="Output" value={event.output} /> : null}
           {hasMetadata ? <Payload title="Metadata" value={event.metadata} /> : null}
         </div>
+      </div>
+    </article>
+  );
+}
+
+function ExperimentResultRow({ result }: { result: ExperimentExampleResult }) {
+  const hasInput = result.input !== null && result.input !== undefined;
+  const hasExpected = result.expected !== null && result.expected !== undefined;
+  const hasOutput = result.output !== null && result.output !== undefined;
+
+  return (
+    <article className="experiment-result">
+      <div className="event-title-line">
+        <div>
+          <span className="event-type">Example</span>
+          <h3>{result.example_id}</h3>
+        </div>
+        <div className="event-badges">
+          <span className={`status-pill ${result.status}`}>{statusLabels[result.status]}</span>
+          <span className="duration-pill">{formatDuration(result.start_time, result.end_time)}</span>
+        </div>
+      </div>
+
+      <div className="event-fields">
+        {result.scores.map((score) => (
+          <InlineField label={score.name} value={formatNumber(score.value)} key={score.name} />
+        ))}
+      </div>
+
+      {result.error ? <pre className="error-block">{result.error}</pre> : null}
+
+      <div className="payload-grid">
+        {hasInput ? <Payload title="Input" value={result.input} /> : null}
+        {hasExpected ? <Payload title="Expected" value={result.expected} /> : null}
+        {hasOutput ? <Payload title="Output" value={result.output} /> : null}
+        {result.scores.length > 0 ? <Payload title="Scores" value={result.scores} /> : null}
       </div>
     </article>
   );
@@ -383,6 +727,14 @@ function formatCost(cost: Record<string, number> | null | undefined, currency: s
   return Object.entries(cost)
     .map(([key, value]) => `${key}: ${formatNumber(value)}${suffix}`)
     .join(", ");
+}
+
+function formatAggregateScores(scores: Record<string, number>): string {
+  const entries = Object.entries(scores);
+  if (entries.length === 0) {
+    return "no scores";
+  }
+  return entries.map(([key, value]) => `${key}: ${formatNumber(value)}`).join(", ");
 }
 
 function formatNumber(value: number): string {

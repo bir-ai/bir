@@ -1,6 +1,7 @@
 # Bir Web Dashboard
 
-Minimal local dashboard for inspecting traces from the Bir FastAPI server.
+Minimal local dashboard for inspecting traces and experiments from the Bir
+FastAPI server.
 
 ## Development
 

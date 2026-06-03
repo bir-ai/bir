@@ -46,6 +46,63 @@ def make_client(tmp_path: Path) -> tuple[TestClient, Path]:
     return TestClient(create_app(event_store_path=event_store_path)), event_store_path
 
 
+def make_client_with_experiments(tmp_path: Path) -> tuple[TestClient, Path]:
+    event_store_path = tmp_path / "events.jsonl"
+    experiment_store_path = tmp_path / "experiments"
+    return (
+        TestClient(create_app(event_store_path=event_store_path, experiment_store_path=experiment_store_path)),
+        experiment_store_path,
+    )
+
+
+def make_experiment_summary(**overrides: object) -> dict[str, object]:
+    summary: dict[str, object] = {
+        "schema_version": "1.0",
+        "experiment_id": "experiment-1",
+        "name": "prompt-v1",
+        "start_time": "2026-01-01T00:00:00+00:00",
+        "end_time": "2026-01-01T00:00:01+00:00",
+        "status": "success",
+        "example_count": 1,
+        "error_count": 0,
+        "aggregate_scores": {"contains": 1.0},
+        "result_path": "prompt-v1-experiment-1.jsonl",
+    }
+    summary.update(overrides)
+    return summary
+
+
+def make_experiment_result(**overrides: object) -> dict[str, object]:
+    result: dict[str, object] = {
+        "experiment_id": "experiment-1",
+        "experiment_name": "prompt-v1",
+        "id": "result-1",
+        "example_id": "q1",
+        "input": {"question": "What is Bir?"},
+        "expected": "An observability SDK",
+        "output": "Bir is an observability SDK.",
+        "scores": [{"name": "contains", "value": 1.0, "metadata": {"expected": "observability"}}],
+        "start_time": "2026-01-01T00:00:00+00:00",
+        "end_time": "2026-01-01T00:00:01+00:00",
+        "duration_ms": 1000.0,
+        "status": "success",
+        "error": None,
+    }
+    result.update(overrides)
+    return result
+
+
+def write_experiment(experiment_store_path: Path, *, summary: dict[str, object], results: list[dict[str, object]]) -> None:
+    experiment_store_path.mkdir(parents=True, exist_ok=True)
+    result_path = experiment_store_path / str(summary["result_path"])
+    result_path.write_text(
+        "".join(json.dumps(result, sort_keys=True) + "\n" for result in results),
+        encoding="utf-8",
+    )
+    summary_path = experiment_store_path / f"{summary['name']}-{summary['experiment_id']}.summary.json"
+    summary_path.write_text(json.dumps(summary, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def load_contract_events() -> list[dict[str, object]]:
     return [json.loads(line) for line in CONTRACT_EVENTS_PATH.read_text(encoding="utf-8").splitlines()]
 
@@ -64,6 +121,111 @@ def test_health_returns_ok(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_list_experiments_returns_empty_list_for_missing_directory(tmp_path: Path) -> None:
+    client, _ = make_client_with_experiments(tmp_path)
+
+    response = client.get("/v1/experiments")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_lists_experiment_summaries_newest_first(tmp_path: Path) -> None:
+    client, experiment_store_path = make_client_with_experiments(tmp_path)
+    older = make_experiment_summary(
+        experiment_id="experiment-1",
+        name="prompt-v1",
+        start_time="2026-01-01T00:00:00+00:00",
+        end_time="2026-01-01T00:00:01+00:00",
+        result_path="prompt-v1-experiment-1.jsonl",
+    )
+    newer = make_experiment_summary(
+        experiment_id="experiment-2",
+        name="prompt-v2",
+        start_time="2026-01-02T00:00:00+00:00",
+        end_time="2026-01-02T00:00:01+00:00",
+        result_path="prompt-v2-experiment-2.jsonl",
+    )
+    write_experiment(experiment_store_path, summary=older, results=[make_experiment_result()])
+    write_experiment(
+        experiment_store_path,
+        summary=newer,
+        results=[
+            make_experiment_result(
+                experiment_id="experiment-2",
+                experiment_name="prompt-v2",
+                id="result-2",
+            )
+        ],
+    )
+
+    response = client.get("/v1/experiments")
+
+    assert response.status_code == 200
+    summaries = response.json()
+    assert [summary["experiment_id"] for summary in summaries] == ["experiment-2", "experiment-1"]
+    assert summaries[0]["aggregate_scores"] == {"contains": 1.0}
+
+
+def test_gets_experiment_detail_with_result_rows(tmp_path: Path) -> None:
+    client, experiment_store_path = make_client_with_experiments(tmp_path)
+    summary = make_experiment_summary()
+    result = make_experiment_result()
+    write_experiment(experiment_store_path, summary=summary, results=[result])
+
+    response = client.get("/v1/experiments/experiment-1")
+
+    assert response.status_code == 200
+    experiment = response.json()
+    assert experiment["experiment_id"] == "experiment-1"
+    assert experiment["name"] == "prompt-v1"
+    assert experiment["aggregate_scores"] == {"contains": 1.0}
+    assert len(experiment["results"]) == 1
+    assert experiment["results"][0]["example_id"] == "q1"
+    assert experiment["results"][0]["scores"] == [
+        {"name": "contains", "value": 1.0, "metadata": {"expected": "observability"}}
+    ]
+
+
+def test_get_experiment_returns_404_for_missing_experiment(tmp_path: Path) -> None:
+    client, experiment_store_path = make_client_with_experiments(tmp_path)
+    write_experiment(experiment_store_path, summary=make_experiment_summary(), results=[make_experiment_result()])
+
+    response = client.get("/v1/experiments/missing-experiment")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Experiment not found"}
+
+
+def test_rejects_invalid_experiment_summary_with_controlled_error(tmp_path: Path) -> None:
+    client, experiment_store_path = make_client_with_experiments(tmp_path)
+    experiment_store_path.mkdir(parents=True, exist_ok=True)
+    (experiment_store_path / "bad.summary.json").write_text(
+        json.dumps(make_experiment_summary(aggregate_scores={"contains": True})),
+        encoding="utf-8",
+    )
+
+    response = client.get("/v1/experiments")
+
+    assert response.status_code == 500
+    assert "Invalid experiment summary" in response.json()["detail"]
+
+
+def test_rejects_invalid_experiment_result_with_controlled_error(tmp_path: Path) -> None:
+    client, experiment_store_path = make_client_with_experiments(tmp_path)
+    summary = make_experiment_summary()
+    write_experiment(
+        experiment_store_path,
+        summary=summary,
+        results=[make_experiment_result(scores=[{"name": "contains", "value": True, "metadata": {}}])],
+    )
+
+    response = client.get("/v1/experiments/experiment-1")
+
+    assert response.status_code == 500
+    assert "Invalid experiment result" in response.json()["detail"]
 
 
 def test_ingests_valid_event_to_jsonl(tmp_path: Path) -> None:
