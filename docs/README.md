@@ -195,6 +195,28 @@ print(load_experiment(result.path).status)
 print([summary.name for summary in list_experiments()])
 ```
 
+To link experiment examples to local Bir traces, opt in with
+`record_traces=True`:
+
+```python
+result = run_experiment(
+    "prompt-v1",
+    dataset=dataset,
+    task=answer_question,
+    evaluators=[contains(), latency_under(1000)],
+    record_traces=True,
+)
+
+print(result.results[0].trace_id)
+```
+
+Bir writes one trace per dataset example and records evaluator results as score
+events on that trace. The trace metadata includes `kind="experiment"`,
+`experiment_id`, `experiment_name`, and `example_id`. Start the FastAPI server
+and dashboard, then open the dashboard's Traces view to inspect
+`experiment.<experiment_name>.<example_id>` traces alongside the experiment row
+`trace_id`.
+
 Dataset JSONL rows use this shape:
 
 ```json

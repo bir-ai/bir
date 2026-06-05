@@ -173,7 +173,7 @@ def test_lists_experiment_summaries_newest_first(tmp_path: Path) -> None:
 def test_gets_experiment_detail_with_result_rows(tmp_path: Path) -> None:
     client, experiment_store_path = make_client_with_experiments(tmp_path)
     summary = make_experiment_summary()
-    result = make_experiment_result()
+    result = make_experiment_result(trace_id="trace-1")
     write_experiment(experiment_store_path, summary=summary, results=[result])
 
     response = client.get("/v1/experiments/experiment-1")
@@ -185,6 +185,7 @@ def test_gets_experiment_detail_with_result_rows(tmp_path: Path) -> None:
     assert experiment["aggregate_scores"] == {"contains": 1.0}
     assert len(experiment["results"]) == 1
     assert experiment["results"][0]["example_id"] == "q1"
+    assert experiment["results"][0]["trace_id"] == "trace-1"
     assert experiment["results"][0]["scores"] == [
         {"name": "contains", "value": 1.0, "metadata": {"expected": "observability"}}
     ]

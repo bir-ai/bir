@@ -590,6 +590,7 @@ function ExperimentResultRow({ result }: { result: ExperimentExampleResult }) {
       </div>
 
       <div className="event-fields">
+        {result.trace_id ? <InlineField label="Trace" value={result.trace_id} /> : null}
         {result.scores.map((score) => (
           <InlineField label={score.name} value={formatNumber(score.value)} key={score.name} />
         ))}

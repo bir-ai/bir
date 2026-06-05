@@ -9,6 +9,7 @@ export type EvalScore = {
 export type ExperimentExampleResult = {
   id: string;
   example_id: string;
+  trace_id?: string | null;
   input: unknown;
   expected: unknown;
   output: unknown;
@@ -84,6 +85,7 @@ function isExperimentExampleResult(value: unknown): value is ExperimentExampleRe
   return (
     typeof value.id === "string" &&
     typeof value.example_id === "string" &&
+    (typeof value.trace_id === "string" || value.trace_id === null || value.trace_id === undefined) &&
     Array.isArray(value.scores) &&
     value.scores.every(isEvalScore) &&
     typeof value.start_time === "string" &&

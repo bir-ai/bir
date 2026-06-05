@@ -145,12 +145,13 @@ test("normalizes valid experiment summary responses newest first", () => {
 test("normalizes valid experiment detail responses", () => {
   const experiment = normalizeExperiment({
     ...makeExperimentSummary(),
-    results: [makeExperimentResult()],
+    results: [makeExperimentResult({ trace_id: "trace-1" })],
   });
 
   assert.ok(experiment);
   assert.equal(experiment.experiment_id, "experiment-1");
   assert.equal(experiment.results[0].example_id, "q1");
+  assert.equal(experiment.results[0].trace_id, "trace-1");
   assert.deepEqual(experiment.results[0].scores, [{ name: "contains", value: 1, metadata: { expected: "observability" } }]);
 });
 

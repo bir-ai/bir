@@ -131,6 +131,7 @@ class EvalScorePayload(BaseModel):
 class ExperimentExampleResultPayload(BaseModel):
     id: str = Field(min_length=1)
     example_id: str = Field(min_length=1)
+    trace_id: str | None = Field(default=None, min_length=1)
     input: Any
     expected: Any
     output: Any
