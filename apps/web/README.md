@@ -3,6 +3,15 @@
 Minimal local dashboard for inspecting traces and experiments from the Bir
 FastAPI server.
 
+Current views:
+
+- trace list with event counts, latency, status, and generation totals
+- trace detail timeline with spans, generations, retrieval tool calls, scores,
+  usage, cost, errors, metadata, input, and output when captured
+- experiment list with aggregate scores and error counts
+- experiment detail with per-example input, expected output, actual output,
+  scores, linked trace IDs, latency, and errors
+
 ## Development
 
 ```bash

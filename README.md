@@ -16,7 +16,8 @@ Current focus:
 - Local trace storage
 - Trace, span, generation, retrieval, tool call, and score recording
 - Safe opt-in input/output capture
-- FastAPI ingestion and a minimal local dashboard
+- Local datasets and deterministic experiment runs
+- FastAPI ingestion and a minimal local dashboard for traces and experiments
 
 ## Python SDK
 
@@ -94,6 +95,10 @@ from bir.evals import send_experiment
 
 send_experiment(".bir/experiments/prompt-v1-<experiment-id>.jsonl")
 ```
+
+When you want each dataset example to produce an inspectable trace, run the
+experiment with `record_traces=True`, send the local trace events with
+`send_events()`, and upload the experiment result with `send_experiment()`.
 
 ## License
 

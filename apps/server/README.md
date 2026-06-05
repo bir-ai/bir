@@ -56,6 +56,11 @@ from bir.evals import send_experiment
 send_experiment(".bir/experiments/prompt-v1-<experiment-id>.jsonl")
 ```
 
+Uploaded experiments are exposed as summary rows through `/v1/experiments` and
+as summary plus per-example result rows through
+`/v1/experiments/{experiment_id}`. Duplicate experiment uploads are idempotent
+and do not overwrite the existing stored artifact.
+
 ## Development
 
 ```bash
