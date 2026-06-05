@@ -58,6 +58,10 @@ export function normalizeTraces(value: unknown): Trace[] {
   return value.filter(isTrace).sort((a, b) => b.start_time.localeCompare(a.start_time));
 }
 
+export function findTraceById(traces: Trace[], traceId: string): Trace | null {
+  return traces.find((trace) => trace.id === traceId) ?? null;
+}
+
 export function getRetrievalDetails(event: TraceEvent): RetrievalDetails | null {
   if (event.type !== "tool_call" || event.metadata.kind !== "retrieval") {
     return null;

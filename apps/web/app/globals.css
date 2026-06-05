@@ -540,11 +540,39 @@ h3 {
   background: rgba(45, 47, 51, 0.72);
 }
 
+.inline-action {
+  min-height: 28px;
+  padding: 5px 9px;
+  border: 1px solid rgba(48, 106, 248, 0.56);
+  border-radius: 8px;
+  background: rgba(48, 106, 248, 0.16);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.inline-action:hover {
+  background: rgba(48, 106, 248, 0.32);
+  border-color: rgba(48, 106, 248, 0.78);
+}
+
 .inline-field strong {
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--text);
   font-size: 0.8rem;
+}
+
+.linked-trace-missing {
+  margin-top: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgba(242, 181, 55, 0.36);
+  border-radius: 8px;
+  background: rgba(242, 181, 55, 0.1);
+  color: var(--yellow);
+  font-size: 0.82rem;
+  line-height: 1.4;
 }
 
 .payload-grid {

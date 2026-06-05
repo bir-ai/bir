@@ -5,6 +5,7 @@ import test from "node:test";
 
 import {
   buildTraceTimelineRows,
+  findTraceById,
   getRetrievalDetails,
   normalizeTraces,
   type Trace,
@@ -145,14 +146,27 @@ test("normalizes valid experiment summary responses newest first", () => {
 test("normalizes valid experiment detail responses", () => {
   const experiment = normalizeExperiment({
     ...makeExperimentSummary(),
-    results: [makeExperimentResult({ trace_id: "trace-1" })],
+    results: [makeExperimentResult({ trace_id: contractTrace.id })],
   });
 
   assert.ok(experiment);
   assert.equal(experiment.experiment_id, "experiment-1");
   assert.equal(experiment.results[0].example_id, "q1");
-  assert.equal(experiment.results[0].trace_id, "trace-1");
+  assert.equal(experiment.results[0].trace_id, contractTrace.id);
   assert.deepEqual(experiment.results[0].scores, [{ name: "contains", value: 1, metadata: { expected: "observability" } }]);
+});
+
+test("matches linked experiment trace ids to loaded traces", () => {
+  const experiment = normalizeExperiment({
+    ...makeExperimentSummary(),
+    results: [makeExperimentResult({ trace_id: contractTrace.id })],
+  });
+  assert.ok(experiment);
+
+  const linkedTrace = findTraceById([contractTrace], experiment.results[0].trace_id ?? "");
+
+  assert.equal(linkedTrace?.id, contractTrace.id);
+  assert.equal(findTraceById([contractTrace], "missing-trace"), null);
 });
 
 test("rejects malformed experiment responses without throwing", () => {

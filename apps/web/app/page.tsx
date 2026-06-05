@@ -13,6 +13,7 @@ import {
 } from "./experiment-contract";
 import {
   buildTraceTimelineRows,
+  findTraceById,
   getRetrievalDetails,
   normalizeTraces,
   type EventStatus,
@@ -71,6 +72,7 @@ export default function DashboardPage() {
   const [isExperimentDetailLoading, setIsExperimentDetailLoading] = useState(false);
   const [traceError, setTraceError] = useState<string | null>(null);
   const [experimentError, setExperimentError] = useState<string | null>(null);
+  const [missingLinkedTraceId, setMissingLinkedTraceId] = useState<string | null>(null);
 
   const loadTraces = useCallback(async () => {
     setIsTraceLoading(true);
@@ -86,7 +88,7 @@ export default function DashboardPage() {
         setTraceError(payload.error ?? "Trace request failed");
         setTraces([]);
         setSelectedTraceId(null);
-        return;
+        return [];
       }
 
       const nextTraces = normalizeTraces(payload.traces);
@@ -97,10 +99,12 @@ export default function DashboardPage() {
         }
         return nextTraces[0]?.id ?? null;
       });
+      return nextTraces;
     } catch (requestError) {
       setTraceError(requestError instanceof Error ? requestError.message : "Trace request failed");
       setTraces([]);
       setSelectedTraceId(null);
+      return [];
     } finally {
       setIsTraceLoading(false);
     }
@@ -167,6 +171,28 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const openTraceFromExperiment = useCallback(
+    async (traceId: string) => {
+      setMissingLinkedTraceId(null);
+
+      if (findTraceById(traces, traceId)) {
+        setSelectedTraceId(traceId);
+        setActiveView("traces");
+        return;
+      }
+
+      const refreshedTraces = await loadTraces();
+      if (findTraceById(refreshedTraces, traceId)) {
+        setSelectedTraceId(traceId);
+        setActiveView("traces");
+        return;
+      }
+
+      setMissingLinkedTraceId(traceId);
+    },
+    [loadTraces, traces],
+  );
+
   useEffect(() => {
     void loadTraces();
     void loadExperiments();
@@ -181,13 +207,14 @@ export default function DashboardPage() {
   }, [loadExperimentDetail, selectedExperimentId]);
 
   const selectedTrace = useMemo(
-    () => traces.find((trace) => trace.id === selectedTraceId) ?? traces[0] ?? null,
+    () => (selectedTraceId ? findTraceById(traces, selectedTraceId) : null) ?? traces[0] ?? null,
     [selectedTraceId, traces],
   );
   const timelineRows = useMemo(
     () => (selectedTrace ? buildTraceTimelineRows(selectedTrace.events) : []),
     [selectedTrace],
   );
+  const knownTraceIds = useMemo(() => new Set(traces.map((trace) => trace.id)), [traces]);
 
   const traceStats = useMemo(() => {
     const eventCount = traces.reduce((total, trace) => total + trace.events.length, 0);
@@ -271,6 +298,10 @@ export default function DashboardPage() {
           experiments={experiments}
           isDetailLoading={isExperimentDetailLoading}
           isLoading={isExperimentLoading}
+          isTraceLoading={isTraceLoading}
+          knownTraceIds={knownTraceIds}
+          missingLinkedTraceId={missingLinkedTraceId}
+          onOpenTrace={openTraceFromExperiment}
           selectedExperiment={selectedExperiment}
           selectedExperimentId={selectedExperimentId}
           setSelectedExperimentId={setSelectedExperimentId}
@@ -374,6 +405,10 @@ function ExperimentDashboard({
   experiments,
   isDetailLoading,
   isLoading,
+  isTraceLoading,
+  knownTraceIds,
+  missingLinkedTraceId,
+  onOpenTrace,
   selectedExperiment,
   selectedExperimentId,
   setSelectedExperimentId,
@@ -384,6 +419,10 @@ function ExperimentDashboard({
   experiments: ExperimentSummary[];
   isDetailLoading: boolean;
   isLoading: boolean;
+  isTraceLoading: boolean;
+  knownTraceIds: Set<string>;
+  missingLinkedTraceId: string | null;
+  onOpenTrace: (traceId: string) => void;
   selectedExperiment: LoadedExperiment | null;
   selectedExperimentId: string | null;
   setSelectedExperimentId: (experimentId: string) => void;
@@ -461,9 +500,24 @@ function ExperimentDashboard({
                 {isDetailLoading && !selectedExperiment ? <TraceSkeleton /> : null}
                 {selectedExperiment ? (
                   <div className="experiment-results">
-                    {selectedExperiment.results.map((result) => (
-                      <ExperimentResultRow result={result} key={result.id} />
-                    ))}
+                    {selectedExperiment.results.map((result) => {
+                      const traceId = result.trace_id ?? null;
+                      const hasLinkedTrace = traceId !== null && knownTraceIds.has(traceId);
+                      const isLinkedTraceMissing =
+                        traceId !== null &&
+                        !hasLinkedTrace &&
+                        (missingLinkedTraceId === traceId || !isTraceLoading);
+
+                      return (
+                        <ExperimentResultRow
+                          hasLinkedTrace={hasLinkedTrace}
+                          isLinkedTraceMissing={isLinkedTraceMissing}
+                          onOpenTrace={onOpenTrace}
+                          result={result}
+                          key={result.id}
+                        />
+                      );
+                    })}
                   </div>
                 ) : !isDetailLoading ? (
                   <div className="empty-detail">No experiment detail loaded.</div>
@@ -571,10 +625,21 @@ function EventRow({ row }: { row: TraceTimelineRow }) {
   );
 }
 
-function ExperimentResultRow({ result }: { result: ExperimentExampleResult }) {
+function ExperimentResultRow({
+  hasLinkedTrace,
+  isLinkedTraceMissing,
+  onOpenTrace,
+  result,
+}: {
+  hasLinkedTrace: boolean;
+  isLinkedTraceMissing: boolean;
+  onOpenTrace: (traceId: string) => void;
+  result: ExperimentExampleResult;
+}) {
   const hasInput = result.input !== null && result.input !== undefined;
   const hasExpected = result.expected !== null && result.expected !== undefined;
   const hasOutput = result.output !== null && result.output !== undefined;
+  const traceId = result.trace_id ?? null;
 
   return (
     <article className="experiment-result">
@@ -590,12 +655,20 @@ function ExperimentResultRow({ result }: { result: ExperimentExampleResult }) {
       </div>
 
       <div className="event-fields">
-        {result.trace_id ? <InlineField label="Trace" value={result.trace_id} /> : null}
+        {traceId ? <InlineField label="Trace" value={traceId} /> : null}
+        {hasLinkedTrace && traceId ? (
+          <button className="inline-action" type="button" onClick={() => onOpenTrace(traceId)}>
+            Open trace
+          </button>
+        ) : null}
         {result.scores.map((score) => (
           <InlineField label={score.name} value={formatNumber(score.value)} key={score.name} />
         ))}
       </div>
 
+      {isLinkedTraceMissing ? (
+        <p className="linked-trace-missing">Trace not found. Send local trace events first.</p>
+      ) : null}
       {result.error ? <pre className="error-block">{result.error}</pre> : null}
 
       <div className="payload-grid">
