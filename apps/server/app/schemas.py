@@ -102,6 +102,11 @@ class IngestEventResponse(BaseModel):
     id: str
 
 
+class IngestExperimentResponse(BaseModel):
+    accepted: int
+    id: str
+
+
 class LoadedTrace(BaseModel):
     id: str
     name: str
@@ -191,6 +196,11 @@ class ExperimentSummaryPayload(BaseModel):
 
 
 class LoadedExperiment(ExperimentSummaryPayload):
+    results: list[ExperimentExampleResultPayload]
+
+
+class ExperimentIngestPayload(BaseModel):
+    summary: ExperimentSummaryPayload
     results: list[ExperimentExampleResultPayload]
 
 

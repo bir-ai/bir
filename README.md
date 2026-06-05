@@ -85,6 +85,16 @@ npm run dev
 
 Open `http://localhost:3000` to inspect traces.
 
+For local evaluation runs, `bir.evals.run_experiment()` writes JSONL results and
+a sibling summary under `.bir/experiments/`. Send one completed experiment to the
+server so it appears in the dashboard's Experiments view:
+
+```python
+from bir.evals import send_experiment
+
+send_experiment(".bir/experiments/prompt-v1-<experiment-id>.jsonl")
+```
+
 ## License
 
 Bir is source-available under the Functional Source License 1.1 with Apache 2.0

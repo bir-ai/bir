@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from threading import Lock
 from typing import Any
 
 from pydantic import ValidationError
 
-from .schemas import ExperimentExampleResultPayload, ExperimentSummaryPayload, LoadedExperiment
+from .schemas import ExperimentExampleResultPayload, ExperimentIngestPayload, ExperimentSummaryPayload, LoadedExperiment
 
 
 class JsonlExperimentStore:
@@ -37,6 +38,34 @@ class JsonlExperimentStore:
             result_path = self._resolve_result_path(summary.result_path)
             results = self._load_results(result_path, summary.experiment_id, summary.name)
             return LoadedExperiment(**summary.model_dump(mode="python"), results=results)
+
+    def save_experiment(self, experiment: ExperimentIngestPayload) -> bool:
+        with self._lock:
+            if self._summary_path_for_experiment(experiment.summary.experiment_id) is not None:
+                return False
+
+            self.directory.mkdir(parents=True, exist_ok=True)
+            result_name = _safe_artifact_name(experiment.summary.name, experiment.summary.experiment_id)
+            result_path = self.directory / f"{result_name}.jsonl"
+            summary_path = self.directory / f"{result_name}.summary.json"
+            relative_result_path = result_path.name
+            summary = experiment.summary.model_copy(update={"result_path": relative_result_path})
+
+            with result_path.open("w", encoding="utf-8") as result_file:
+                for result in experiment.results:
+                    record = {
+                        "experiment_id": summary.experiment_id,
+                        "experiment_name": summary.name,
+                        **result.model_dump(mode="json", exclude_none=False),
+                    }
+                    result_file.write(json.dumps(record, sort_keys=True, separators=(",", ":"), allow_nan=False))
+                    result_file.write("\n")
+
+            summary_path.write_text(
+                json.dumps(summary.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n",
+                encoding="utf-8",
+            )
+            return True
 
     def _summary_path_for_experiment(self, experiment_id: str) -> Path | None:
         if not self.directory.exists():
@@ -117,3 +146,9 @@ def _validate_experiment_row_metadata(
         raise ValueError(f"Experiment {path} line {line_number} contains a different experiment_id")
     if row_experiment_name != experiment_name:
         raise ValueError(f"Experiment {path} line {line_number} contains a different experiment_name")
+
+
+def _safe_artifact_name(name: str, experiment_id: str) -> str:
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "-", name.strip()).strip("-") or "experiment"
+    safe_experiment_id = re.sub(r"[^A-Za-z0-9_.-]+", "-", experiment_id.strip()).strip("-") or "experiment"
+    return f"{safe_name}-{safe_experiment_id}"

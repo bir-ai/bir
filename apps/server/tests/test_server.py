@@ -191,6 +191,94 @@ def test_gets_experiment_detail_with_result_rows(tmp_path: Path) -> None:
     ]
 
 
+def test_ingests_experiment_and_exposes_it_through_get_endpoints(tmp_path: Path) -> None:
+    client, experiment_store_path = make_client_with_experiments(tmp_path)
+    summary = make_experiment_summary(result_path="/tmp/client-controlled.jsonl")
+    result = make_experiment_result(trace_id="trace-1")
+
+    response = client.post("/v1/experiments", json={"summary": summary, "results": [result]})
+
+    assert response.status_code == 201
+    assert response.json() == {"accepted": 1, "id": "experiment-1"}
+    result_path = experiment_store_path / "prompt-v1-experiment-1.jsonl"
+    summary_path = experiment_store_path / "prompt-v1-experiment-1.summary.json"
+    assert result_path.exists()
+    assert summary_path.exists()
+    stored_summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert stored_summary["result_path"] == "prompt-v1-experiment-1.jsonl"
+
+    list_response = client.get("/v1/experiments")
+    detail_response = client.get("/v1/experiments/experiment-1")
+
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["experiment_id"] == "experiment-1"
+    assert list_response.json()[0]["result_path"] == "prompt-v1-experiment-1.jsonl"
+    assert detail_response.status_code == 200
+    experiment = detail_response.json()
+    assert experiment["experiment_id"] == "experiment-1"
+    assert experiment["results"][0]["example_id"] == "q1"
+    assert experiment["results"][0]["trace_id"] == "trace-1"
+
+
+def test_duplicate_experiment_upload_is_idempotent(tmp_path: Path) -> None:
+    client, experiment_store_path = make_client_with_experiments(tmp_path)
+    payload = {"summary": make_experiment_summary(), "results": [make_experiment_result()]}
+
+    first_response = client.post("/v1/experiments", json=payload)
+    result_path = experiment_store_path / "prompt-v1-experiment-1.jsonl"
+    original_result_store = result_path.read_text(encoding="utf-8")
+    second_payload = {
+        "summary": make_experiment_summary(result_path="../different.jsonl"),
+        "results": [make_experiment_result(output="different output")],
+    }
+    second_response = client.post("/v1/experiments", json=second_payload)
+
+    assert first_response.status_code == 201
+    assert first_response.json() == {"accepted": 1, "id": "experiment-1"}
+    assert second_response.status_code == 200
+    assert second_response.json() == {"accepted": 0, "id": "experiment-1"}
+    assert result_path.read_text(encoding="utf-8") == original_result_store
+    assert len(list(experiment_store_path.glob("*.summary.json"))) == 1
+
+
+def test_rejects_malformed_experiment_upload(tmp_path: Path) -> None:
+    client, experiment_store_path = make_client_with_experiments(tmp_path)
+    payload = {
+        "summary": make_experiment_summary(),
+        "results": [make_experiment_result(scores=[{"name": "contains", "value": True, "metadata": {}}])],
+    }
+
+    response = client.post("/v1/experiments", json=payload)
+
+    assert response.status_code == 422
+    assert not experiment_store_path.exists()
+
+
+def test_experiment_upload_redacts_secret_like_values_before_persisting(tmp_path: Path) -> None:
+    client, experiment_store_path = make_client_with_experiments(tmp_path)
+    result = make_experiment_result(
+        input={"api_key": "sk-inputsecret"},
+        expected="token=expected-secret",
+        output={"text": "authorization: Bearer output-secret"},
+        scores=[{"name": "contains", "value": 1.0, "metadata": {"client_secret": "metadata-secret"}}],
+        error="provider failed password=error-secret",
+    )
+
+    response = client.post("/v1/experiments", json={"summary": make_experiment_summary(), "results": [result]})
+
+    assert response.status_code == 201
+    raw_store = "".join(path.read_text(encoding="utf-8") for path in experiment_store_path.iterdir())
+    for secret in ("sk-inputsecret", "expected-secret", "output-secret", "metadata-secret", "error-secret"):
+        assert secret not in raw_store
+    detail_response = client.get("/v1/experiments/experiment-1")
+    uploaded_result = detail_response.json()["results"][0]
+    assert uploaded_result["input"] == {"api_key": "[redacted]"}
+    assert uploaded_result["expected"] == "token=[redacted]"
+    assert uploaded_result["output"] == {"text": "authorization: [redacted] [redacted]"}
+    assert uploaded_result["scores"][0]["metadata"] == {"client_secret": "[redacted]"}
+    assert uploaded_result["error"] == "provider failed password=[redacted]"
+
+
 def test_get_experiment_returns_404_for_missing_experiment(tmp_path: Path) -> None:
     client, experiment_store_path = make_client_with_experiments(tmp_path)
     write_experiment(experiment_store_path, summary=make_experiment_summary(), results=[make_experiment_result()])

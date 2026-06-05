@@ -10,8 +10,10 @@ from fastapi.responses import JSONResponse
 
 from .experiments import JsonlExperimentStore
 from .schemas import (
+    ExperimentIngestPayload,
     ExperimentSummaryPayload,
     HealthResponse,
+    IngestExperimentResponse,
     IngestEventResponse,
     LoadedExperiment,
     LoadedTrace,
@@ -65,6 +67,18 @@ def create_app(
         if trace is None:
             raise HTTPException(status_code=404, detail="Trace not found")
         return trace
+
+    @app.post("/v1/experiments", response_model=IngestExperimentResponse, status_code=201)
+    def ingest_experiment(
+        experiment: ExperimentIngestPayload,
+        request: Request,
+        response: Response,
+    ) -> IngestExperimentResponse:
+        store = _get_experiment_store(request)
+        accepted = 1 if store.save_experiment(experiment) else 0
+        if accepted == 0:
+            response.status_code = 200
+        return IngestExperimentResponse(accepted=accepted, id=experiment.summary.experiment_id)
 
     @app.get("/v1/experiments", response_model=list[ExperimentSummaryPayload])
     def list_experiments(request: Request) -> list[ExperimentSummaryPayload]:

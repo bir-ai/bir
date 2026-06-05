@@ -9,6 +9,7 @@ Minimal FastAPI ingestion server for Bir trace events.
 - `GET /v1/events`
 - `GET /v1/traces`
 - `GET /v1/traces/{trace_id}`
+- `POST /v1/experiments`
 - `GET /v1/experiments`
 - `GET /v1/experiments/{experiment_id}`
 
@@ -19,8 +20,9 @@ server writes to `.bir/server-events.jsonl`. Override that path with:
 export BIR_SERVER_EVENT_STORE=tmp/server-events.jsonl
 ```
 
-Experiments are read from SDK-created `.summary.json` and `.jsonl` result files.
-By default, the server reads `.bir/experiments`. Override that directory with:
+Experiments can be uploaded from SDK-created `.summary.json` and `.jsonl`
+result files. By default, the server stores them in `.bir/experiments`.
+Override that directory with:
 
 ```bash
 export BIR_EXPERIMENT_STORE=tmp/experiments
@@ -44,6 +46,14 @@ The Python SDK can send locally recorded events to the server:
 from bir import send_events
 
 send_events("http://127.0.0.1:8000")
+```
+
+The Python SDK can also send one completed local experiment to the server:
+
+```python
+from bir.evals import send_experiment
+
+send_experiment(".bir/experiments/prompt-v1-<experiment-id>.jsonl")
 ```
 
 ## Development

@@ -161,7 +161,7 @@ For the detailed evaluator implementation plan, see
 `docs/EVALUATOR_IMPLEMENTATION_GUIDE.md`.
 
 ```python
-from bir.evals import Dataset, DatasetExample, contains, exact_match, latency_under, list_experiments, load_experiment, run_experiment
+from bir.evals import Dataset, DatasetExample, contains, exact_match, latency_under, list_experiments, load_experiment, run_experiment, send_experiment
 
 
 dataset = Dataset(
@@ -193,6 +193,8 @@ result = run_experiment(
 print(result.aggregate_scores)
 print(load_experiment(result.path).status)
 print([summary.name for summary in list_experiments()])
+
+send_experiment(result.path, "http://127.0.0.1:8000")
 ```
 
 To link experiment examples to local Bir traces, opt in with
@@ -227,9 +229,12 @@ Dataset JSONL rows use this shape:
 `.bir/experiments/` unless a custom path is provided. It also writes a sibling
 `.summary.json` file containing the experiment id, status, example count, error
 count, aggregate scores, and result path. Use `load_experiment()` for result
-rows and `list_experiments()` for local summaries. Keep this layer deterministic
-for now; provider-backed LLM judges can come later after local evaluators are
-stable.
+rows and `list_experiments()` for local summaries. Use `send_experiment()` to
+upload one completed local experiment to the FastAPI server so the dashboard's
+Experiments view can read it through `/v1/experiments`. Duplicate uploads are
+idempotent and do not overwrite the server's existing experiment artifact. Keep
+this layer deterministic for now; provider-backed LLM judges can come later
+after local evaluators are stable.
 
 Use threshold evaluators for local operational gates:
 
