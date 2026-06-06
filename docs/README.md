@@ -150,7 +150,8 @@ with generation("local.llm", prompt=answer_prompt) as gen:
 By default, Bir stores the prompt name, version, and template hash in
 `metadata.prompt`. Template text, variables, and rendered prompt text remain
 opt-in through `capture_template=True`, `capture_variables=True`, and
-`capture_rendered=True`.
+`capture_rendered=True`. Sent generation traces show this prompt metadata in
+the dashboard trace detail view.
 
 ## Local Evaluation Experiments
 

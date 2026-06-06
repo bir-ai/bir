@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   buildTraceTimelineRows,
   findTraceById,
+  getPromptDetails,
   getRetrievalDetails,
   normalizeTraces,
   type Trace,
@@ -74,6 +75,70 @@ test("does not treat ordinary tool calls as retrieval events", () => {
   };
 
   assert.equal(getRetrievalDetails(ordinaryToolEvent), null);
+});
+
+test("extracts prompt metadata from generation events", () => {
+  const generationEvent = contractTrace.events.find((event) => event.type === "generation");
+  assert.ok(generationEvent);
+  const promptedGeneration: TraceEvent = {
+    ...generationEvent,
+    metadata: {
+      prompt: {
+        name: "answer_question",
+        version: "v1",
+        template_sha256: "abc123",
+        template: "Answer {question}",
+        variables: { question: "What is Bir?" },
+        rendered: "Answer What is Bir?",
+        metadata: { owner: "evals" },
+        ignored_numeric_field: 123,
+      },
+    },
+  };
+
+  const details = getPromptDetails(promptedGeneration);
+
+  assert.deepEqual(details, {
+    name: "answer_question",
+    version: "v1",
+    template_sha256: "abc123",
+    template: "Answer {question}",
+    variables: { question: "What is Bir?" },
+    rendered: "Answer What is Bir?",
+    metadata: { owner: "evals" },
+  });
+});
+
+test("ignores malformed prompt metadata", () => {
+  const generationEvent = contractTrace.events.find((event) => event.type === "generation");
+  assert.ok(generationEvent);
+  const missingName: TraceEvent = {
+    ...generationEvent,
+    metadata: { prompt: { version: "v1" } },
+  };
+  const emptyName: TraceEvent = {
+    ...generationEvent,
+    metadata: { prompt: { name: "" } },
+  };
+  const nonObjectPrompt: TraceEvent = {
+    ...generationEvent,
+    metadata: { prompt: "answer_question" },
+  };
+
+  assert.equal(getPromptDetails(missingName), null);
+  assert.equal(getPromptDetails(emptyName), null);
+  assert.equal(getPromptDetails(nonObjectPrompt), null);
+});
+
+test("does not extract prompt metadata from non-generation events", () => {
+  const traceEvent = contractTrace.events.find((event) => event.type === "trace");
+  assert.ok(traceEvent);
+  const eventWithPrompt: TraceEvent = {
+    ...traceEvent,
+    metadata: { prompt: { name: "answer_question" } },
+  };
+
+  assert.equal(getPromptDetails(eventWithPrompt), null);
 });
 
 test("ignores malformed trace responses without throwing", () => {

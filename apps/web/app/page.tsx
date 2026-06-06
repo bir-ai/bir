@@ -14,10 +14,12 @@ import {
 import {
   buildTraceTimelineRows,
   findTraceById,
+  getPromptDetails,
   getRetrievalDetails,
   normalizeTraces,
   type EventStatus,
   type EventType,
+  type PromptDetails,
   type RetrievalDetails,
   type Trace,
   type TraceTimelineRow,
@@ -578,6 +580,7 @@ function EventRow({ row }: { row: TraceTimelineRow }) {
   const hasMetadata = Object.keys(event.metadata ?? {}).length > 0;
   const hasUsage = event.usage && Object.keys(event.usage).length > 0;
   const hasCost = event.cost && Object.keys(event.cost).length > 0;
+  const promptDetails = getPromptDetails(event);
   const retrievalDetails = getRetrievalDetails(event);
 
   return (
@@ -613,6 +616,7 @@ function EventRow({ row }: { row: TraceTimelineRow }) {
 
         {event.error ? <pre className="error-block">{event.error}</pre> : null}
 
+        {promptDetails ? <PromptPanel details={promptDetails} /> : null}
         {retrievalDetails ? <RetrievalPanel details={retrievalDetails} /> : null}
 
         <div className="payload-grid">
@@ -678,6 +682,27 @@ function ExperimentResultRow({
         {result.scores.length > 0 ? <Payload title="Scores" value={result.scores} /> : null}
       </div>
     </article>
+  );
+}
+
+function PromptPanel({ details }: { details: PromptDetails }) {
+  return (
+    <section className="prompt-panel">
+      <div className="prompt-head">
+        <h4>Prompt</h4>
+        <div className="event-fields">
+          <InlineField label="Name" value={details.name} />
+          {details.version ? <InlineField label="Version" value={details.version} /> : null}
+          {details.template_sha256 ? <InlineField label="Template SHA-256" value={details.template_sha256} /> : null}
+        </div>
+      </div>
+      <div className="prompt-payload-grid">
+        {details.template ? <Payload title="Template" value={details.template} /> : null}
+        {details.variables ? <Payload title="Variables" value={details.variables} /> : null}
+        {details.rendered ? <Payload title="Rendered" value={details.rendered} /> : null}
+        {details.metadata ? <Payload title="Prompt Metadata" value={details.metadata} /> : null}
+      </div>
+    </section>
   );
 }
 

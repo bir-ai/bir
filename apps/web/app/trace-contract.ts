@@ -51,6 +51,16 @@ export type RetrievalDetails = {
   documents: RetrievalDocument[];
 };
 
+export type PromptDetails = {
+  name: string;
+  version?: string;
+  template_sha256?: string;
+  template?: string;
+  variables?: Record<string, unknown>;
+  rendered?: string;
+  metadata?: Record<string, unknown>;
+};
+
 export function normalizeTraces(value: unknown): Trace[] {
   if (!Array.isArray(value)) {
     return [];
@@ -71,6 +81,40 @@ export function getRetrievalDetails(event: TraceEvent): RetrievalDetails | null 
     query: retrievalQuery(event.input),
     documents: retrievalDocuments(event.output),
   };
+}
+
+export function getPromptDetails(event: TraceEvent): PromptDetails | null {
+  if (event.type !== "generation") {
+    return null;
+  }
+
+  const prompt = event.metadata.prompt;
+  if (!isRecord(prompt) || typeof prompt.name !== "string" || prompt.name.length === 0) {
+    return null;
+  }
+
+  const details: PromptDetails = {
+    name: prompt.name,
+  };
+  if (typeof prompt.version === "string") {
+    details.version = prompt.version;
+  }
+  if (typeof prompt.template_sha256 === "string") {
+    details.template_sha256 = prompt.template_sha256;
+  }
+  if (typeof prompt.template === "string") {
+    details.template = prompt.template;
+  }
+  if (isRecord(prompt.variables)) {
+    details.variables = prompt.variables;
+  }
+  if (typeof prompt.rendered === "string") {
+    details.rendered = prompt.rendered;
+  }
+  if (isRecord(prompt.metadata)) {
+    details.metadata = prompt.metadata;
+  }
+  return details;
 }
 
 export function buildTraceTimelineRows(events: TraceEvent[]): TraceTimelineRow[] {
