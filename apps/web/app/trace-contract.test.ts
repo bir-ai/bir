@@ -13,7 +13,7 @@ import {
   type Trace,
   type TraceEvent,
 } from "./trace-contract";
-import { normalizeExperiment, normalizeExperimentSummaries } from "./experiment-contract";
+import { compareExperiments, normalizeExperiment, normalizeExperimentSummaries } from "./experiment-contract";
 
 const contractTraceResponseFixture = loadSharedContractTraceResponse();
 const [contractTrace] = normalizeTraces(contractTraceResponseFixture);
@@ -267,6 +267,124 @@ test("rejects malformed experiment responses without throwing", () => {
   assert.equal(normalizeExperiment(null), null);
 });
 
+test("compares experiments by aggregate and per-example score deltas", () => {
+  const baseline = makeLoadedExperiment({
+    summary: makeExperimentSummary({
+      experiment_id: "baseline",
+      name: "prompt-v1",
+      aggregate_scores: { contains: 0.5, exact_match: 1 },
+    }),
+    results: [
+      makeExperimentResult({
+        id: "baseline-q1",
+        example_id: "q1",
+        scores: [{ name: "contains", value: 0.5, metadata: {} }],
+      }),
+      makeExperimentResult({
+        id: "baseline-q2",
+        example_id: "q2",
+        scores: [{ name: "contains", value: 1, metadata: {} }],
+      }),
+      makeExperimentResult({
+        id: "baseline-q3",
+        example_id: "q3",
+        scores: [{ name: "contains", value: 0.5, metadata: {} }],
+      }),
+      makeExperimentResult({
+        id: "baseline-q4",
+        example_id: "q4",
+        scores: [{ name: "contains", value: 0.75, metadata: {} }],
+      }),
+    ],
+  });
+  const candidate = makeLoadedExperiment({
+    summary: makeExperimentSummary({
+      experiment_id: "candidate",
+      name: "prompt-v2",
+      aggregate_scores: { contains: 0.75, latency_under: 1 },
+    }),
+    results: [
+      makeExperimentResult({
+        id: "candidate-q1",
+        example_id: "q1",
+        scores: [{ name: "contains", value: 0.25, metadata: {} }],
+      }),
+      makeExperimentResult({
+        id: "candidate-q2",
+        example_id: "q2",
+        scores: [{ name: "contains", value: 1, metadata: {} }],
+      }),
+      makeExperimentResult({
+        id: "candidate-q3",
+        example_id: "q3",
+        scores: [{ name: "contains", value: 1, metadata: {} }],
+      }),
+      makeExperimentResult({
+        id: "candidate-q5",
+        example_id: "q5",
+        scores: [{ name: "contains", value: 1, metadata: {} }],
+      }),
+    ],
+  });
+
+  const comparison = compareExperiments(baseline, candidate);
+
+  assert.deepEqual(comparison.aggregate_scores, [
+    { name: "contains", baseline_value: 0.5, candidate_value: 0.75, delta: 0.25 },
+    { name: "exact_match", baseline_value: 1, candidate_value: null, delta: null },
+    { name: "latency_under", baseline_value: null, candidate_value: 1, delta: null },
+  ]);
+  assert.deepEqual(
+    comparison.rows.map((row) => [row.example_id, row.status]),
+    [
+      ["q1", "regressed"],
+      ["q4", "missing_candidate"],
+      ["q5", "new_candidate"],
+      ["q3", "improved"],
+      ["q2", "unchanged"],
+    ],
+  );
+  assert.deepEqual(comparison.counts, {
+    regressed: 1,
+    improved: 1,
+    unchanged: 1,
+    missing_candidate: 1,
+    new_candidate: 1,
+  });
+});
+
+test("compares experiments with missing score values without throwing", () => {
+  const baseline = makeLoadedExperiment({
+    results: [
+      makeExperimentResult({
+        example_id: "q1",
+        scores: [
+          { name: "contains", value: 1, metadata: {} },
+          { name: "exact_match", value: 1, metadata: {} },
+        ],
+      }),
+    ],
+  });
+  const candidate = makeLoadedExperiment({
+    summary: makeExperimentSummary({ experiment_id: "experiment-2", aggregate_scores: {} }),
+    results: [
+      makeExperimentResult({
+        id: "candidate-q1",
+        example_id: "q1",
+        scores: [{ name: "contains", value: 1, metadata: {} }],
+      }),
+    ],
+  });
+
+  const comparison = compareExperiments(baseline, candidate);
+
+  assert.equal(comparison.rows[0].status, "unchanged");
+  assert.deepEqual(comparison.rows[0].scores, [
+    { name: "contains", baseline_value: 1, candidate_value: 1, delta: 0 },
+    { name: "exact_match", baseline_value: 1, candidate_value: null, delta: null },
+  ]);
+});
+
 function loadSharedContractTraceResponse(): unknown[] {
   const fixturePath = path.resolve(process.cwd(), "../../tests/fixtures/valid-events.jsonl");
   const events = readFileSync(fixturePath, "utf-8")
@@ -323,6 +441,18 @@ function makeExperimentResult(overrides: Record<string, unknown> = {}): Record<s
     error: null,
     ...overrides,
   };
+}
+
+function makeLoadedExperiment({
+  summary = makeExperimentSummary(),
+  results = [makeExperimentResult()],
+}: {
+  summary?: Record<string, unknown>;
+  results?: Record<string, unknown>[];
+} = {}) {
+  const experiment = normalizeExperiment({ ...summary, results });
+  assert.ok(experiment);
+  return experiment;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

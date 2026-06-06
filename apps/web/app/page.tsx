@@ -4,8 +4,11 @@ import Image from "next/image";
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  compareExperiments,
   normalizeExperiment,
   normalizeExperimentSummaries,
+  type ExperimentComparison,
+  type ExperimentComparisonStatus,
   type ExperimentExampleResult,
   type ExperimentStatus,
   type ExperimentSummary,
@@ -55,6 +58,14 @@ const statusLabels: Record<EventStatus | ExperimentStatus, string> = {
   error: "Error",
 };
 
+const comparisonStatusLabels: Record<ExperimentComparisonStatus, string> = {
+  regressed: "Regressed",
+  improved: "Improved",
+  unchanged: "Unchanged",
+  missing_candidate: "Missing candidate",
+  new_candidate: "New candidate",
+};
+
 const typeLabels: Record<EventType, string> = {
   trace: "Trace",
   span: "Span",
@@ -77,10 +88,15 @@ export default function DashboardPage() {
   const [experiments, setExperiments] = useState<ExperimentSummary[]>([]);
   const [selectedExperimentId, setSelectedExperimentId] = useState<string | null>(null);
   const [selectedExperiment, setSelectedExperiment] = useState<LoadedExperiment | null>(null);
+  const [comparisonBaselineId, setComparisonBaselineId] = useState<string | null>(null);
+  const [comparisonCandidateId, setComparisonCandidateId] = useState<string | null>(null);
+  const [comparisonBaseline, setComparisonBaseline] = useState<LoadedExperiment | null>(null);
+  const [comparisonCandidate, setComparisonCandidate] = useState<LoadedExperiment | null>(null);
   const [apiBaseUrl, setApiBaseUrl] = useState("http://127.0.0.1:8000");
   const [isTraceLoading, setIsTraceLoading] = useState(true);
   const [isExperimentLoading, setIsExperimentLoading] = useState(true);
   const [isExperimentDetailLoading, setIsExperimentDetailLoading] = useState(false);
+  const [isComparisonLoading, setIsComparisonLoading] = useState(false);
   const [traceError, setTraceError] = useState<string | null>(null);
   const [experimentError, setExperimentError] = useState<string | null>(null);
   const [missingLinkedTraceId, setMissingLinkedTraceId] = useState<string | null>(null);
@@ -158,30 +174,31 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const fetchExperimentDetail = useCallback(async (experimentId: string): Promise<LoadedExperiment | null> => {
+    const response = await fetch(`/api/experiments/${encodeURIComponent(experimentId)}`, { cache: "no-store" });
+    const payload = (await response.json()) as ExperimentDetailApiResponse;
+    if (typeof payload.apiBaseUrl === "string") {
+      setApiBaseUrl(payload.apiBaseUrl);
+    }
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Experiment detail request failed");
+    }
+    return normalizeExperiment(payload.experiment);
+  }, []);
+
   const loadExperimentDetail = useCallback(async (experimentId: string) => {
     setIsExperimentDetailLoading(true);
     setExperimentError(null);
 
     try {
-      const response = await fetch(`/api/experiments/${encodeURIComponent(experimentId)}`, { cache: "no-store" });
-      const payload = (await response.json()) as ExperimentDetailApiResponse;
-      if (typeof payload.apiBaseUrl === "string") {
-        setApiBaseUrl(payload.apiBaseUrl);
-      }
-      if (!response.ok) {
-        setExperimentError(payload.error ?? "Experiment detail request failed");
-        setSelectedExperiment(null);
-        return;
-      }
-
-      setSelectedExperiment(normalizeExperiment(payload.experiment));
+      setSelectedExperiment(await fetchExperimentDetail(experimentId));
     } catch (requestError) {
       setExperimentError(requestError instanceof Error ? requestError.message : "Experiment detail request failed");
       setSelectedExperiment(null);
     } finally {
       setIsExperimentDetailLoading(false);
     }
-  }, []);
+  }, [fetchExperimentDetail]);
 
   const openTraceFromExperiment = useCallback(
     async (traceId: string) => {
@@ -219,6 +236,71 @@ export default function DashboardPage() {
     setSelectedExperiment(null);
   }, [loadExperimentDetail, selectedExperimentId]);
 
+  useEffect(() => {
+    if (experiments.length < 2) {
+      setComparisonBaselineId(null);
+      setComparisonCandidateId(null);
+      setComparisonBaseline(null);
+      setComparisonCandidate(null);
+      setIsComparisonLoading(false);
+      return;
+    }
+
+    const experimentIds = experiments.map((experiment) => experiment.experiment_id);
+    const candidateId = comparisonCandidateId && experimentIds.includes(comparisonCandidateId)
+      ? comparisonCandidateId
+      : experimentIds[0];
+    setComparisonCandidateId(candidateId);
+    setComparisonBaselineId((current) => {
+      if (current && current !== candidateId && experimentIds.includes(current)) {
+        return current;
+      }
+      return experimentIds.find((experimentId) => experimentId !== candidateId) ?? null;
+    });
+  }, [comparisonCandidateId, experiments]);
+
+  useEffect(() => {
+    if (!comparisonBaselineId || !comparisonCandidateId || comparisonBaselineId === comparisonCandidateId) {
+      setComparisonBaseline(null);
+      setComparisonCandidate(null);
+      setIsComparisonLoading(false);
+      return;
+    }
+
+    let isCurrentRequest = true;
+    setIsComparisonLoading(true);
+    setExperimentError(null);
+
+    void Promise.all([
+      fetchExperimentDetail(comparisonBaselineId),
+      fetchExperimentDetail(comparisonCandidateId),
+    ])
+      .then(([baseline, candidate]) => {
+        if (!isCurrentRequest) {
+          return;
+        }
+        setComparisonBaseline(baseline);
+        setComparisonCandidate(candidate);
+      })
+      .catch((requestError) => {
+        if (!isCurrentRequest) {
+          return;
+        }
+        setExperimentError(requestError instanceof Error ? requestError.message : "Experiment comparison request failed");
+        setComparisonBaseline(null);
+        setComparisonCandidate(null);
+      })
+      .finally(() => {
+        if (isCurrentRequest) {
+          setIsComparisonLoading(false);
+        }
+      });
+
+    return () => {
+      isCurrentRequest = false;
+    };
+  }, [comparisonBaselineId, comparisonCandidateId, fetchExperimentDetail]);
+
   const selectedTrace = useMemo(
     () => (selectedTraceId ? findTraceById(traces, selectedTraceId) : null) ?? traces[0] ?? null,
     [selectedTraceId, traces],
@@ -249,8 +331,13 @@ export default function DashboardPage() {
     return { exampleCount, errorCount, scoreCount };
   }, [experiments]);
 
+  const experimentComparison = useMemo(
+    () => (comparisonBaseline && comparisonCandidate ? compareExperiments(comparisonBaseline, comparisonCandidate) : null),
+    [comparisonBaseline, comparisonCandidate],
+  );
+
   const isActiveLoading =
-    activeView === "traces" ? isTraceLoading : isExperimentLoading || isExperimentDetailLoading;
+    activeView === "traces" ? isTraceLoading : isExperimentLoading || isExperimentDetailLoading || isComparisonLoading;
   const refreshActiveView = useCallback(() => {
     if (activeView === "traces") {
       void loadTraces();
@@ -310,8 +397,12 @@ export default function DashboardPage() {
       ) : (
         <ExperimentDashboard
           apiBaseUrl={apiBaseUrl}
+          comparison={experimentComparison}
+          comparisonBaselineId={comparisonBaselineId}
+          comparisonCandidateId={comparisonCandidateId}
           error={experimentError}
           experiments={experiments}
+          isComparisonLoading={isComparisonLoading}
           isDetailLoading={isExperimentDetailLoading}
           isLoading={isExperimentLoading}
           isTraceLoading={isTraceLoading}
@@ -319,6 +410,8 @@ export default function DashboardPage() {
           onOpenTrace={openTraceFromExperiment}
           selectedExperiment={selectedExperiment}
           selectedExperimentId={selectedExperimentId}
+          setComparisonBaselineId={setComparisonBaselineId}
+          setComparisonCandidateId={setComparisonCandidateId}
           setSelectedExperimentId={setSelectedExperimentId}
           stats={experimentStats}
         />
@@ -489,8 +582,12 @@ function TraceFilterControls({
 
 function ExperimentDashboard({
   apiBaseUrl,
+  comparison,
+  comparisonBaselineId,
+  comparisonCandidateId,
   error,
   experiments,
+  isComparisonLoading,
   isDetailLoading,
   isLoading,
   isTraceLoading,
@@ -498,12 +595,18 @@ function ExperimentDashboard({
   onOpenTrace,
   selectedExperiment,
   selectedExperimentId,
+  setComparisonBaselineId,
+  setComparisonCandidateId,
   setSelectedExperimentId,
   stats,
 }: {
   apiBaseUrl: string;
+  comparison: ExperimentComparison | null;
+  comparisonBaselineId: string | null;
+  comparisonCandidateId: string | null;
   error: string | null;
   experiments: ExperimentSummary[];
+  isComparisonLoading: boolean;
   isDetailLoading: boolean;
   isLoading: boolean;
   isTraceLoading: boolean;
@@ -511,6 +614,8 @@ function ExperimentDashboard({
   onOpenTrace: (traceId: string) => void;
   selectedExperiment: LoadedExperiment | null;
   selectedExperimentId: string | null;
+  setComparisonBaselineId: (experimentId: string) => void;
+  setComparisonCandidateId: (experimentId: string) => void;
   setSelectedExperimentId: (experimentId: string) => void;
   stats: { exampleCount: number; errorCount: number; scoreCount: number };
 }) {
@@ -573,6 +678,20 @@ function ExperimentDashboard({
               </div>
 
               <div className="experiment-detail">
+                {experiments.length >= 2 ? (
+                  <>
+                    <ExperimentComparisonControls
+                      baselineId={comparisonBaselineId}
+                      candidateId={comparisonCandidateId}
+                      experiments={experiments}
+                      setBaselineId={setComparisonBaselineId}
+                      setCandidateId={setComparisonCandidateId}
+                    />
+                    {isComparisonLoading && !comparison ? <TraceSkeleton /> : null}
+                    {comparison ? <ExperimentComparisonPanel comparison={comparison} /> : null}
+                  </>
+                ) : null}
+
                 <section className="score-grid" aria-label="Aggregate scores">
                   {Object.entries(detail.aggregate_scores).length > 0 ? (
                     Object.entries(detail.aggregate_scores).map(([name, value]) => (
@@ -612,6 +731,128 @@ function ExperimentDashboard({
         </section>
       </section>
     </>
+  );
+}
+
+function ExperimentComparisonControls({
+  baselineId,
+  candidateId,
+  experiments,
+  setBaselineId,
+  setCandidateId,
+}: {
+  baselineId: string | null;
+  candidateId: string | null;
+  experiments: ExperimentSummary[];
+  setBaselineId: (experimentId: string) => void;
+  setCandidateId: (experimentId: string) => void;
+}) {
+  return (
+    <section className="comparison-controls trace-filters" aria-label="Experiment comparison controls">
+      <label className="filter-group">
+        <span>Baseline</span>
+        <select
+          value={baselineId ?? ""}
+          onChange={(event) => setBaselineId(event.target.value)}
+        >
+          {experiments.map((experiment) => (
+            <option
+              disabled={experiment.experiment_id === candidateId}
+              value={experiment.experiment_id}
+              key={experiment.experiment_id}
+            >
+              {experiment.name}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="filter-group">
+        <span>Candidate</span>
+        <select
+          value={candidateId ?? ""}
+          onChange={(event) => setCandidateId(event.target.value)}
+        >
+          {experiments.map((experiment) => (
+            <option
+              disabled={experiment.experiment_id === baselineId}
+              value={experiment.experiment_id}
+              key={experiment.experiment_id}
+            >
+              {experiment.name}
+            </option>
+          ))}
+        </select>
+      </label>
+    </section>
+  );
+}
+
+function ExperimentComparisonPanel({ comparison }: { comparison: ExperimentComparison }) {
+  return (
+    <section className="comparison-panel" aria-label="Experiment comparison">
+      <div className="event-title-line">
+        <div>
+          <span className="event-type">Comparison</span>
+          <h3>
+            {comparison.baseline.name} to {comparison.candidate.name}
+          </h3>
+        </div>
+      </div>
+
+      <div className="event-fields">
+        {Object.entries(comparison.counts).map(([status, count]) => (
+          <InlineField
+            label={comparisonStatusLabels[status as ExperimentComparisonStatus]}
+            value={count.toString()}
+            key={status}
+          />
+        ))}
+      </div>
+
+      <section className="score-grid comparison-score-grid" aria-label="Aggregate score deltas">
+        {comparison.aggregate_scores.length > 0 ? (
+          comparison.aggregate_scores.map((score) => (
+            <InlineField
+              label={score.name}
+              value={formatComparisonScore(score.baseline_value, score.candidate_value, score.delta)}
+              key={score.name}
+            />
+          ))
+        ) : (
+          <span className="subtle">No aggregate scores to compare.</span>
+        )}
+      </section>
+
+      <div className="comparison-results">
+        {comparison.rows.map((row) => (
+          <article className={`comparison-row ${row.status}`} key={row.example_id}>
+            <div className="event-title-line">
+              <div>
+                <span className="event-type">Example</span>
+                <h3>{row.example_id}</h3>
+              </div>
+              <div className="event-badges">
+                <span className={`comparison-pill ${row.status}`}>{comparisonStatusLabels[row.status]}</span>
+              </div>
+            </div>
+            <div className="event-fields">
+              {row.scores.length > 0 ? (
+                row.scores.map((score) => (
+                  <InlineField
+                    label={score.name}
+                    value={formatComparisonScore(score.baseline_value, score.candidate_value, score.delta)}
+                    key={score.name}
+                  />
+                ))
+              ) : (
+                <span className="subtle">No scores to compare.</span>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -920,4 +1161,23 @@ function formatNumber(value: number): string {
   return new Intl.NumberFormat("en", {
     maximumFractionDigits: 6,
   }).format(value);
+}
+
+function formatComparisonScore(
+  baselineValue: number | null,
+  candidateValue: number | null,
+  delta: number | null,
+): string {
+  const baseline = baselineValue === null ? "-" : formatNumber(baselineValue);
+  const candidate = candidateValue === null ? "-" : formatNumber(candidateValue);
+  const deltaValue = delta === null ? "-" : formatSignedNumber(delta);
+  return `${baseline} -> ${candidate} (${deltaValue})`;
+}
+
+function formatSignedNumber(value: number): string {
+  const formatted = formatNumber(value);
+  if (value > 0) {
+    return `+${formatted}`;
+  }
+  return formatted;
 }

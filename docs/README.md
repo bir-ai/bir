@@ -282,6 +282,11 @@ idempotent and do not overwrite the server's existing experiment artifact. Keep
 this layer deterministic for now; provider-backed LLM judges can come later
 after local evaluators are stable.
 
+After uploading at least two experiments, use the dashboard's Experiments view
+to compare a baseline run against a candidate run. The comparison aligns result
+rows by `example_id`, shows aggregate score deltas, and lists regressed, missing,
+new, improved, and unchanged examples.
+
 Use threshold evaluators for local operational gates:
 
 ```python

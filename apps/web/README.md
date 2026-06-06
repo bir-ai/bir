@@ -11,6 +11,8 @@ Current views:
 - experiment list with aggregate scores and error counts
 - experiment detail with per-example input, expected output, actual output,
   scores, linked trace IDs, latency, and errors
+- experiment comparison for two uploaded runs with aggregate score deltas and
+  per-example regression status
 
 ## Development
 
@@ -29,6 +31,7 @@ BIR_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 Useful checks:
 
 ```bash
+npm run test
 npm run lint
 npm run typecheck
 ```

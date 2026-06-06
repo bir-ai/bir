@@ -38,6 +38,36 @@ export type LoadedExperiment = ExperimentSummary & {
   results: ExperimentExampleResult[];
 };
 
+export type ExperimentComparisonStatus =
+  | "regressed"
+  | "improved"
+  | "unchanged"
+  | "missing_candidate"
+  | "new_candidate";
+
+export type ExperimentScoreDelta = {
+  name: string;
+  baseline_value: number | null;
+  candidate_value: number | null;
+  delta: number | null;
+};
+
+export type ExperimentComparisonRow = {
+  example_id: string;
+  status: ExperimentComparisonStatus;
+  baseline_result: ExperimentExampleResult | null;
+  candidate_result: ExperimentExampleResult | null;
+  scores: ExperimentScoreDelta[];
+};
+
+export type ExperimentComparison = {
+  baseline: LoadedExperiment;
+  candidate: LoadedExperiment;
+  aggregate_scores: ExperimentScoreDelta[];
+  rows: ExperimentComparisonRow[];
+  counts: Record<ExperimentComparisonStatus, number>;
+};
+
 export function normalizeExperimentSummaries(value: unknown): ExperimentSummary[] {
   if (!Array.isArray(value)) {
     return [];
@@ -50,6 +80,114 @@ export function normalizeExperiment(value: unknown): LoadedExperiment | null {
     return null;
   }
   return value;
+}
+
+export function compareExperiments(baseline: LoadedExperiment, candidate: LoadedExperiment): ExperimentComparison {
+  const rows = buildComparisonRows(baseline.results, candidate.results).sort(compareRows);
+  const counts = emptyComparisonCounts();
+  for (const row of rows) {
+    counts[row.status] += 1;
+  }
+
+  return {
+    baseline,
+    candidate,
+    aggregate_scores: compareScoreRecords(baseline.aggregate_scores, candidate.aggregate_scores),
+    rows,
+    counts,
+  };
+}
+
+function buildComparisonRows(
+  baselineResults: ExperimentExampleResult[],
+  candidateResults: ExperimentExampleResult[],
+): ExperimentComparisonRow[] {
+  const baselineByExampleId = new Map(baselineResults.map((result) => [result.example_id, result]));
+  const candidateByExampleId = new Map(candidateResults.map((result) => [result.example_id, result]));
+  const exampleIds = new Set([...baselineByExampleId.keys(), ...candidateByExampleId.keys()]);
+
+  return [...exampleIds].map((exampleId) => {
+    const baselineResult = baselineByExampleId.get(exampleId) ?? null;
+    const candidateResult = candidateByExampleId.get(exampleId) ?? null;
+    const scores = compareScores(baselineResult?.scores ?? [], candidateResult?.scores ?? []);
+    return {
+      example_id: exampleId,
+      status: comparisonStatus(baselineResult, candidateResult, scores),
+      baseline_result: baselineResult,
+      candidate_result: candidateResult,
+      scores,
+    };
+  });
+}
+
+function compareScoreRecords(
+  baselineScores: Record<string, number>,
+  candidateScores: Record<string, number>,
+): ExperimentScoreDelta[] {
+  return [...new Set([...Object.keys(baselineScores), ...Object.keys(candidateScores)])]
+    .sort()
+    .map((name) => scoreDelta(name, baselineScores[name], candidateScores[name]));
+}
+
+function compareScores(baselineScores: EvalScore[], candidateScores: EvalScore[]): ExperimentScoreDelta[] {
+  const baselineByName = new Map(baselineScores.map((score) => [score.name, score.value]));
+  const candidateByName = new Map(candidateScores.map((score) => [score.name, score.value]));
+  return [...new Set([...baselineByName.keys(), ...candidateByName.keys()])]
+    .sort()
+    .map((name) => scoreDelta(name, baselineByName.get(name), candidateByName.get(name)));
+}
+
+function scoreDelta(name: string, baselineValue: number | undefined, candidateValue: number | undefined): ExperimentScoreDelta {
+  const baseline_value = baselineValue ?? null;
+  const candidate_value = candidateValue ?? null;
+  return {
+    name,
+    baseline_value,
+    candidate_value,
+    delta: baseline_value === null || candidate_value === null ? null : candidate_value - baseline_value,
+  };
+}
+
+function comparisonStatus(
+  baselineResult: ExperimentExampleResult | null,
+  candidateResult: ExperimentExampleResult | null,
+  scores: ExperimentScoreDelta[],
+): ExperimentComparisonStatus {
+  if (baselineResult === null) {
+    return "new_candidate";
+  }
+  if (candidateResult === null) {
+    return "missing_candidate";
+  }
+  const deltas = scores.map((score) => score.delta).filter((delta): delta is number => delta !== null);
+  if (deltas.some((delta) => delta < 0)) {
+    return "regressed";
+  }
+  if (deltas.some((delta) => delta > 0)) {
+    return "improved";
+  }
+  return "unchanged";
+}
+
+function compareRows(left: ExperimentComparisonRow, right: ExperimentComparisonRow): number {
+  const statusOrder: Record<ExperimentComparisonStatus, number> = {
+    regressed: 0,
+    missing_candidate: 1,
+    new_candidate: 2,
+    improved: 3,
+    unchanged: 4,
+  };
+  return statusOrder[left.status] - statusOrder[right.status] || left.example_id.localeCompare(right.example_id);
+}
+
+function emptyComparisonCounts(): Record<ExperimentComparisonStatus, number> {
+  return {
+    regressed: 0,
+    improved: 0,
+    unchanged: 0,
+    missing_candidate: 0,
+    new_candidate: 0,
+  };
 }
 
 function isLoadedExperiment(value: unknown): value is LoadedExperiment {
