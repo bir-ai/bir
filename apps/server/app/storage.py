@@ -6,7 +6,7 @@ from threading import Lock
 
 from pydantic import ValidationError
 
-from .schemas import LoadedTrace, TraceEventPayload
+from .schemas import EventStatus, EventType, LoadedTrace, TraceEventPayload
 
 EVENT_SORT_PRIORITY = {
     "trace": 0,
@@ -80,15 +80,27 @@ class JsonlEventStore:
                         raise ValueError(f"Invalid event in store {self.path} at line {line_number}") from exc
             return events
 
-    def load_traces(self) -> list[LoadedTrace]:
+    def load_traces(
+        self,
+        *,
+        status: EventStatus | None = None,
+        name: str | None = None,
+        event_type: EventType | None = None,
+    ) -> list[LoadedTrace]:
         events_by_trace_id: dict[str, list[TraceEventPayload]] = {}
         for event in self.load_events():
             events_by_trace_id.setdefault(event.trace_id, []).append(event)
 
+        name_filter = name.strip().lower() if name is not None else None
         traces: list[LoadedTrace] = []
         for trace_id, events in events_by_trace_id.items():
             trace = _loaded_trace(trace_id, events)
-            if trace is not None:
+            if trace is not None and _matches_filters(
+                trace,
+                status=status,
+                name_filter=name_filter,
+                event_type=event_type,
+            ):
                 traces.append(trace)
         return sorted(traces, key=lambda trace: (trace.start_time, trace.id))
 
@@ -110,6 +122,22 @@ def _loaded_trace(trace_id: str, events: list[TraceEventPayload]) -> LoadedTrace
         status=root.status,
         events=sorted_events,
     )
+
+
+def _matches_filters(
+    trace: LoadedTrace,
+    *,
+    status: EventStatus | None,
+    name_filter: str | None,
+    event_type: EventType | None,
+) -> bool:
+    if status is not None and trace.status != status:
+        return False
+    if name_filter and name_filter not in trace.name.lower():
+        return False
+    if event_type is not None and not any(event.type == event_type for event in trace.events):
+        return False
+    return True
 
 
 def _event_sort_key(event: TraceEventPayload) -> tuple[str, int, str, str]:

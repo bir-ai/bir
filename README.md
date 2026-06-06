@@ -85,6 +85,7 @@ npm run dev
 ```
 
 Open `http://localhost:3000` to inspect traces.
+Use the dashboard filters to narrow traces by status, trace name, or event type.
 
 For local evaluation runs, `bir.evals.run_experiment()` writes JSONL results and
 a sibling summary under `.bir/experiments/`. Send one completed experiment to the

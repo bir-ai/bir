@@ -264,6 +264,75 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+.trace-filters {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid rgba(67, 70, 75, 0.76);
+  border-radius: 8px;
+  background: rgba(32, 33, 36, 0.62);
+}
+
+.filter-group {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.filter-group > span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.filter-segments {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.filter-segments button,
+.filter-clear,
+.filter-group input,
+.filter-group select {
+  min-height: 34px;
+  border: 1px solid rgba(67, 70, 75, 0.86);
+  border-radius: 8px;
+  background: rgb(45, 47, 51);
+  color: var(--text);
+}
+
+.filter-segments button,
+.filter-clear {
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.filter-segments button {
+  padding: 0 8px;
+}
+
+.filter-segments button.active,
+.filter-segments button:hover,
+.filter-clear:hover {
+  border-color: rgba(48, 106, 248, 0.72);
+  background: rgba(48, 106, 248, 0.2);
+}
+
+.filter-group input,
+.filter-group select {
+  width: 100%;
+  min-width: 0;
+  padding: 0 9px;
+}
+
+.filter-clear {
+  width: 100%;
+}
+
 .trace-items {
   display: grid;
   gap: 8px;

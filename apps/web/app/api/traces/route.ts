@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
 
+import { buildTraceFilterQuery } from "../../trace-contract";
+
 export const dynamic = "force-dynamic";
 
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 
-export async function GET() {
+export async function GET(request: Request) {
   const apiBaseUrl = process.env.BIR_API_BASE_URL ?? DEFAULT_API_BASE_URL;
-  const endpoint = `${apiBaseUrl.replace(/\/$/, "")}/v1/traces`;
+  const requestUrl = new URL(request.url);
+  const query = buildTraceFilterQuery({
+    status: requestUrl.searchParams.get("status"),
+    name: requestUrl.searchParams.get("name"),
+    event_type: requestUrl.searchParams.get("event_type"),
+  });
+  const endpoint = `${apiBaseUrl.replace(/\/$/, "")}/v1/traces${query ? `?${query}` : ""}`;
 
   try {
     const response = await fetch(endpoint, {

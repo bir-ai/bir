@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -17,6 +17,8 @@ from .schemas import (
     IngestEventResponse,
     LoadedExperiment,
     LoadedTrace,
+    EventStatus,
+    EventType,
     TraceEventPayload,
 )
 from .storage import JsonlEventStore
@@ -56,9 +58,14 @@ def create_app(
         return store.load_events()
 
     @app.get("/v1/traces", response_model=list[LoadedTrace])
-    def list_traces(request: Request) -> list[LoadedTrace]:
+    def list_traces(
+        request: Request,
+        status: EventStatus | None = Query(default=None),
+        name: str | None = Query(default=None),
+        event_type: EventType | None = Query(default=None),
+    ) -> list[LoadedTrace]:
         store = _get_event_store(request)
-        return store.load_traces()
+        return store.load_traces(status=status, name=name, event_type=event_type)
 
     @app.get("/v1/traces/{trace_id}", response_model=LoadedTrace)
     def get_trace(trace_id: str, request: Request) -> LoadedTrace:

@@ -115,6 +115,66 @@ def load_contract_schema() -> dict[str, object]:
     return payload
 
 
+def post_filter_fixture_events(client: TestClient) -> None:
+    events = [
+        make_event(
+            id="trace-success",
+            trace_id="trace-success",
+            name="answer_question",
+            start_time="2026-01-01T00:00:00+00:00",
+            end_time="2026-01-01T00:00:01+00:00",
+        ),
+        make_event(
+            id="generation-success",
+            trace_id="trace-success",
+            parent_id="trace-success",
+            name="local.llm",
+            type="generation",
+            start_time="2026-01-01T00:00:00+00:00",
+            end_time="2026-01-01T00:00:01+00:00",
+        ),
+        make_event(
+            id="trace-error",
+            trace_id="trace-error",
+            name="failing_workflow",
+            status="error",
+            start_time="2026-01-02T00:00:00+00:00",
+            end_time="2026-01-02T00:00:01+00:00",
+            error="failed",
+        ),
+        make_event(
+            id="span-error",
+            trace_id="trace-error",
+            parent_id="trace-error",
+            name="failing_step",
+            type="span",
+            status="error",
+            start_time="2026-01-02T00:00:00+00:00",
+            end_time="2026-01-02T00:00:01+00:00",
+            error="failed",
+        ),
+        make_event(
+            id="trace-tool",
+            trace_id="trace-tool",
+            name="classify",
+            start_time="2026-01-03T00:00:00+00:00",
+            end_time="2026-01-03T00:00:01+00:00",
+        ),
+        make_event(
+            id="tool-call",
+            trace_id="trace-tool",
+            parent_id="trace-tool",
+            name="lookup",
+            type="tool_call",
+            start_time="2026-01-03T00:00:00+00:00",
+            end_time="2026-01-03T00:00:01+00:00",
+        ),
+    ]
+    for event in events:
+        response = client.post("/v1/events", json=event)
+        assert response.status_code == 201
+
+
 def test_health_returns_ok(tmp_path: Path) -> None:
     client, _ = make_client(tmp_path)
 
@@ -766,6 +826,71 @@ def test_lists_traces_with_root_first_event_order(tmp_path: Path) -> None:
     assert len(traces) == 1
     assert traces[0]["id"] == "trace-1"
     assert [event["type"] for event in traces[0]["events"]] == ["trace", "score"]
+
+
+def test_filters_traces_by_status(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    post_filter_fixture_events(client)
+
+    response = client.get("/v1/traces", params={"status": "error"})
+
+    assert response.status_code == 200
+    traces = response.json()
+    assert [trace["id"] for trace in traces] == ["trace-error"]
+
+
+def test_filters_traces_by_case_insensitive_root_name(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    post_filter_fixture_events(client)
+
+    response = client.get("/v1/traces", params={"name": "QUESTION"})
+
+    assert response.status_code == 200
+    traces = response.json()
+    assert [trace["id"] for trace in traces] == ["trace-success"]
+
+
+def test_filters_traces_by_contained_event_type(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    post_filter_fixture_events(client)
+
+    response = client.get("/v1/traces", params={"event_type": "generation"})
+
+    assert response.status_code == 200
+    traces = response.json()
+    assert [trace["id"] for trace in traces] == ["trace-success"]
+
+
+def test_combines_trace_filters(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    post_filter_fixture_events(client)
+
+    response = client.get("/v1/traces", params={"status": "success", "event_type": "tool_call"})
+
+    assert response.status_code == 200
+    traces = response.json()
+    assert [trace["id"] for trace in traces] == ["trace-tool"]
+
+
+def test_blank_trace_name_filter_is_ignored(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    post_filter_fixture_events(client)
+
+    response = client.get("/v1/traces", params={"name": "   "})
+
+    assert response.status_code == 200
+    traces = response.json()
+    assert [trace["id"] for trace in traces] == ["trace-success", "trace-error", "trace-tool"]
+
+
+def test_rejects_invalid_trace_filter_values(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+
+    status_response = client.get("/v1/traces", params={"status": "failed"})
+    event_type_response = client.get("/v1/traces", params={"event_type": "unknown"})
+
+    assert status_response.status_code == 422
+    assert event_type_response.status_code == 422
 
 
 def test_gets_trace_detail_with_root_first_event_order(tmp_path: Path) -> None:

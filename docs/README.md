@@ -85,6 +85,20 @@ contains a representative trace with trace, span, tool call, generation, and
 score events. Keep the SDK, server, and dashboard aligned with those fixtures
 when changing event fields.
 
+## Trace Filtering
+
+Use the dashboard's trace filters, or query the ingestion server directly, to
+triage local traces by root status, root trace name, or contained event type:
+
+```bash
+curl "http://127.0.0.1:8000/v1/traces?status=error"
+curl "http://127.0.0.1:8000/v1/traces?name=answer"
+curl "http://127.0.0.1:8000/v1/traces?event_type=generation"
+```
+
+Filters inspect only root trace status, root trace name, and event type. They do
+not search captured input, output, metadata, or error payloads.
+
 ## Retrieval Events
 
 RAG retrieval inspection builds on the current event contract instead of adding

@@ -5,6 +5,7 @@ import test from "node:test";
 
 import {
   buildTraceTimelineRows,
+  buildTraceFilterQuery,
   findTraceById,
   getPromptDetails,
   getRetrievalDetails,
@@ -17,6 +18,26 @@ import { normalizeExperiment, normalizeExperimentSummaries } from "./experiment-
 const contractTraceResponseFixture = loadSharedContractTraceResponse();
 const [contractTrace] = normalizeTraces(contractTraceResponseFixture);
 assert.ok(contractTrace);
+
+test("builds trace filter query strings from non-empty filters", () => {
+  const query = buildTraceFilterQuery({
+    status: "error",
+    name: " answer question ",
+    event_type: "generation",
+  });
+
+  assert.equal(query, "status=error&name=answer+question&event_type=generation");
+});
+
+test("omits empty and default trace filters", () => {
+  const query = buildTraceFilterQuery({
+    status: "all",
+    name: "   ",
+    event_type: "all",
+  });
+
+  assert.equal(query, "");
+});
 
 test("normalizes valid trace responses from the shared contract fixture", () => {
   const traces = normalizeTraces(contractTraceResponseFixture);

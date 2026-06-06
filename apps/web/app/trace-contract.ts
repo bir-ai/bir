@@ -37,6 +37,12 @@ export type TraceTimelineRow = {
   isOrphan: boolean;
 };
 
+export type TraceFilterValues = {
+  status?: string | null;
+  name?: string | null;
+  event_type?: string | null;
+};
+
 export type RetrievalDocument = {
   id?: string;
   rank?: number;
@@ -70,6 +76,24 @@ export function normalizeTraces(value: unknown): Trace[] {
 
 export function findTraceById(traces: Trace[], traceId: string): Trace | null {
   return traces.find((trace) => trace.id === traceId) ?? null;
+}
+
+export function buildTraceFilterQuery(filters: TraceFilterValues): string {
+  const params = new URLSearchParams();
+  const status = filters.status?.trim();
+  const name = filters.name?.trim();
+  const eventType = filters.event_type?.trim();
+
+  if (status && status !== "all") {
+    params.set("status", status);
+  }
+  if (name) {
+    params.set("name", name);
+  }
+  if (eventType && eventType !== "all") {
+    params.set("event_type", eventType);
+  }
+  return params.toString();
 }
 
 export function getRetrievalDetails(event: TraceEvent): RetrievalDetails | null {

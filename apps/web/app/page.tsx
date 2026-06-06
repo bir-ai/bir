@@ -12,6 +12,7 @@ import {
   type LoadedExperiment,
 } from "./experiment-contract";
 import {
+  buildTraceFilterQuery,
   buildTraceTimelineRows,
   findTraceById,
   getPromptDetails,
@@ -22,6 +23,7 @@ import {
   type PromptDetails,
   type RetrievalDetails,
   type Trace,
+  type TraceFilterValues,
   type TraceTimelineRow,
 } from "./trace-contract";
 
@@ -61,10 +63,17 @@ const typeLabels: Record<EventType, string> = {
   score: "Score",
 };
 
+const DEFAULT_TRACE_FILTERS: TraceFilterValues = {
+  status: "all",
+  name: "",
+  event_type: "all",
+};
+
 export default function DashboardPage() {
   const [activeView, setActiveView] = useState<ViewMode>("traces");
   const [traces, setTraces] = useState<Trace[]>([]);
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
+  const [traceFilters, setTraceFilters] = useState<TraceFilterValues>(DEFAULT_TRACE_FILTERS);
   const [experiments, setExperiments] = useState<ExperimentSummary[]>([]);
   const [selectedExperimentId, setSelectedExperimentId] = useState<string | null>(null);
   const [selectedExperiment, setSelectedExperiment] = useState<LoadedExperiment | null>(null);
@@ -76,12 +85,13 @@ export default function DashboardPage() {
   const [experimentError, setExperimentError] = useState<string | null>(null);
   const [missingLinkedTraceId, setMissingLinkedTraceId] = useState<string | null>(null);
 
-  const loadTraces = useCallback(async () => {
+  const loadTraces = useCallback(async (filters: TraceFilterValues = traceFilters) => {
     setIsTraceLoading(true);
     setTraceError(null);
 
     try {
-      const response = await fetch("/api/traces", { cache: "no-store" });
+      const query = buildTraceFilterQuery(filters);
+      const response = await fetch(`/api/traces${query ? `?${query}` : ""}`, { cache: "no-store" });
       const payload = (await response.json()) as TraceApiResponse;
       if (typeof payload.apiBaseUrl === "string") {
         setApiBaseUrl(payload.apiBaseUrl);
@@ -110,7 +120,7 @@ export default function DashboardPage() {
     } finally {
       setIsTraceLoading(false);
     }
-  }, []);
+  }, [traceFilters]);
 
   const loadExperiments = useCallback(async () => {
     setIsExperimentLoading(true);
@@ -183,7 +193,8 @@ export default function DashboardPage() {
         return;
       }
 
-      const refreshedTraces = await loadTraces();
+      setTraceFilters(DEFAULT_TRACE_FILTERS);
+      const refreshedTraces = await loadTraces(DEFAULT_TRACE_FILTERS);
       if (findTraceById(refreshedTraces, traceId)) {
         setSelectedTraceId(traceId);
         setActiveView("traces");
@@ -216,7 +227,7 @@ export default function DashboardPage() {
     () => (selectedTrace ? buildTraceTimelineRows(selectedTrace.events) : []),
     [selectedTrace],
   );
-  const knownTraceIds = useMemo(() => new Set(traces.map((trace) => trace.id)), [traces]);
+  const hasActiveTraceFilters = buildTraceFilterQuery(traceFilters).length > 0;
 
   const traceStats = useMemo(() => {
     const eventCount = traces.reduce((total, trace) => total + trace.events.length, 0);
@@ -286,9 +297,12 @@ export default function DashboardPage() {
         <TraceDashboard
           apiBaseUrl={apiBaseUrl}
           error={traceError}
+          hasActiveFilters={hasActiveTraceFilters}
+          filters={traceFilters}
           isLoading={isTraceLoading}
           selectedTrace={selectedTrace}
           setSelectedTraceId={setSelectedTraceId}
+          setTraceFilters={setTraceFilters}
           stats={traceStats}
           timelineRows={timelineRows}
           traces={traces}
@@ -301,7 +315,6 @@ export default function DashboardPage() {
           isDetailLoading={isExperimentDetailLoading}
           isLoading={isExperimentLoading}
           isTraceLoading={isTraceLoading}
-          knownTraceIds={knownTraceIds}
           missingLinkedTraceId={missingLinkedTraceId}
           onOpenTrace={openTraceFromExperiment}
           selectedExperiment={selectedExperiment}
@@ -317,18 +330,24 @@ export default function DashboardPage() {
 function TraceDashboard({
   apiBaseUrl,
   error,
+  filters,
+  hasActiveFilters,
   isLoading,
   selectedTrace,
   setSelectedTraceId,
+  setTraceFilters,
   stats,
   timelineRows,
   traces,
 }: {
   apiBaseUrl: string;
   error: string | null;
+  filters: TraceFilterValues;
+  hasActiveFilters: boolean;
   isLoading: boolean;
   selectedTrace: Trace | null;
   setSelectedTraceId: (traceId: string) => void;
+  setTraceFilters: (filters: TraceFilterValues) => void;
   stats: { eventCount: number; errorCount: number; generationCount: number };
   timelineRows: TraceTimelineRow[];
   traces: Trace[];
@@ -345,8 +364,11 @@ function TraceDashboard({
       <section className="workspace">
         <aside className="trace-list" aria-label="Traces">
           <PanelHead title="Traces" subtitle={apiBaseUrl} />
+          <TraceFilterControls filters={filters} setTraceFilters={setTraceFilters} />
           {error ? <div className="state-box error-state">{error}</div> : null}
-          {!error && !isLoading && traces.length === 0 ? <div className="state-box">No traces found.</div> : null}
+          {!error && !isLoading && traces.length === 0 ? (
+            <div className="state-box">{hasActiveFilters ? "No traces match these filters." : "No traces found."}</div>
+          ) : null}
           {isLoading && traces.length === 0 ? <TraceSkeleton /> : null}
 
           <div className="trace-items">
@@ -401,6 +423,70 @@ function TraceDashboard({
   );
 }
 
+function TraceFilterControls({
+  filters,
+  setTraceFilters,
+}: {
+  filters: TraceFilterValues;
+  setTraceFilters: (filters: TraceFilterValues) => void;
+}) {
+  const status = filters.status ?? "all";
+  const eventType = filters.event_type ?? "all";
+  const name = filters.name ?? "";
+  const hasActiveFilters = buildTraceFilterQuery(filters).length > 0;
+
+  return (
+    <div className="trace-filters" aria-label="Trace filters">
+      <div className="filter-group">
+        <span>Status</span>
+        <div className="filter-segments" role="group" aria-label="Trace status">
+          {(["all", "success", "error"] as const).map((nextStatus) => (
+            <button
+              aria-pressed={status === nextStatus}
+              className={status === nextStatus ? "active" : ""}
+              key={nextStatus}
+              type="button"
+              onClick={() => setTraceFilters({ ...filters, status: nextStatus })}
+            >
+              {nextStatus === "all" ? "All" : statusLabels[nextStatus]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <label className="filter-group">
+        <span>Name</span>
+        <input
+          type="search"
+          value={name}
+          onChange={(event) => setTraceFilters({ ...filters, name: event.target.value })}
+        />
+      </label>
+
+      <label className="filter-group">
+        <span>Event Type</span>
+        <select
+          value={eventType}
+          onChange={(event) => setTraceFilters({ ...filters, event_type: event.target.value })}
+        >
+          <option value="all">All event types</option>
+          {Object.entries(typeLabels).map(([value, label]) => (
+            <option value={value} key={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {hasActiveFilters ? (
+        <button className="filter-clear" type="button" onClick={() => setTraceFilters(DEFAULT_TRACE_FILTERS)}>
+          Clear
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function ExperimentDashboard({
   apiBaseUrl,
   error,
@@ -408,7 +494,6 @@ function ExperimentDashboard({
   isDetailLoading,
   isLoading,
   isTraceLoading,
-  knownTraceIds,
   missingLinkedTraceId,
   onOpenTrace,
   selectedExperiment,
@@ -422,7 +507,6 @@ function ExperimentDashboard({
   isDetailLoading: boolean;
   isLoading: boolean;
   isTraceLoading: boolean;
-  knownTraceIds: Set<string>;
   missingLinkedTraceId: string | null;
   onOpenTrace: (traceId: string) => void;
   selectedExperiment: LoadedExperiment | null;
@@ -504,15 +588,11 @@ function ExperimentDashboard({
                   <div className="experiment-results">
                     {selectedExperiment.results.map((result) => {
                       const traceId = result.trace_id ?? null;
-                      const hasLinkedTrace = traceId !== null && knownTraceIds.has(traceId);
-                      const isLinkedTraceMissing =
-                        traceId !== null &&
-                        !hasLinkedTrace &&
-                        (missingLinkedTraceId === traceId || !isTraceLoading);
+                      const isLinkedTraceMissing = traceId !== null && missingLinkedTraceId === traceId && !isTraceLoading;
 
                       return (
                         <ExperimentResultRow
-                          hasLinkedTrace={hasLinkedTrace}
+                          hasLinkedTrace={traceId !== null}
                           isLinkedTraceMissing={isLinkedTraceMissing}
                           onOpenTrace={onOpenTrace}
                           result={result}
