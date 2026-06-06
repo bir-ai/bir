@@ -1,3 +1,5 @@
+"""Append-only JSONL event storage for the Bir ingestion server."""
+
 from __future__ import annotations
 
 import json
@@ -18,11 +20,17 @@ EVENT_SORT_PRIORITY = {
 
 
 class JsonlEventStore:
+    """Persist and query validated trace events from a local JSONL file."""
+
     def __init__(self, path: str | Path) -> None:
+        """Create a store backed by the given JSONL path."""
+
         self.path = Path(path)
         self._lock = Lock()
 
     def append(self, event: TraceEventPayload) -> bool:
+        """Append an event unless its ID already exists."""
+
         with self._lock:
             if self._has_event(event.id):
                 return False
@@ -35,6 +43,8 @@ class JsonlEventStore:
             return True
 
     def has_event(self, event_id: str) -> bool:
+        """Return whether the store already contains an event ID."""
+
         with self._lock:
             return self._has_event(event_id)
 
@@ -58,6 +68,8 @@ class JsonlEventStore:
         return False
 
     def load_events(self) -> list[TraceEventPayload]:
+        """Load all persisted events in file order."""
+
         with self._lock:
             if not self.path.exists():
                 return []
@@ -87,6 +99,8 @@ class JsonlEventStore:
         name: str | None = None,
         event_type: EventType | None = None,
     ) -> list[LoadedTrace]:
+        """Load complete traces, optionally filtered by root status, name, or event type."""
+
         events_by_trace_id: dict[str, list[TraceEventPayload]] = {}
         for event in self.load_events():
             events_by_trace_id.setdefault(event.trace_id, []).append(event)
@@ -105,6 +119,8 @@ class JsonlEventStore:
         return sorted(traces, key=lambda trace: (trace.start_time, trace.id))
 
     def load_trace(self, trace_id: str) -> LoadedTrace | None:
+        """Load one complete trace by ID."""
+
         events = [event for event in self.load_events() if event.trace_id == trace_id]
         return _loaded_trace(trace_id, events)
 

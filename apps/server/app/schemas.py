@@ -1,3 +1,5 @@
+"""Pydantic request and response schemas for the Bir ingestion server."""
+
 from __future__ import annotations
 
 import math
@@ -14,6 +16,8 @@ EventStatus = Literal["success", "error"]
 
 
 class TraceEventPayload(BaseModel):
+    """Validated trace event payload accepted by the ingestion API."""
+
     model_config = ConfigDict(extra="allow")
 
     schema_version: Literal["1.0"]
@@ -94,20 +98,28 @@ class TraceEventPayload(BaseModel):
 
 
 class HealthResponse(BaseModel):
+    """Health check response body."""
+
     status: Literal["ok"]
 
 
 class IngestEventResponse(BaseModel):
+    """Response returned after ingesting a trace event."""
+
     accepted: int
     id: str
 
 
 class IngestExperimentResponse(BaseModel):
+    """Response returned after ingesting an experiment."""
+
     accepted: int
     id: str
 
 
 class LoadedTrace(BaseModel):
+    """Trace detail response with the root trace metadata and ordered events."""
+
     id: str
     name: str
     start_time: datetime
@@ -117,6 +129,8 @@ class LoadedTrace(BaseModel):
 
 
 class EvalScorePayload(BaseModel):
+    """Validated evaluator score payload."""
+
     name: str = Field(min_length=1)
     value: int | float
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -134,6 +148,8 @@ class EvalScorePayload(BaseModel):
 
 
 class ExperimentExampleResultPayload(BaseModel):
+    """Validated result row for one experiment example."""
+
     id: str = Field(min_length=1)
     example_id: str = Field(min_length=1)
     trace_id: str | None = Field(default=None, min_length=1)
@@ -170,6 +186,8 @@ class ExperimentExampleResultPayload(BaseModel):
 
 
 class ExperimentSummaryPayload(BaseModel):
+    """Validated summary metadata for an experiment result file."""
+
     schema_version: Literal["1.0"]
     experiment_id: str = Field(min_length=1)
     name: str = Field(min_length=1)
@@ -196,10 +214,14 @@ class ExperimentSummaryPayload(BaseModel):
 
 
 class LoadedExperiment(ExperimentSummaryPayload):
+    """Experiment detail response with summary fields and result rows."""
+
     results: list[ExperimentExampleResultPayload]
 
 
 class ExperimentIngestPayload(BaseModel):
+    """Payload used to upload an experiment summary and result rows."""
+
     summary: ExperimentSummaryPayload
     results: list[ExperimentExampleResultPayload]
 

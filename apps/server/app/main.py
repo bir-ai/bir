@@ -1,3 +1,5 @@
+"""FastAPI application factory and routes for Bir ingestion."""
+
 from __future__ import annotations
 
 import os
@@ -32,6 +34,8 @@ def create_app(
     event_store_path: str | Path | None = None,
     experiment_store_path: str | Path | None = None,
 ) -> FastAPI:
+    """Create a Bir ingestion server with local JSONL-backed stores."""
+
     app = FastAPI(title="Bir Ingestion Server", version="0.1.0")
     app.state.event_store = JsonlEventStore(event_store_path or _event_store_path_from_env())
     app.state.experiment_store = JsonlExperimentStore(experiment_store_path or _experiment_store_path_from_env())

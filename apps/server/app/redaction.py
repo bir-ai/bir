@@ -1,3 +1,5 @@
+"""Secret redaction helpers shared by server validation paths."""
+
 from __future__ import annotations
 
 import re
@@ -27,6 +29,8 @@ _SECRET_KEY_NAMES = {
 
 
 def redact_value(value: Any, *, key: str | None = None) -> Any:
+    """Recursively redact secret-like values from JSON-compatible data."""
+
     if key is not None and _is_secret_key(key):
         return REDACTED
     if value is None or isinstance(value, (bool, int, float)):
@@ -43,6 +47,8 @@ def redact_value(value: Any, *, key: str | None = None) -> Any:
 
 
 def redact_secret_text(value: str) -> str:
+    """Redact common labeled, bearer, and OpenAI-style secret strings."""
+
     redacted = value
     redacted = re.sub(
         r"(?i)\b(authorization\s*[:=]\s*)(bearer\s+)?(?!\[redacted\])[^\s,;\)\]\}]+",

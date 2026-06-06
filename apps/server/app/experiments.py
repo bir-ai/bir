@@ -1,3 +1,5 @@
+"""JSONL experiment artifact storage for the Bir ingestion server."""
+
 from __future__ import annotations
 
 import json
@@ -12,11 +14,17 @@ from .schemas import ExperimentExampleResultPayload, ExperimentIngestPayload, Ex
 
 
 class JsonlExperimentStore:
+    """Persist and query experiment summaries and result rows from local files."""
+
     def __init__(self, directory: str | Path) -> None:
+        """Create a store rooted at the given experiment directory."""
+
         self.directory = Path(directory)
         self._lock = Lock()
 
     def list_experiments(self) -> list[ExperimentSummaryPayload]:
+        """Load experiment summaries in newest-first order."""
+
         with self._lock:
             if not self.directory.exists():
                 return []
@@ -29,6 +37,8 @@ class JsonlExperimentStore:
             return sorted(summaries, key=lambda summary: (summary.start_time, summary.experiment_id), reverse=True)
 
     def load_experiment(self, experiment_id: str) -> LoadedExperiment | None:
+        """Load an experiment summary and result rows by experiment ID."""
+
         with self._lock:
             summary_path = self._summary_path_for_experiment(experiment_id)
             if summary_path is None:
@@ -40,6 +50,8 @@ class JsonlExperimentStore:
             return LoadedExperiment(**summary.model_dump(mode="python"), results=results)
 
     def save_experiment(self, experiment: ExperimentIngestPayload) -> bool:
+        """Persist an uploaded experiment unless its ID already exists."""
+
         with self._lock:
             if self._summary_path_for_experiment(experiment.summary.experiment_id) is not None:
                 return False
