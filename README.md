@@ -49,12 +49,30 @@ send_events("http://127.0.0.1:8000")
 Install server and web dependencies once if they are not already available:
 
 ```bash
+python3 -m venv .venv
+
 cd apps/server
-python3 -m pip install -e ".[dev]"
+../../.venv/bin/python -m pip install -e ".[dev]"
 
 cd ../web
 npm install
 ```
+
+From the repository root, start the local ingestion server and dashboard
+together:
+
+```bash
+scripts/dev-local
+```
+
+The runner prints the local URLs, checks for the repo `.venv`, server
+dependencies, and web dependencies, then starts:
+
+- API: `http://127.0.0.1:8000`
+- Dashboard: `http://localhost:3000`
+
+It does not install dependencies. Use `scripts/dev-local --check` for a
+non-mutating prerequisite check.
 
 From the repository root, run the dependency-free OpenAI-style demo:
 
@@ -67,7 +85,7 @@ Start the ingestion server in another terminal from the repository root:
 
 ```bash
 cd apps/server
-uvicorn app.main:app --reload
+../../.venv/bin/python -m uvicorn app.main:app --reload
 ```
 
 Send the demo trace to the server from the repository root:

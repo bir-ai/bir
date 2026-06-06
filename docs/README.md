@@ -9,12 +9,25 @@ the dashboard.
 Install server and web dependencies once if they are not already available:
 
 ```bash
+python3 -m venv .venv
+
 cd apps/server
-python3 -m pip install -e ".[dev]"
+../../.venv/bin/python -m pip install -e ".[dev]"
 
 cd ../web
 npm install
 ```
+
+From the repository root, run the local dev loop:
+
+```bash
+scripts/dev-local
+```
+
+The runner starts the FastAPI ingestion server at `http://127.0.0.1:8000` and
+the dashboard at `http://localhost:3000`. It checks local prerequisites first,
+does not install dependencies, and shuts down both child processes on Ctrl+C.
+Use `scripts/dev-local --check` when you only want to validate the local setup.
 
 From the repository root, run the OpenAI-style local demo:
 
@@ -27,7 +40,7 @@ Start the ingestion server in another terminal from the repository root:
 
 ```bash
 cd apps/server
-uvicorn app.main:app --reload
+../../.venv/bin/python -m uvicorn app.main:app --reload
 ```
 
 Send demo events to the server from the repository root:
@@ -45,6 +58,16 @@ npm run dev
 ```
 
 Open `http://localhost:3000`.
+
+The manual fallback is to run the server and dashboard separately:
+
+```bash
+cd apps/server
+../../.venv/bin/python -m uvicorn app.main:app --reload
+
+cd apps/web
+npm run dev
+```
 
 ## Core SDK Pattern
 
