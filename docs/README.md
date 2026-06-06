@@ -161,6 +161,7 @@ For the detailed evaluator implementation plan, see
 `docs/EVALUATOR_IMPLEMENTATION_GUIDE.md`.
 
 ```python
+from bir import generation, span
 from bir.evals import Dataset, DatasetExample, contains, exact_match, latency_under, list_experiments, load_experiment, run_experiment, send_experiment
 
 
@@ -176,7 +177,11 @@ dataset = Dataset(
 
 
 def answer_question(question: str) -> str:
-    return "Bir adds local observability to LLM apps."
+    with span("draft_answer"):
+        with generation("local.llm", model="demo") as gen:
+            answer = "Bir adds local observability to LLM apps."
+            gen.set_output(answer)
+            return answer
 
 
 result = run_experiment(
@@ -212,13 +217,15 @@ result = run_experiment(
 print(result.results[0].trace_id)
 ```
 
-Bir writes one trace per dataset example and records evaluator results as score
-events on that trace. The trace metadata includes `kind="experiment"`,
-`experiment_id`, `experiment_name`, and `example_id`. Start the FastAPI server
-and dashboard, send trace events with `send_events()`, then upload the experiment
-with `send_experiment()`. Experiment rows with uploaded trace events include an
-Open trace action that selects the linked `experiment.<experiment_name>.<example_id>`
-trace in the dashboard.
+Bir writes one trace per dataset example, runs the task inside that trace, and
+records evaluator results as score events on the same trace. Task-level spans,
+generations, retrievals, and tool calls are visible under the linked
+`experiment.<experiment_name>.<example_id>` trace. The trace metadata includes
+`kind="experiment"`, `experiment_id`, `experiment_name`, and `example_id`. Start
+the FastAPI server and dashboard, send trace events with `send_events()`, then
+upload the experiment with `send_experiment()`. Experiment rows with uploaded
+trace events include an Open trace action that selects the linked trace in the
+dashboard.
 
 Dataset JSONL rows use this shape:
 

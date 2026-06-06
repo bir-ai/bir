@@ -97,10 +97,35 @@ send_experiment(".bir/experiments/prompt-v1-<experiment-id>.jsonl")
 ```
 
 When you want each dataset example to produce an inspectable trace, run the
-experiment with `record_traces=True`, send the local trace events with
-`send_events()`, and upload the experiment result with `send_experiment()`.
-Experiment rows with uploaded trace events include an Open trace action in the
-dashboard.
+experiment with `record_traces=True`. Bir runs each example inside its linked
+trace, so task-level spans, generations, retrievals, tool calls, and evaluator
+scores appear together in the dashboard:
+
+```python
+from bir import generation, span
+from bir.evals import contains, run_experiment
+
+
+def answer_question(question: str) -> str:
+    with span("draft_answer"):
+        with generation("local.llm", model="demo") as gen:
+            answer = f"Bir helps inspect: {question}"
+            gen.set_output(answer)
+            return answer
+
+
+result = run_experiment(
+    "prompt-v1",
+    dataset=dataset,
+    task=answer_question,
+    evaluators=[contains()],
+    record_traces=True,
+)
+```
+
+Send the local trace events with `send_events()`, and upload the experiment
+result with `send_experiment()`. Experiment rows with uploaded trace events
+include an Open trace action in the dashboard.
 
 ## License
 
