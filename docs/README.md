@@ -190,6 +190,28 @@ opt-in through `capture_template=True`, `capture_variables=True`, and
 `capture_rendered=True`. Sent generation traces show this prompt metadata in
 the dashboard trace detail view.
 
+## LangChain Callback Integration
+
+LangChain apps can pass Bir's dependency-free callback handler through runnable
+config:
+
+```python
+from bir import configure
+from bir.integrations.langchain import BirCallbackHandler
+
+configure(capture_inputs=True, capture_outputs=True)
+
+result = chain.invoke(
+    {"question": "What is Bir?"},
+    config={"callbacks": [BirCallbackHandler()]},
+)
+```
+
+The handler records root chains as traces, nested chains as spans, LLM/chat model
+callbacks as generation events, retrievers as retrieval tool calls, and tools as
+tool call events. Bir does not install LangChain; use this in applications that
+already depend on LangChain.
+
 ## Local Evaluation Experiments
 
 Use `bir.evals` for small deterministic checks before adding LLM-as-judge or

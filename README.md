@@ -18,6 +18,7 @@ Current focus:
 - Safe opt-in input/output capture
 - Local datasets and deterministic experiment runs
 - FastAPI ingestion and a minimal local dashboard for traces and experiments
+- Dependency-free LangChain callback tracing
 
 ## Python SDK
 
@@ -145,6 +146,23 @@ result = run_experiment(
 Send the local trace events with `send_events()`, and upload the experiment
 result with `send_experiment()`. Experiment rows with uploaded trace events
 include an Open trace action in the dashboard.
+
+## LangChain
+
+Use the optional callback handler in apps that already use LangChain:
+
+```python
+from bir.integrations.langchain import BirCallbackHandler
+
+result = chain.invoke(
+    {"question": "What is Bir?"},
+    config={"callbacks": [BirCallbackHandler()]},
+)
+```
+
+The handler records root chains as traces, LLM calls as generations, retrievers
+as retrieval tool calls, and tools as tool calls without adding LangChain as an
+SDK dependency.
 
 ## License
 
