@@ -636,6 +636,11 @@ judge provider dependencies in this step.
 
 ## Stage 10: Production Observability Basics
 
+Status: first slice implemented. `configure()` accepts `service_name` and
+`environment` and records them on trace root events under `metadata.service`.
+Server query filters and summary views for service metadata are not implemented
+yet.
+
 Goal: make local traces useful for production debugging without adding enterprise
 management features.
 
