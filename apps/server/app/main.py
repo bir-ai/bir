@@ -15,6 +15,7 @@ from .schemas import (
     ExperimentIngestPayload,
     ExperimentSummaryPayload,
     HealthResponse,
+    IngestEventBatchResponse,
     IngestExperimentResponse,
     IngestEventResponse,
     LoadedExperiment,
@@ -55,6 +56,18 @@ def create_app(
         if accepted == 0:
             response.status_code = 200
         return IngestEventResponse(accepted=accepted, id=event.id)
+
+    @app.post("/v1/events/batch", response_model=IngestEventBatchResponse, status_code=201)
+    def ingest_event_batch(
+        events: list[TraceEventPayload],
+        request: Request,
+        response: Response,
+    ) -> IngestEventBatchResponse:
+        store = _get_event_store(request)
+        accepted_ids = [event.id for event in events if store.append(event)]
+        if not accepted_ids:
+            response.status_code = 200
+        return IngestEventBatchResponse(accepted=len(accepted_ids), event_ids=accepted_ids)
 
     @app.get("/v1/events", response_model=list[TraceEventPayload])
     def list_events(request: Request) -> list[TraceEventPayload]:

@@ -6,6 +6,7 @@ Minimal FastAPI ingestion server for Bir trace events.
 
 - `GET /health`
 - `POST /v1/events`
+- `POST /v1/events/batch`
 - `GET /v1/events`
 - `GET /v1/traces`
 - `GET /v1/traces/{trace_id}`
@@ -29,7 +30,11 @@ export BIR_EXPERIMENT_STORE=tmp/experiments
 ```
 
 Ingesting an event with an ID that is already present is idempotent: the server
-returns `accepted: 0` and does not append a duplicate row.
+returns `accepted: 0` and does not append a duplicate row. `POST /v1/events/batch`
+accepts a JSON list of events, applies the same validation, redaction, and
+duplicate handling per event, and returns the accepted count plus accepted event
+IDs. The SDK's `send_events()` uses the batch endpoint and falls back to
+per-event posting when the server does not provide it.
 
 Generation token usage and cost values must be non-negative finite numbers.
 Retrieval document `rank` values must be non-negative integers, and retrieval

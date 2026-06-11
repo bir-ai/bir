@@ -110,6 +110,13 @@ class IngestEventResponse(BaseModel):
     id: str
 
 
+class IngestEventBatchResponse(BaseModel):
+    """Response returned after ingesting a batch of trace events."""
+
+    accepted: int
+    event_ids: list[str]
+
+
 class IngestExperimentResponse(BaseModel):
     """Response returned after ingesting an experiment."""
 

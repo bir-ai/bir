@@ -417,6 +417,88 @@ def test_ingests_valid_event_to_jsonl(tmp_path: Path) -> None:
     assert stored_events[0]["schema_version"] == "1.0"
 
 
+def test_ingests_event_batch_to_jsonl(tmp_path: Path) -> None:
+    client, event_store_path = make_client(tmp_path)
+    events = [
+        make_event(),
+        make_event(id="span-1", trace_id="trace-1", parent_id="trace-1", name="step", type="span"),
+    ]
+
+    response = client.post("/v1/events/batch", json=events)
+
+    assert response.status_code == 201
+    assert response.json() == {"accepted": 2, "event_ids": ["trace-1", "span-1"]}
+    stored_events = [json.loads(line) for line in event_store_path.read_text(encoding="utf-8").splitlines()]
+    assert [event["id"] for event in stored_events] == ["trace-1", "span-1"]
+
+
+def test_event_batch_skips_duplicate_event_ids(tmp_path: Path) -> None:
+    client, event_store_path = make_client(tmp_path)
+    first_response = client.post("/v1/events", json=make_event())
+
+    batch_response = client.post(
+        "/v1/events/batch",
+        json=[
+            make_event(),
+            make_event(id="span-1", trace_id="trace-1", parent_id="trace-1", name="step", type="span"),
+            make_event(id="span-1", trace_id="trace-1", parent_id="trace-1", name="step", type="span"),
+        ],
+    )
+
+    assert first_response.status_code == 201
+    assert batch_response.status_code == 201
+    assert batch_response.json() == {"accepted": 1, "event_ids": ["span-1"]}
+    stored_events = [json.loads(line) for line in event_store_path.read_text(encoding="utf-8").splitlines()]
+    assert [event["id"] for event in stored_events] == ["trace-1", "span-1"]
+
+
+def test_event_batch_with_only_duplicates_returns_200(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    first_response = client.post("/v1/events/batch", json=[make_event()])
+
+    second_response = client.post("/v1/events/batch", json=[make_event()])
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 200
+    assert second_response.json() == {"accepted": 0, "event_ids": []}
+
+
+def test_rejects_invalid_event_in_batch_without_persisting(tmp_path: Path) -> None:
+    client, event_store_path = make_client(tmp_path)
+
+    response = client.post(
+        "/v1/events/batch",
+        json=[make_event(), make_event(id="bad-1", trace_id="bad-1", type="score")],
+    )
+
+    assert response.status_code == 422
+    assert not event_store_path.exists()
+
+
+def test_event_batch_redacts_secret_like_values_before_persisting(tmp_path: Path) -> None:
+    client, event_store_path = make_client(tmp_path)
+
+    response = client.post(
+        "/v1/events/batch",
+        json=[
+            make_event(
+                metadata={"authorization": "Bearer batch-secret"},
+                input={"api_key": "sk-batchsecret"},
+                error="failed authorization: Bearer batch-error-secret",
+            )
+        ],
+    )
+
+    assert response.status_code == 201
+    raw_store = event_store_path.read_text(encoding="utf-8")
+    for secret in ("batch-secret", "sk-batchsecret", "batch-error-secret"):
+        assert secret not in raw_store
+    stored_event = json.loads(raw_store)
+    assert stored_event["metadata"] == {"authorization": "[redacted]"}
+    assert stored_event["input"] == {"api_key": "[redacted]"}
+    assert stored_event["error"] == "failed authorization: Bearer [redacted]"
+
+
 def test_ingestion_redacts_secret_like_values_before_persisting(tmp_path: Path) -> None:
     client, event_store_path = make_client(tmp_path)
 
