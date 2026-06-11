@@ -592,6 +592,11 @@ example-driven workflow.
 
 ## Stage 9: Hallucination And Faithfulness Evaluation
 
+Status: first slice implemented. `bir.evals.answer_context_overlap()` scores the
+fraction of answer word tokens supported by retrieved context texts, covers the
+"retrieved context empty while answer is confident" case, and documents that
+overlap is a heuristic rather than proof of faithfulness.
+
 Goal: help users detect unsupported answers, especially in RAG systems.
 
 Deliverables:
