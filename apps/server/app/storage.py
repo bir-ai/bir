@@ -20,19 +20,26 @@ EVENT_SORT_PRIORITY = {
 
 
 class JsonlEventStore:
-    """Persist and query validated trace events from a local JSONL file."""
+    """Persist and query validated trace events from a local JSONL file.
+
+    Event IDs are indexed in memory after the first duplicate check so each
+    append stays O(1) instead of rescanning the file. The store assumes it is
+    the only writer of its JSONL file while the process is running.
+    """
 
     def __init__(self, path: str | Path) -> None:
         """Create a store backed by the given JSONL path."""
 
         self.path = Path(path)
         self._lock = Lock()
+        self._event_ids: set[str] | None = None
 
     def append(self, event: TraceEventPayload) -> bool:
         """Append an event unless its ID already exists."""
 
         with self._lock:
-            if self._has_event(event.id):
+            event_ids = self._load_event_ids()
+            if event.id in event_ids:
                 return False
 
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -40,32 +47,38 @@ class JsonlEventStore:
             with self.path.open("a", encoding="utf-8") as events_file:
                 events_file.write(json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False))
                 events_file.write("\n")
+            event_ids.add(event.id)
             return True
 
     def has_event(self, event_id: str) -> bool:
         """Return whether the store already contains an event ID."""
 
         with self._lock:
-            return self._has_event(event_id)
+            return event_id in self._load_event_ids()
 
-    def _has_event(self, event_id: str) -> bool:
-        if not self.path.exists():
-            return False
+    def _load_event_ids(self) -> set[str]:
+        if self._event_ids is not None:
+            return self._event_ids
 
-        with self.path.open("r", encoding="utf-8") as events_file:
-            for line_number, line in enumerate(events_file, start=1):
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                try:
-                    payload = json.loads(stripped)
-                except json.JSONDecodeError as exc:
-                    raise ValueError(f"Invalid JSON in event store {self.path} at line {line_number}") from exc
-                if not isinstance(payload, dict):
-                    raise ValueError(f"Event store {self.path} line {line_number} must contain a JSON object")
-                if payload.get("id") == event_id:
-                    return True
-        return False
+        event_ids: set[str] = set()
+        if self.path.exists():
+            with self.path.open("r", encoding="utf-8") as events_file:
+                for line_number, line in enumerate(events_file, start=1):
+                    stripped = line.strip()
+                    if not stripped:
+                        continue
+                    try:
+                        payload = json.loads(stripped)
+                    except json.JSONDecodeError as exc:
+                        raise ValueError(f"Invalid JSON in event store {self.path} at line {line_number}") from exc
+                    if not isinstance(payload, dict):
+                        raise ValueError(f"Event store {self.path} line {line_number} must contain a JSON object")
+                    event_id = payload.get("id")
+                    if isinstance(event_id, str):
+                        event_ids.add(event_id)
+
+        self._event_ids = event_ids
+        return event_ids
 
     def load_events(self) -> list[TraceEventPayload]:
         """Load all persisted events in file order."""

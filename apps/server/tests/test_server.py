@@ -575,6 +575,23 @@ def test_concurrent_duplicate_event_id_appends_once(tmp_path: Path) -> None:
     assert stored_events[0]["id"] == "trace-1"
 
 
+def test_new_store_instance_detects_duplicates_in_existing_file(tmp_path: Path) -> None:
+    event_store_path = tmp_path / "events.jsonl"
+    event = TraceEventPayload.model_validate(make_event())
+
+    first_store = JsonlEventStore(event_store_path)
+    assert first_store.append(event) is True
+
+    second_store = JsonlEventStore(event_store_path)
+    assert second_store.has_event("trace-1") is True
+    assert second_store.append(event) is False
+
+    new_event = TraceEventPayload.model_validate(make_event(id="span-1", type="span", parent_id="trace-1"))
+    assert second_store.append(new_event) is True
+    stored_events = [json.loads(line) for line in event_store_path.read_text(encoding="utf-8").splitlines()]
+    assert [stored["id"] for stored in stored_events] == ["trace-1", "span-1"]
+
+
 def test_rejects_invalid_event_payload(tmp_path: Path) -> None:
     client, event_store_path = make_client(tmp_path)
 
