@@ -53,9 +53,10 @@ cd apps/server
 BIR_DATA_DIR=/path/to/your/project/.bir ../../.venv/bin/uvicorn app.main:app --reload
 ```
 
-In this mode ingestion endpoints are disabled and the server picks up new
-trace events as the SDK appends them. Experiments views stay empty in this
-mode for now. See `apps/server/README.md` for details.
+In this mode ingestion endpoints are disabled, the server picks up new trace
+events as the SDK appends them, and `run_experiment()` results under
+`.bir/experiments/` appear without a `send_experiment()` upload. See
+`apps/server/README.md` for details.
 
 ## Local MVP Loop
 

@@ -238,35 +238,123 @@ def test_local_mode_rejects_experiment_ingestion(tmp_path: Path) -> None:
     assert not (data_dir / "experiments").exists()
 
 
-def test_local_mode_experiments_endpoints_degrade_gracefully(tmp_path: Path) -> None:
-    client, data_dir = make_local_client(tmp_path)
+def write_sdk_experiment(
+    data_dir: Path,
+    summary: dict[str, object],
+    results: list[dict[str, object]],
+) -> Path:
+    """Write experiment artifacts the way the SDK does.
+
+    The summary's result_path stays relative to the project root while the
+    result file sits next to the summary with the same stem.
+    """
+
     experiments_dir = data_dir / "experiments"
-    experiments_dir.mkdir()
-    # SDK-style summary whose result_path is relative to the project root, the
-    # shape JsonlExperimentStore cannot resolve.
-    summary = {
-        "schema_version": "1.0",
-        "experiment_id": "experiment-1",
-        "name": "prompt-v1",
-        "start_time": "2026-01-01T00:00:00+00:00",
-        "end_time": "2026-01-01T00:00:01+00:00",
-        "status": "success",
-        "example_count": 0,
-        "error_count": 0,
-        "aggregate_scores": {},
-        "result_path": ".bir/experiments/prompt-v1-experiment-1.jsonl",
-    }
-    (experiments_dir / "prompt-v1-experiment-1.summary.json").write_text(
-        json.dumps(summary, sort_keys=True) + "\n", encoding="utf-8"
+    experiments_dir.mkdir(parents=True, exist_ok=True)
+    stem = f"{summary['name']}-{summary['experiment_id']}"
+    result_path = experiments_dir / f"{stem}.jsonl"
+    result_path.write_text(
+        "".join(json.dumps(result, sort_keys=True) + "\n" for result in results),
+        encoding="utf-8",
     )
-    (experiments_dir / "prompt-v1-experiment-1.jsonl").write_text("", encoding="utf-8")
+    summary_path = experiments_dir / f"{stem}.summary.json"
+    summary_path.write_text(json.dumps(summary, sort_keys=True) + "\n", encoding="utf-8")
+    return result_path
 
-    list_response = client.get("/v1/experiments")
-    detail_response = client.get("/v1/experiments/experiment-1")
 
-    assert list_response.status_code == 200
-    assert list_response.json() == []
-    assert detail_response.status_code == 404
+def make_sdk_experiment_summary(**overrides: object) -> dict[str, object]:
+    summary = make_experiment_summary(**overrides)
+    summary["result_path"] = f".bir/experiments/{summary['name']}-{summary['experiment_id']}.jsonl"
+    return summary
+
+
+def test_local_mode_lists_sdk_experiments_newest_first(tmp_path: Path) -> None:
+    client, data_dir = make_local_client(tmp_path)
+    write_sdk_experiment(data_dir, make_sdk_experiment_summary(), [make_experiment_result()])
+    write_sdk_experiment(
+        data_dir,
+        make_sdk_experiment_summary(
+            experiment_id="experiment-2",
+            name="prompt-v2",
+            start_time="2026-01-02T00:00:00+00:00",
+            end_time="2026-01-02T00:00:01+00:00",
+        ),
+        [make_experiment_result(experiment_id="experiment-2", experiment_name="prompt-v2", id="result-2")],
+    )
+
+    response = client.get("/v1/experiments")
+
+    assert response.status_code == 200
+    summaries = response.json()
+    assert [summary["experiment_id"] for summary in summaries] == ["experiment-2", "experiment-1"]
+    assert summaries[1]["aggregate_scores"] == {"contains": 1.0}
+
+
+def test_local_mode_gets_experiment_detail_from_sibling_result_file(tmp_path: Path) -> None:
+    client, data_dir = make_local_client(tmp_path)
+    write_sdk_experiment(data_dir, make_sdk_experiment_summary(), [make_experiment_result(trace_id="trace-1")])
+
+    response = client.get("/v1/experiments/experiment-1")
+
+    assert response.status_code == 200
+    experiment = response.json()
+    assert experiment["experiment_id"] == "experiment-1"
+    assert experiment["result_path"] == ".bir/experiments/prompt-v1-experiment-1.jsonl"
+    assert len(experiment["results"]) == 1
+    assert experiment["results"][0]["example_id"] == "q1"
+    assert experiment["results"][0]["trace_id"] == "trace-1"
+
+
+def test_local_mode_experiment_detail_returns_404_for_missing_experiment(tmp_path: Path) -> None:
+    client, data_dir = make_local_client(tmp_path)
+    write_sdk_experiment(data_dir, make_sdk_experiment_summary(), [make_experiment_result()])
+
+    response = client.get("/v1/experiments/missing-experiment")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Experiment not found"}
+
+
+def test_local_mode_skips_torn_final_experiment_result_line_until_completed(tmp_path: Path) -> None:
+    client, data_dir = make_local_client(tmp_path)
+    result_path = write_sdk_experiment(data_dir, make_sdk_experiment_summary(), [make_experiment_result()])
+    second_line = json.dumps(make_experiment_result(id="result-2", example_id="q2"), sort_keys=True) + "\n"
+    split_at = len(second_line) // 2
+    append_text(result_path, second_line[:split_at])
+
+    torn_response = client.get("/v1/experiments/experiment-1")
+    append_text(result_path, second_line[split_at:])
+    completed_response = client.get("/v1/experiments/experiment-1")
+
+    assert torn_response.status_code == 200
+    assert [result["id"] for result in torn_response.json()["results"]] == ["result-1"]
+    assert completed_response.status_code == 200
+    assert [result["id"] for result in completed_response.json()["results"]] == ["result-1", "result-2"]
+
+
+def test_local_mode_experiment_detail_errors_when_sibling_result_file_is_missing(tmp_path: Path) -> None:
+    client, data_dir = make_local_client(tmp_path)
+    result_path = write_sdk_experiment(data_dir, make_sdk_experiment_summary(), [make_experiment_result()])
+    result_path.unlink()
+
+    response = client.get("/v1/experiments/experiment-1")
+
+    assert response.status_code == 500
+    assert "does not exist" in response.json()["detail"]
+
+
+def test_local_mode_experiment_detail_errors_for_mismatched_result_row(tmp_path: Path) -> None:
+    client, data_dir = make_local_client(tmp_path)
+    write_sdk_experiment(
+        data_dir,
+        make_sdk_experiment_summary(),
+        [make_experiment_result(experiment_id="other-experiment")],
+    )
+
+    response = client.get("/v1/experiments/experiment-1")
+
+    assert response.status_code == 500
+    assert "different experiment_id" in response.json()["detail"]
 
 
 def test_bir_data_dir_env_enables_local_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

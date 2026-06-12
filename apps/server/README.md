@@ -81,8 +81,14 @@ writes) directly. The file is re-parsed only when it changes, and a final line
 that the SDK is still appending is skipped until the write completes. All read
 endpoints work normally; `POST /v1/events`, `POST /v1/events/batch`, and
 `POST /v1/experiments` return `403` because the server does not own the data
-files. Experiments endpoints currently return empty results in this mode;
-reading SDK-written `.bir/experiments/` artifacts directly is a follow-up.
+files.
+
+Experiments endpoints read SDK-written artifacts from
+`$BIR_DATA_DIR/experiments/` directly, so `run_experiment()` results show up
+without a `send_experiment()` upload. SDK summaries record `result_path`
+relative to the project root, so the server locates result rows through the
+sibling file that shares the summary's stem
+(`<stem>.summary.json` / `<stem>.jsonl`), matching how the SDK pairs them.
 
 When `BIR_DATA_DIR` is unset, the server runs exactly as before with its own
 ingestion store. Passing an explicit `event_store_path` or

@@ -8,6 +8,7 @@ from threading import Lock
 
 from pydantic import ValidationError
 
+from .jsonl import iter_jsonl_lines_tolerating_torn_tail
 from .schemas import EventStatus, EventType, LoadedTrace, TraceEventPayload
 
 EVENT_SORT_PRIORITY = {
@@ -175,22 +176,10 @@ class LocalJsonlEventReader(TraceEventReader):
             return list(self._cached_events)
 
     def _read_events(self) -> list[TraceEventPayload]:
-        raw = self.path.read_bytes()
-        complete_part, _, tail = raw.rpartition(b"\n")
-
-        events: list[TraceEventPayload] = []
-        line_number = 0
-        if complete_part:
-            for line_number, line in enumerate(complete_part.decode("utf-8").split("\n"), start=1):
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                events.append(_parse_event_line(self.path, line_number, stripped))
-
-        tail_event = _parse_possibly_torn_tail(self.path, line_number + 1, tail)
-        if tail_event is not None:
-            events.append(tail_event)
-        return events
+        return [
+            _parse_event_line(self.path, line_number, stripped)
+            for line_number, stripped in iter_jsonl_lines_tolerating_torn_tail(self.path)
+        ]
 
 
 def _parse_event_line(path: Path, line_number: int, stripped: str) -> TraceEventPayload:
@@ -204,26 +193,6 @@ def _parse_event_line(path: Path, line_number: int, stripped: str) -> TraceEvent
         return TraceEventPayload.model_validate(payload)
     except ValidationError as exc:
         raise ValueError(f"Invalid event in store {path} at line {line_number}") from exc
-
-
-def _parse_possibly_torn_tail(path: Path, line_number: int, tail: bytes) -> TraceEventPayload | None:
-    """Parse the final newline-less line of an externally written file.
-
-    The writer may be mid-append, so a tail that does not decode or parse as
-    JSON is treated as torn and skipped. A truncated serialized object can
-    never parse as complete JSON, so a tail that parses is a finished write
-    that is only missing its newline and is handled like any other line.
-    """
-
-    stripped_tail = tail.strip()
-    if not stripped_tail:
-        return None
-    try:
-        text = stripped_tail.decode("utf-8")
-        json.loads(text)
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return None
-    return _parse_event_line(path, line_number, text)
 
 
 def _loaded_trace(trace_id: str, events: list[TraceEventPayload]) -> LoadedTrace | None:
