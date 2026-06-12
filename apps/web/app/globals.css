@@ -603,28 +603,39 @@ h3 {
   padding-top: 19px;
 }
 
-.timeline-rail::before {
-  content: "";
+.rail-line {
   position: absolute;
-  top: 24px;
-  right: 10px;
-  width: var(--event-indent, 0px);
-  height: 1px;
-  background: var(--border);
-}
-
-.timeline-rail::after {
-  content: "";
-  position: absolute;
-  top: 34px;
-  right: 5px;
-  bottom: -18px;
   width: 1px;
   background: var(--border);
 }
 
-.event-row:last-child .timeline-rail::after {
-  display: none;
+/* Ancestor guide running through the full row, bridging the 4px row gap. */
+.rail-pass,
+.rail-tee {
+  top: 0;
+  bottom: -4px;
+}
+
+/* Last child: the guide stops at the node's center line. */
+.rail-elbow {
+  top: 0;
+  height: 24px;
+}
+
+/* Continues from this node down to its first child. */
+.rail-descend {
+  top: 29px;
+  bottom: -4px;
+}
+
+/* Horizontal connector from the parent guide to the node's halo. */
+.rail-link {
+  position: absolute;
+  top: 23.5px;
+  right: 10px;
+  width: 24px;
+  height: 1px;
+  background: var(--border);
 }
 
 .event-node {
