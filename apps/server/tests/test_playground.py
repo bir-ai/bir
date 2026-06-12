@@ -176,6 +176,170 @@ def test_chat_records_trace_that_round_trips_through_trace_endpoints(tmp_path: P
     assert generation_event["output"] == "Hello from the stub model."
 
 
+def test_chat_with_context_records_prepare_context_span_and_system_context(tmp_path: Path) -> None:
+    with stub_upstream({("POST", "/v1/chat/completions"): (200, CHAT_COMPLETION)}) as (base_url, requests):
+        client, _ = make_playground_test_client(tmp_path, base_url)
+
+        response = client.post(
+            "/v1/playground/chat",
+            json=make_chat_request(system_prompt="Answer briefly.", context="Bir stores traces in JSONL."),
+        )
+
+    assert response.status_code == 200
+    upstream_messages = requests[0]["body"]["messages"]
+    assert upstream_messages[0] == {"role": "system", "content": "Answer briefly."}
+    assert upstream_messages[1]["role"] == "system"
+    assert "Bir stores traces in JSONL." in upstream_messages[1]["content"]
+    assert upstream_messages[2] == {"role": "user", "content": "Say hello."}
+
+    trace = client.get(f"/v1/traces/{response.json()['trace_id']}").json()
+    assert [event["type"] for event in trace["events"]] == ["trace", "span", "generation"]
+    span_event = trace["events"][1]
+    assert span_event["name"] == "playground.prepare_context"
+    assert span_event["parent_id"] == trace["id"]
+    assert span_event["input"] == {"context": "Bir stores traces in JSONL."}
+    assert "Bir stores traces in JSONL." in span_event["output"]["system_message"]
+    assert span_event["metadata"]["context_chars"] == len("Bir stores traces in JSONL.")
+
+
+def test_chat_with_retrieval_records_retrieval_tool_call_with_document(tmp_path: Path) -> None:
+    with stub_upstream({("POST", "/v1/chat/completions"): (200, CHAT_COMPLETION)}) as (base_url, _):
+        client, _ = make_playground_test_client(tmp_path, base_url)
+
+        response = client.post(
+            "/v1/playground/chat",
+            json=make_chat_request(context="Bir stores traces in JSONL.", use_retrieval=True),
+        )
+
+    trace = client.get(f"/v1/traces/{response.json()['trace_id']}").json()
+    assert [event["type"] for event in trace["events"]] == ["trace", "span", "tool_call", "generation"]
+    span_event, retrieval_event = trace["events"][1], trace["events"][2]
+    assert retrieval_event["name"] == "playground.retrieval"
+    assert retrieval_event["parent_id"] == span_event["id"]
+    assert retrieval_event["metadata"]["kind"] == "retrieval"
+    assert retrieval_event["input"] == {"query": "Say hello."}
+    assert retrieval_event["output"] == {
+        "documents": [
+            {"id": "playground-context", "source": "playground", "text": "Bir stores traces in JSONL."}
+        ]
+    }
+
+
+def test_chat_ignores_retrieval_toggle_without_context(tmp_path: Path) -> None:
+    with stub_upstream({("POST", "/v1/chat/completions"): (200, CHAT_COMPLETION)}) as (base_url, requests):
+        client, _ = make_playground_test_client(tmp_path, base_url)
+
+        response = client.post(
+            "/v1/playground/chat",
+            json=make_chat_request(context="   ", use_retrieval=True),
+        )
+
+    assert response.status_code == 200
+    assert requests[0]["body"]["messages"] == [{"role": "user", "content": "Say hello."}]
+    trace = client.get(f"/v1/traces/{response.json()['trace_id']}").json()
+    assert [event["type"] for event in trace["events"]] == ["trace", "generation"]
+
+
+def test_chat_with_evaluators_records_score_events(tmp_path: Path) -> None:
+    with stub_upstream({("POST", "/v1/chat/completions"): (200, CHAT_COMPLETION)}) as (base_url, _):
+        client, _ = make_playground_test_client(tmp_path, base_url)
+
+        response = client.post("/v1/playground/chat", json=make_chat_request(run_evaluators=True))
+
+    trace = client.get(f"/v1/traces/{response.json()['trace_id']}").json()
+    assert [event["type"] for event in trace["events"]] == ["trace", "generation", "score", "score"]
+    scores = {event["name"]: event for event in trace["events"] if event["type"] == "score"}
+    assert scores["answered"]["value"] == 1
+    assert scores["length_ok"]["value"] == 1
+    assert scores["answered"]["parent_id"] == trace["id"]
+    assert scores["answered"]["metadata"]["evaluator"] == "playground"
+    assert scores["length_ok"]["metadata"]["output_chars"] == len("Hello from the stub model.")
+
+
+def test_chat_with_expected_output_records_contains_expected_score(tmp_path: Path) -> None:
+    with stub_upstream({("POST", "/v1/chat/completions"): (200, CHAT_COMPLETION)}) as (base_url, _):
+        client, _ = make_playground_test_client(tmp_path, base_url)
+
+        matching = client.post(
+            "/v1/playground/chat",
+            json=make_chat_request(run_evaluators=True, expected_output="HELLO FROM"),
+        )
+        missing = client.post(
+            "/v1/playground/chat",
+            json=make_chat_request(run_evaluators=True, expected_output="goodbye"),
+        )
+
+    matching_trace = client.get(f"/v1/traces/{matching.json()['trace_id']}").json()
+    missing_trace = client.get(f"/v1/traces/{missing.json()['trace_id']}").json()
+    matching_scores = {event["name"]: event for event in matching_trace["events"] if event["type"] == "score"}
+    missing_scores = {event["name"]: event for event in missing_trace["events"] if event["type"] == "score"}
+    assert matching_scores["contains_expected"]["value"] == 1
+    assert matching_scores["contains_expected"]["metadata"]["expected_output"] == "HELLO FROM"
+    assert missing_scores["contains_expected"]["value"] == 0
+
+
+def test_chat_without_evaluators_ignores_expected_output(tmp_path: Path) -> None:
+    with stub_upstream({("POST", "/v1/chat/completions"): (200, CHAT_COMPLETION)}) as (base_url, _):
+        client, _ = make_playground_test_client(tmp_path, base_url)
+
+        response = client.post("/v1/playground/chat", json=make_chat_request(expected_output="hello"))
+
+    trace = client.get(f"/v1/traces/{response.json()['trace_id']}").json()
+    assert [event["type"] for event in trace["events"]] == ["trace", "generation"]
+
+
+def test_full_workflow_trace_round_trips_through_trace_endpoints(tmp_path: Path) -> None:
+    with stub_upstream({("POST", "/v1/chat/completions"): (200, CHAT_COMPLETION)}) as (base_url, _):
+        client, _ = make_playground_test_client(tmp_path, base_url)
+
+        response = client.post(
+            "/v1/playground/chat",
+            json=make_chat_request(
+                system_prompt="Answer briefly.",
+                session_id="session-1",
+                context="Bir stores traces in JSONL.",
+                use_retrieval=True,
+                expected_output="hello",
+                run_evaluators=True,
+            ),
+        )
+
+    trace_id = response.json()["trace_id"]
+    listed = client.get("/v1/traces").json()
+    detail = client.get(f"/v1/traces/{trace_id}").json()
+
+    assert [trace["id"] for trace in listed] == [trace_id]
+    assert detail["name"] == "playground.chat"
+    assert detail["status"] == "success"
+    assert [event["type"] for event in detail["events"]] == [
+        "trace",
+        "span",
+        "tool_call",
+        "generation",
+        "score",
+        "score",
+        "score",
+    ]
+    # Score events share timestamps, so the store orders them by event id.
+    assert [event["name"] for event in detail["events"]] == [
+        "playground.chat",
+        "playground.prepare_context",
+        "playground.retrieval",
+        "playground.llm",
+        "answered",
+        "contains_expected",
+        "length_ok",
+    ]
+    for event in detail["events"]:
+        assert event["trace_id"] == trace_id
+        assert event["metadata"]["session_id"] == "session-1"
+    root_event = detail["events"][0]
+    generation_event = detail["events"][3]
+    assert root_event["start_time"] <= generation_event["start_time"]
+    assert generation_event["end_time"] <= root_event["end_time"]
+    assert generation_event["usage"] == {"input_tokens": 12, "output_tokens": 7, "total_tokens": 19}
+
+
 def test_chat_redacts_secret_like_values_before_recording(tmp_path: Path) -> None:
     with stub_upstream({("POST", "/v1/chat/completions"): (200, CHAT_COMPLETION)}) as (base_url, _):
         client, event_store_path = make_playground_test_client(tmp_path, base_url)
@@ -312,7 +476,10 @@ def test_read_only_local_mode_disables_playground(tmp_path: Path) -> None:
 
     status_response = client.get("/v1/playground/status")
     models_response = client.get("/v1/playground/models")
-    chat_response = client.post("/v1/playground/chat", json=make_chat_request())
+    chat_response = client.post(
+        "/v1/playground/chat",
+        json=make_chat_request(context="ctx", use_retrieval=True, expected_output="hi", run_evaluators=True),
+    )
 
     assert status_response.status_code == 200
     status = status_response.json()

@@ -85,6 +85,23 @@ events in the same JSONL event store as uploaded SDK traces.
   `playground.llm` generation event, and returns the assistant message,
   `trace_id`, token counts, and latency.
 
+`POST /v1/playground/chat` also accepts optional observed-workflow fields:
+
+- `context` (string): extra context injected into the upstream call as a system
+  message. A non-empty context records a `playground.prepare_context` span.
+- `use_retrieval` (boolean): when `context` is provided, additionally records a
+  `playground.retrieval` tool call shaped like the SDK's retrieval events
+  (`metadata.kind = "retrieval"`, the user query as input, and the context as a
+  single document in the output).
+- `run_evaluators` (boolean): records deterministic score events under the
+  trace — `answered` (assistant output is non-empty) and `length_ok` (output
+  length within 1–4000 characters). No extra model calls are made.
+- `expected_output` (string): when `run_evaluators` is set, also records a
+  `contains_expected` score (case-insensitive containment check).
+
+All of these events pass the same `TraceEventPayload` validation, land in the
+same event store, and show up through `/v1/traces` and `/v1/traces/{id}`.
+
 The upstream base URL defaults to local Ollama:
 
 ```bash

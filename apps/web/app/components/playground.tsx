@@ -23,6 +23,10 @@ export type PlaygroundConversationEntry = {
 export type PlaygroundSessionState = {
   selectedModel: string | null;
   systemPrompt: string;
+  contextText: string;
+  useRetrieval: boolean;
+  expectedOutput: string;
+  runEvaluators: boolean;
   sessionId: string | null;
   entries: PlaygroundConversationEntry[];
   draft: string;
@@ -63,7 +67,19 @@ export function PlaygroundDashboard({
   const [isModelsLoading, setIsModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
-  const { chatError, draft, entries, isSending, selectedModel, sessionId, systemPrompt } = session;
+  const {
+    chatError,
+    contextText,
+    draft,
+    entries,
+    expectedOutput,
+    isSending,
+    runEvaluators,
+    selectedModel,
+    sessionId,
+    systemPrompt,
+    useRetrieval,
+  } = session;
   const selectedHistorySession =
     selectedHistorySessionId === null
       ? null
@@ -159,6 +175,10 @@ export function PlaygroundDashboard({
           messages: [...history, { role: "user", content }],
           system_prompt: systemPrompt.trim() || undefined,
           session_id: sessionId ?? undefined,
+          context: contextText.trim() || undefined,
+          use_retrieval: useRetrieval,
+          expected_output: expectedOutput.trim() || undefined,
+          run_evaluators: runEvaluators,
         }),
       );
       if (!reply) {
@@ -181,15 +201,19 @@ export function PlaygroundDashboard({
       setSession((current) => ({ ...current, isSending: false }));
     }
   }, [
+    contextText,
     draft,
     entries,
+    expectedOutput,
     isSending,
     isViewingHistory,
     onRefreshHistory,
+    runEvaluators,
     selectedModel,
     sessionId,
     setSession,
     systemPrompt,
+    useRetrieval,
   ]);
 
   const replies = visibleEntries.filter((entry) => entry.reply);
@@ -276,6 +300,52 @@ export function PlaygroundDashboard({
                   setSession((current) => ({ ...current, systemPrompt: event.target.value }))
                 }
               />
+            </label>
+
+            <label className="filter-group">
+              <span>Context</span>
+              <textarea
+                placeholder="Optional context passed to the model as system context"
+                rows={4}
+                value={contextText}
+                onChange={(event) =>
+                  setSession((current) => ({ ...current, contextText: event.target.value }))
+                }
+              />
+            </label>
+
+            <label className="toggle-field">
+              <input
+                type="checkbox"
+                checked={useRetrieval}
+                onChange={(event) =>
+                  setSession((current) => ({ ...current, useRetrieval: event.target.checked }))
+                }
+              />
+              <span>Use context as retrieval</span>
+            </label>
+
+            <label className="filter-group">
+              <span>Expected Answer</span>
+              <textarea
+                placeholder="Optional expected answer for the contains_expected evaluator"
+                rows={3}
+                value={expectedOutput}
+                onChange={(event) =>
+                  setSession((current) => ({ ...current, expectedOutput: event.target.value }))
+                }
+              />
+            </label>
+
+            <label className="toggle-field">
+              <input
+                type="checkbox"
+                checked={runEvaluators}
+                onChange={(event) =>
+                  setSession((current) => ({ ...current, runEvaluators: event.target.checked }))
+                }
+              />
+              <span>Run basic evaluators</span>
             </label>
 
             <button className="filter-clear" type="button" onClick={startNewSession} disabled={isSending}>

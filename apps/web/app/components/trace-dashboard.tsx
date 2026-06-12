@@ -1,9 +1,9 @@
 "use client";
 
-import type { Trace, TraceFilterValues, TraceTimelineRow } from "../trace-contract";
-import { formatDate, formatDuration } from "./format";
+import { getTraceScores, type Trace, type TraceFilterValues, type TraceTimelineRow } from "../trace-contract";
+import { formatDate, formatDuration, formatNumber } from "./format";
 import { statusLabels } from "./labels";
-import { Fact, Metric } from "./primitives";
+import { Fact, InlineField, Metric } from "./primitives";
 import { TraceList } from "./trace-list";
 import { TraceTimeline } from "./trace-timeline";
 
@@ -32,6 +32,8 @@ export function TraceDashboard({
   timelineRows: TraceTimelineRow[];
   traces: Trace[];
 }) {
+  const traceScores = selectedTrace ? getTraceScores(selectedTrace.events) : [];
+
   return (
     <>
       <section className="metric-strip" aria-label="Trace summary">
@@ -69,6 +71,14 @@ export function TraceDashboard({
                   <Fact label="Started" value={formatDate(selectedTrace.start_time)} />
                 </div>
               </div>
+
+              {traceScores.length > 0 ? (
+                <section className="score-grid trace-score-strip" aria-label="Trace scores">
+                  {traceScores.map((score) => (
+                    <InlineField label={score.name} value={formatNumber(score.value)} key={score.name} />
+                  ))}
+                </section>
+              ) : null}
 
               <TraceTimeline rows={timelineRows} />
             </>

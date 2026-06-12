@@ -15,6 +15,11 @@ Current views:
   per-example regression status
 - Playground for observed local prompt experiments through the Bir server, with
   model selection, token/latency badges, and trace links
+- Playground workflow controls: optional context (recorded as a
+  `playground.prepare_context` span and, when "Use context as retrieval" is on,
+  a retrieval tool call), an expected answer, and a "Run basic evaluators"
+  toggle that records `answered`, `length_ok`, and `contains_expected` scores
+  on the resulting trace
 
 ## Development
 

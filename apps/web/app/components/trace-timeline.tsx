@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import {
+  getGenerationChatDetails,
   getPromptDetails,
   getRetrievalDetails,
   type TraceTimelineRow,
@@ -7,7 +8,7 @@ import {
 import { formatCost, formatDuration, formatNumber, formatUsage } from "./format";
 import { statusLabels, typeLabels } from "./labels";
 import { InlineField, Payload } from "./primitives";
-import { PromptPanel, RetrievalPanel } from "./trace-detail-panels";
+import { GenerationPanel, PromptPanel, RetrievalPanel } from "./trace-detail-panels";
 
 export function TraceTimeline({ rows }: { rows: TraceTimelineRow[] }) {
   return (
@@ -76,6 +77,9 @@ function EventRow({ row, rail }: { row: TraceTimelineRow; rail: RailGuides }) {
   const hasCost = event.cost && Object.keys(event.cost).length > 0;
   const promptDetails = getPromptDetails(event);
   const retrievalDetails = getRetrievalDetails(event);
+  const generationDetails = getGenerationChatDetails(event);
+  const showRawInput = hasInput && !retrievalDetails && !generationDetails;
+  const showRawOutput = hasOutput && !retrievalDetails && !(generationDetails && generationDetails.outputText !== null);
 
   return (
     <article
@@ -112,6 +116,9 @@ function EventRow({ row, rail }: { row: TraceTimelineRow; rail: RailGuides }) {
           </div>
           <div className="event-badges">
             {row.isOrphan ? <span className="orphan-pill">Orphan</span> : null}
+            {event.type === "score" && typeof event.value === "number" ? (
+              <span className="score-pill">{formatNumber(event.value)}</span>
+            ) : null}
             <span className={`status-pill ${event.status}`}>{statusLabels[event.status]}</span>
             <span className="duration-pill">{formatDuration(event.start_time, event.end_time)}</span>
           </div>
@@ -119,9 +126,6 @@ function EventRow({ row, rail }: { row: TraceTimelineRow; rail: RailGuides }) {
 
         <div className="event-fields">
           {event.model ? <InlineField label="Model" value={event.model} /> : null}
-          {event.type === "score" && typeof event.value === "number" ? (
-            <InlineField label="Score" value={formatNumber(event.value)} />
-          ) : null}
           {hasUsage ? <InlineField label="Usage" value={formatUsage(event.usage)} /> : null}
           {hasCost ? <InlineField label="Cost" value={formatCost(event.cost, event.currency)} /> : null}
           {event.parent_id ? <InlineField label="Parent" value={event.parent_id} /> : null}
@@ -131,10 +135,11 @@ function EventRow({ row, rail }: { row: TraceTimelineRow; rail: RailGuides }) {
 
         {promptDetails ? <PromptPanel details={promptDetails} /> : null}
         {retrievalDetails ? <RetrievalPanel details={retrievalDetails} /> : null}
+        {generationDetails ? <GenerationPanel details={generationDetails} /> : null}
 
         <div className="payload-grid">
-          {hasInput && !retrievalDetails ? <Payload title="Input" value={event.input} /> : null}
-          {hasOutput && !retrievalDetails ? <Payload title="Output" value={event.output} /> : null}
+          {showRawInput ? <Payload title="Input" value={event.input} /> : null}
+          {showRawOutput ? <Payload title="Output" value={event.output} /> : null}
           {hasMetadata ? <Payload title="Metadata" value={event.metadata} /> : null}
         </div>
       </div>

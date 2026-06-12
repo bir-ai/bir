@@ -67,6 +67,21 @@ export type PromptDetails = {
   metadata?: Record<string, unknown>;
 };
 
+export type GenerationChatMessage = {
+  role: string;
+  content: string;
+};
+
+export type GenerationChatDetails = {
+  messages: GenerationChatMessage[];
+  outputText: string | null;
+};
+
+export type TraceScore = {
+  name: string;
+  value: number;
+};
+
 export function normalizeTraces(value: unknown): Trace[] {
   if (!Array.isArray(value)) {
     return [];
@@ -139,6 +154,28 @@ export function getPromptDetails(event: TraceEvent): PromptDetails | null {
     details.metadata = prompt.metadata;
   }
   return details;
+}
+
+export function getGenerationChatDetails(event: TraceEvent): GenerationChatDetails | null {
+  if (event.type !== "generation" || !isRecord(event.input) || !Array.isArray(event.input.messages)) {
+    return null;
+  }
+
+  const messages = event.input.messages;
+  if (messages.length === 0 || !messages.every(isGenerationChatMessage)) {
+    return null;
+  }
+
+  return {
+    messages,
+    outputText: typeof event.output === "string" ? event.output : null,
+  };
+}
+
+export function getTraceScores(events: TraceEvent[]): TraceScore[] {
+  return events
+    .filter((event) => event.type === "score" && typeof event.value === "number")
+    .map((event) => ({ name: event.name, value: event.value as number }));
 }
 
 export function buildTraceTimelineRows(events: TraceEvent[]): TraceTimelineRow[] {
@@ -266,6 +303,10 @@ function isTraceEvent(value: unknown): value is TraceEvent {
     isRecord(candidate.metadata) &&
     (typeof candidate.error === "string" || candidate.error === null)
   );
+}
+
+function isGenerationChatMessage(value: unknown): value is GenerationChatMessage {
+  return isRecord(value) && typeof value.role === "string" && typeof value.content === "string";
 }
 
 function isStatus(value: unknown): value is EventStatus {

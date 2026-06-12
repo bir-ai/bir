@@ -28,6 +28,9 @@ DEFAULT_PLAYGROUND_BASE_URL = "http://127.0.0.1:11434"
 CHAT_TIMEOUT_SECONDS = 120.0
 MODELS_TIMEOUT_SECONDS = 10.0
 STATUS_TIMEOUT_SECONDS = 3.0
+ANSWER_LENGTH_MIN_CHARS = 1
+ANSWER_LENGTH_MAX_CHARS = 4000
+CONTEXT_PROMPT_PREFIX = "Use the following context to answer the user's question.\n\nContext:\n"
 
 
 class PlaygroundUpstreamError(Exception):
@@ -124,18 +127,37 @@ def run_chat(
 ) -> tuple[PlaygroundChatResponse, list[TraceEventPayload]]:
     """Run one chat turn upstream and build the trace events that record it."""
 
+    trace_id = f"playground-{uuid.uuid4().hex}"
+    metadata: dict[str, Any] = {"source": "playground"}
+    if chat.session_id is not None:
+        metadata["session_id"] = chat.session_id
+
     messages = [{"role": message.role, "content": message.content} for message in chat.messages]
     if chat.system_prompt is not None and chat.system_prompt.strip():
         messages.insert(0, {"role": "system", "content": chat.system_prompt})
+
+    workflow_start = datetime.now(timezone.utc)
+    context = chat.context.strip() if chat.context is not None else ""
+    context_events: list[dict[str, Any]] = []
+    if context:
+        context_events = _prepare_context(
+            trace_id=trace_id,
+            metadata=metadata,
+            messages=messages,
+            context=context,
+            use_retrieval=chat.use_retrieval,
+            workflow_start=workflow_start,
+        )
+
     payload: dict[str, Any] = {"model": chat.model, "messages": messages, "stream": False}
     if chat.temperature is not None:
         payload["temperature"] = chat.temperature
 
-    start_time = datetime.now(timezone.utc)
+    model_start = datetime.now(timezone.utc)
     started_at = time.perf_counter()
     completion = client.chat_completion(payload)
     latency_ms = (time.perf_counter() - started_at) * 1000
-    end_time = datetime.now(timezone.utc)
+    model_end = datetime.now(timezone.utc)
 
     assistant_content = _assistant_content(client.base_url, completion)
     upstream_model = completion.get("model")
@@ -143,11 +165,6 @@ def run_chat(
     input_tokens = _usage_token_count(completion, "prompt_tokens")
     output_tokens = _usage_token_count(completion, "completion_tokens")
     total_tokens = _usage_token_count(completion, "total_tokens")
-
-    trace_id = f"playground-{uuid.uuid4().hex}"
-    metadata: dict[str, Any] = {"source": "playground"}
-    if chat.session_id is not None:
-        metadata["session_id"] = chat.session_id
     usage = {
         key: value
         for key, value in (
@@ -157,40 +174,54 @@ def run_chat(
         )
         if value is not None
     }
-    shared_event_fields: dict[str, Any] = {
+
+    score_events: list[dict[str, Any]] = []
+    if chat.run_evaluators:
+        score_events = _evaluate_answer(
+            trace_id=trace_id,
+            metadata=metadata,
+            assistant_content=assistant_content,
+            expected_output=chat.expected_output,
+            model_end=model_end,
+        )
+
+    trace_end = datetime.now(timezone.utc) if score_events else model_end
+    base_event_fields: dict[str, Any] = {
         "schema_version": "1.0",
         "trace_id": trace_id,
-        "start_time": start_time.isoformat(),
-        "end_time": end_time.isoformat(),
         "status": "success",
         "error": None,
     }
-    trace_event = TraceEventPayload.model_validate(
-        {
-            **shared_event_fields,
-            "id": trace_id,
-            "parent_id": None,
-            "name": "playground.chat",
-            "type": "trace",
-            "metadata": metadata,
-            "input": None,
-            "output": None,
-        }
-    )
-    generation_event = TraceEventPayload.model_validate(
-        {
-            **shared_event_fields,
-            "id": f"{trace_id}-generation",
-            "parent_id": trace_id,
-            "name": "playground.llm",
-            "type": "generation",
-            "metadata": {**metadata, "latency_ms": latency_ms},
-            "input": {"messages": messages},
-            "output": assistant_content,
-            "model": response_model,
-            "usage": usage or None,
-        }
-    )
+    trace_event = {
+        **base_event_fields,
+        "id": trace_id,
+        "parent_id": None,
+        "name": "playground.chat",
+        "type": "trace",
+        "start_time": workflow_start.isoformat(),
+        "end_time": trace_end.isoformat(),
+        "metadata": metadata,
+        "input": None,
+        "output": None,
+    }
+    generation_event = {
+        **base_event_fields,
+        "id": f"{trace_id}-generation",
+        "parent_id": trace_id,
+        "name": "playground.llm",
+        "type": "generation",
+        "start_time": model_start.isoformat(),
+        "end_time": model_end.isoformat(),
+        "metadata": {**metadata, "latency_ms": latency_ms},
+        "input": {"messages": messages},
+        "output": assistant_content,
+        "model": response_model,
+        "usage": usage or None,
+    }
+    events = [
+        TraceEventPayload.model_validate({**base_event_fields, **event})
+        for event in (trace_event, *context_events, generation_event, *score_events)
+    ]
 
     response = PlaygroundChatResponse(
         trace_id=trace_id,
@@ -201,7 +232,129 @@ def run_chat(
         total_tokens=total_tokens,
         latency_ms=latency_ms,
     )
-    return response, [trace_event, generation_event]
+    return response, events
+
+
+def _prepare_context(
+    *,
+    trace_id: str,
+    metadata: dict[str, Any],
+    messages: list[dict[str, Any]],
+    context: str,
+    use_retrieval: bool,
+    workflow_start: datetime,
+) -> list[dict[str, Any]]:
+    """Attach the provided context to the upstream messages and record it.
+
+    Returns the ``playground.prepare_context`` span and, when ``use_retrieval``
+    is set, a retrieval-shaped tool call that carries the context as a
+    document, mirroring the SDK's documented RAG event shape.
+    """
+
+    context_message = f"{CONTEXT_PROMPT_PREFIX}{context}"
+    insert_index = 1 if messages and messages[0]["role"] == "system" else 0
+    messages.insert(insert_index, {"role": "system", "content": context_message})
+    prepare_end = datetime.now(timezone.utc)
+
+    span_id = f"{trace_id}-prepare-context"
+    shared_fields: dict[str, Any] = {
+        "trace_id": trace_id,
+        "start_time": workflow_start.isoformat(),
+        "end_time": prepare_end.isoformat(),
+        "status": "success",
+        "error": None,
+    }
+    events: list[dict[str, Any]] = [
+        {
+            **shared_fields,
+            "id": span_id,
+            "parent_id": trace_id,
+            "name": "playground.prepare_context",
+            "type": "span",
+            "metadata": {**metadata, "context_chars": len(context)},
+            "input": {"context": context},
+            "output": {"system_message": context_message},
+        }
+    ]
+    if use_retrieval:
+        events.append(
+            {
+                **shared_fields,
+                "id": f"{trace_id}-retrieval",
+                "parent_id": span_id,
+                "name": "playground.retrieval",
+                "type": "tool_call",
+                "metadata": {**metadata, "kind": "retrieval"},
+                "input": {"query": _last_user_message(messages)},
+                "output": {
+                    "documents": [
+                        {"id": "playground-context", "source": "playground", "text": context}
+                    ]
+                },
+            }
+        )
+    return events
+
+
+def _evaluate_answer(
+    *,
+    trace_id: str,
+    metadata: dict[str, Any],
+    assistant_content: str,
+    expected_output: str | None,
+    model_end: datetime,
+) -> list[dict[str, Any]]:
+    """Run the deterministic built-in evaluators over the assistant reply."""
+
+    answer = assistant_content.strip()
+    scores: list[tuple[str, int, dict[str, Any]]] = [
+        ("answered", 1 if answer else 0, {"output_chars": len(answer)}),
+        (
+            "length_ok",
+            1 if ANSWER_LENGTH_MIN_CHARS <= len(answer) <= ANSWER_LENGTH_MAX_CHARS else 0,
+            {
+                "output_chars": len(answer),
+                "min_chars": ANSWER_LENGTH_MIN_CHARS,
+                "max_chars": ANSWER_LENGTH_MAX_CHARS,
+            },
+        ),
+    ]
+    expected = expected_output.strip() if expected_output is not None else ""
+    if expected:
+        scores.append(
+            (
+                "contains_expected",
+                1 if expected.lower() in assistant_content.lower() else 0,
+                {"expected_output": expected},
+            )
+        )
+
+    evaluated_at = datetime.now(timezone.utc)
+    return [
+        {
+            "trace_id": trace_id,
+            "id": f"{trace_id}-score-{name}",
+            "parent_id": trace_id,
+            "name": name,
+            "type": "score",
+            "start_time": model_end.isoformat(),
+            "end_time": evaluated_at.isoformat(),
+            "status": "success",
+            "error": None,
+            "metadata": {**metadata, "evaluator": "playground", **detail},
+            "input": None,
+            "output": None,
+            "value": value,
+        }
+        for name, value, detail in scores
+    ]
+
+
+def _last_user_message(messages: list[dict[str, Any]]) -> str:
+    for message in reversed(messages):
+        if message.get("role") == "user" and isinstance(message.get("content"), str):
+            return message["content"]
+    return ""
 
 
 def _assistant_content(base_url: str, completion: dict[str, Any]) -> str:

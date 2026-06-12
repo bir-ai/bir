@@ -118,6 +118,10 @@ class PlaygroundChatRequest(BaseModel):
     system_prompt: str | None = None
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     session_id: str | None = Field(default=None, min_length=1)
+    context: str | None = None
+    use_retrieval: bool = False
+    expected_output: str | None = None
+    run_evaluators: bool = False
 
 
 class PlaygroundChatResponse(BaseModel):

@@ -98,6 +98,15 @@ available model, and send a message. Bir proxies the model call through the
 FastAPI server, records the exchange as a normal trace, and links the reply back
 to the trace detail view with token usage and latency.
 
+The Playground setup panel also has optional observed-workflow controls. Paste
+context to inject it into the model call as system context (recorded as a
+`playground.prepare_context` span), enable "Use context as retrieval" to record
+the context as a retrieval tool call with one document, and enable "Run basic
+evaluators" to record deterministic `answered`, `length_ok`, and — when an
+expected answer is provided — `contains_expected` scores on the trace. The
+trace detail view shows the full workflow: span, retrieval, generation, and
+scores.
+
 The model server defaults to `http://127.0.0.1:11434`, which works with Ollama.
 Set `BIR_PLAYGROUND_BASE_URL` before starting the server to use LM Studio,
 vLLM, or another OpenAI-compatible server:

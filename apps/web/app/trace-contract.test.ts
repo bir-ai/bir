@@ -7,8 +7,10 @@ import {
   buildTraceTimelineRows,
   buildTraceFilterQuery,
   findTraceById,
+  getGenerationChatDetails,
   getPromptDetails,
   getRetrievalDetails,
+  getTraceScores,
   normalizeTraces,
   type Trace,
   type TraceEvent,
@@ -160,6 +162,80 @@ test("does not extract prompt metadata from non-generation events", () => {
   };
 
   assert.equal(getPromptDetails(eventWithPrompt), null);
+});
+
+test("extracts chat messages and output text from playground-style generations", () => {
+  const generationEvent = contractTrace.events.find((event) => event.type === "generation");
+  assert.ok(generationEvent);
+  const chatGeneration: TraceEvent = {
+    ...generationEvent,
+    input: {
+      messages: [
+        { role: "system", content: "Answer briefly." },
+        { role: "user", content: "What is Bir?" },
+      ],
+    },
+    output: "Bir is an observability SDK.",
+  };
+
+  const details = getGenerationChatDetails(chatGeneration);
+
+  assert.deepEqual(details, {
+    messages: [
+      { role: "system", content: "Answer briefly." },
+      { role: "user", content: "What is Bir?" },
+    ],
+    outputText: "Bir is an observability SDK.",
+  });
+});
+
+test("ignores generations whose input is not a chat message list", () => {
+  const generationEvent = contractTrace.events.find((event) => event.type === "generation");
+  assert.ok(generationEvent);
+  const spanEvent = contractTrace.events.find((event) => event.type === "span");
+  assert.ok(spanEvent);
+  const malformedMessages: TraceEvent = {
+    ...generationEvent,
+    input: { messages: [{ role: "user" }] },
+  };
+  const chatShapedSpan: TraceEvent = {
+    ...spanEvent,
+    input: { messages: [{ role: "user", content: "hi" }] },
+  };
+
+  assert.equal(getGenerationChatDetails(generationEvent), null);
+  assert.equal(getGenerationChatDetails(malformedMessages), null);
+  assert.equal(getGenerationChatDetails(chatShapedSpan), null);
+});
+
+test("keeps a structured generation output out of the chat details text", () => {
+  const generationEvent = contractTrace.events.find((event) => event.type === "generation");
+  assert.ok(generationEvent);
+  const structuredOutput: TraceEvent = {
+    ...generationEvent,
+    input: { messages: [{ role: "user", content: "hi" }] },
+    output: { message: "ok" },
+  };
+
+  const details = getGenerationChatDetails(structuredOutput);
+
+  assert.ok(details);
+  assert.equal(details.outputText, null);
+});
+
+test("collects score events from a trace", () => {
+  const scores = getTraceScores(contractTrace.events);
+
+  assert.deepEqual(scores, [{ name: "helpfulness", value: 0.82 }]);
+});
+
+test("skips score events without a numeric value when collecting scores", () => {
+  const scoreEvent = contractTrace.events.find((event) => event.type === "score");
+  assert.ok(scoreEvent);
+  const valuelessScore: TraceEvent = { ...scoreEvent, id: "score-no-value" };
+  delete valuelessScore.value;
+
+  assert.deepEqual(getTraceScores([valuelessScore]), []);
 });
 
 test("ignores malformed trace responses without throwing", () => {

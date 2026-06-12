@@ -58,6 +58,10 @@ export default function DashboardPage() {
   const [playgroundSession, setPlaygroundSession] = useState<PlaygroundSessionState>({
     selectedModel: null,
     systemPrompt: "",
+    contextText: "",
+    useRetrieval: false,
+    expectedOutput: "",
+    runEvaluators: false,
     sessionId: null,
     entries: [],
     draft: "",

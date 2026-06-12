@@ -156,6 +156,32 @@ test("posts playground chat requests as JSON", async () => {
   }
 });
 
+test("posts the optional playground workflow fields when provided", async () => {
+  const { calls, restore } = withStubbedFetch(async () => jsonResponse({ trace_id: "trace-2" }));
+  const payload = {
+    model: "llama3.2:1b",
+    messages: [{ role: "user", content: "What is Bir?" }],
+    session_id: "session-1",
+    context: "Bir stores traces in JSONL.",
+    use_retrieval: true,
+    expected_output: "JSONL",
+    run_evaluators: true,
+  };
+
+  try {
+    await postPlaygroundChat(payload);
+
+    assert.equal(calls[0]?.url, "http://127.0.0.1:8000/v1/playground/chat");
+    const body = JSON.parse(String(calls[0]?.init?.body)) as Record<string, unknown>;
+    assert.equal(body.context, "Bir stores traces in JSONL.");
+    assert.equal(body.use_retrieval, true);
+    assert.equal(body.expected_output, "JSONL");
+    assert.equal(body.run_evaluators, true);
+  } finally {
+    restore();
+  }
+});
+
 test("raises a clear error for non-OK responses", async () => {
   const { restore } = withStubbedFetch(async () => jsonResponse({ detail: "boom" }, 500));
   try {

@@ -1,6 +1,28 @@
-import type { PromptDetails, RetrievalDetails } from "../trace-contract";
+import type { GenerationChatDetails, PromptDetails, RetrievalDetails } from "../trace-contract";
 import { formatNumber, formatPayloadValue } from "./format";
 import { InlineField, Payload } from "./primitives";
+
+export function GenerationPanel({ details }: { details: GenerationChatDetails }) {
+  return (
+    <section className="generation-panel">
+      <h4>Conversation</h4>
+      <div className="generation-messages">
+        {details.messages.map((message, index) => (
+          <article className={`generation-message ${message.role}`} key={`${message.role}-${index}`}>
+            <span className="message-role">{message.role}</span>
+            <pre>{message.content}</pre>
+          </article>
+        ))}
+        {details.outputText !== null ? (
+          <article className="generation-message assistant">
+            <span className="message-role">assistant reply</span>
+            <pre>{details.outputText}</pre>
+          </article>
+        ) : null}
+      </div>
+    </section>
+  );
+}
 
 export function PromptPanel({ details }: { details: PromptDetails }) {
   return (
