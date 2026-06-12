@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .experiments import JsonlExperimentStore, LocalExperimentReader
@@ -28,6 +29,7 @@ from .storage import JsonlEventStore, LocalJsonlEventReader, TraceEventReader
 
 DEFAULT_EVENT_STORE_PATH = Path(".bir/server-events.jsonl")
 DEFAULT_EXPERIMENT_STORE_PATH = Path(".bir/experiments")
+DEFAULT_CORS_ORIGINS = ("http://localhost:3000", "http://127.0.0.1:3000")
 READ_ONLY_LOCAL_MODE_DETAIL = (
     "Ingestion is disabled: the server is running in read-only local data mode (BIR_DATA_DIR)"
 )
@@ -56,6 +58,14 @@ def create_app(
         data_dir = None
 
     app = FastAPI(title="Bir Ingestion Server", version="0.1.0")
+    # The dashboard calls the API straight from the browser, so allow its
+    # local origins by default; everything else stays opt-in via env.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins_from_env(),
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
+    )
     app.state.read_only_local_mode = data_dir is not None
     if data_dir is not None:
         app.state.event_store = LocalJsonlEventReader(data_dir / "traces.jsonl")
@@ -161,6 +171,13 @@ def _experiment_store_path_from_env() -> Path:
     if configured_path:
         return Path(configured_path)
     return DEFAULT_EXPERIMENT_STORE_PATH
+
+
+def _cors_origins_from_env() -> list[str]:
+    configured_origins = os.environ.get("BIR_CORS_ORIGINS")
+    if configured_origins:
+        return [origin.strip() for origin in configured_origins.split(",") if origin.strip()]
+    return list(DEFAULT_CORS_ORIGINS)
 
 
 def _local_data_dir_from_env() -> Path | None:

@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { fetchExperimentDetail, fetchExperimentSummaries, fetchTraces, getApiBaseUrl } from "./api-client";
 import { ExperimentDashboard } from "./components/experiment-dashboard";
 import { DEFAULT_TRACE_FILTERS } from "./components/labels";
 import { TraceDashboard } from "./components/trace-dashboard";
@@ -23,26 +24,11 @@ import {
 
 type ViewMode = "traces" | "experiments";
 
-type TraceApiResponse = {
-  traces?: unknown;
-  apiBaseUrl?: string;
-  error?: string;
-  detail?: unknown;
-};
+const apiBaseUrl = getApiBaseUrl();
 
-type ExperimentListApiResponse = {
-  experiments?: unknown;
-  apiBaseUrl?: string;
-  error?: string;
-  detail?: unknown;
-};
-
-type ExperimentDetailApiResponse = {
-  experiment?: unknown;
-  apiBaseUrl?: string;
-  error?: string;
-  detail?: unknown;
-};
+async function getExperimentDetail(experimentId: string): Promise<LoadedExperiment | null> {
+  return normalizeExperiment(await fetchExperimentDetail(experimentId));
+}
 
 export default function DashboardPage() {
   const [activeView, setActiveView] = useState<ViewMode>("traces");
@@ -56,7 +42,6 @@ export default function DashboardPage() {
   const [comparisonCandidateId, setComparisonCandidateId] = useState<string | null>(null);
   const [comparisonBaseline, setComparisonBaseline] = useState<LoadedExperiment | null>(null);
   const [comparisonCandidate, setComparisonCandidate] = useState<LoadedExperiment | null>(null);
-  const [apiBaseUrl, setApiBaseUrl] = useState("http://127.0.0.1:8000");
   const [isTraceLoading, setIsTraceLoading] = useState(true);
   const [isExperimentLoading, setIsExperimentLoading] = useState(true);
   const [isExperimentDetailLoading, setIsExperimentDetailLoading] = useState(false);
@@ -71,19 +56,7 @@ export default function DashboardPage() {
 
     try {
       const query = buildTraceFilterQuery(filters);
-      const response = await fetch(`/api/traces${query ? `?${query}` : ""}`, { cache: "no-store" });
-      const payload = (await response.json()) as TraceApiResponse;
-      if (typeof payload.apiBaseUrl === "string") {
-        setApiBaseUrl(payload.apiBaseUrl);
-      }
-      if (!response.ok) {
-        setTraceError(payload.error ?? "Trace request failed");
-        setTraces([]);
-        setSelectedTraceId(null);
-        return [];
-      }
-
-      const nextTraces = normalizeTraces(payload.traces);
+      const nextTraces = normalizeTraces(await fetchTraces(query));
       setTraces(nextTraces);
       setSelectedTraceId((current) => {
         if (current && nextTraces.some((trace) => trace.id === current)) {
@@ -107,20 +80,7 @@ export default function DashboardPage() {
     setExperimentError(null);
 
     try {
-      const response = await fetch("/api/experiments", { cache: "no-store" });
-      const payload = (await response.json()) as ExperimentListApiResponse;
-      if (typeof payload.apiBaseUrl === "string") {
-        setApiBaseUrl(payload.apiBaseUrl);
-      }
-      if (!response.ok) {
-        setExperimentError(payload.error ?? "Experiment request failed");
-        setExperiments([]);
-        setSelectedExperimentId(null);
-        setSelectedExperiment(null);
-        return;
-      }
-
-      const nextExperiments = normalizeExperimentSummaries(payload.experiments);
+      const nextExperiments = normalizeExperimentSummaries(await fetchExperimentSummaries());
       setExperiments(nextExperiments);
       setSelectedExperimentId((current) => {
         if (current && nextExperiments.some((experiment) => experiment.experiment_id === current)) {
@@ -138,31 +98,19 @@ export default function DashboardPage() {
     }
   }, []);
 
-  const fetchExperimentDetail = useCallback(async (experimentId: string): Promise<LoadedExperiment | null> => {
-    const response = await fetch(`/api/experiments/${encodeURIComponent(experimentId)}`, { cache: "no-store" });
-    const payload = (await response.json()) as ExperimentDetailApiResponse;
-    if (typeof payload.apiBaseUrl === "string") {
-      setApiBaseUrl(payload.apiBaseUrl);
-    }
-    if (!response.ok) {
-      throw new Error(payload.error ?? "Experiment detail request failed");
-    }
-    return normalizeExperiment(payload.experiment);
-  }, []);
-
   const loadExperimentDetail = useCallback(async (experimentId: string) => {
     setIsExperimentDetailLoading(true);
     setExperimentError(null);
 
     try {
-      setSelectedExperiment(await fetchExperimentDetail(experimentId));
+      setSelectedExperiment(await getExperimentDetail(experimentId));
     } catch (requestError) {
       setExperimentError(requestError instanceof Error ? requestError.message : "Experiment detail request failed");
       setSelectedExperiment(null);
     } finally {
       setIsExperimentDetailLoading(false);
     }
-  }, [fetchExperimentDetail]);
+  }, []);
 
   const openTraceFromExperiment = useCallback(
     async (traceId: string) => {
@@ -236,8 +184,8 @@ export default function DashboardPage() {
     setExperimentError(null);
 
     void Promise.all([
-      fetchExperimentDetail(comparisonBaselineId),
-      fetchExperimentDetail(comparisonCandidateId),
+      getExperimentDetail(comparisonBaselineId),
+      getExperimentDetail(comparisonCandidateId),
     ])
       .then(([baseline, candidate]) => {
         if (!isCurrentRequest) {
@@ -263,7 +211,7 @@ export default function DashboardPage() {
     return () => {
       isCurrentRequest = false;
     };
-  }, [comparisonBaselineId, comparisonCandidateId, fetchExperimentDetail]);
+  }, [comparisonBaselineId, comparisonCandidateId]);
 
   const selectedTrace = useMemo(
     () => (selectedTraceId ? findTraceById(traces, selectedTraceId) : null) ?? traces[0] ?? null,

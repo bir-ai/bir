@@ -21,12 +21,17 @@ npm install
 npm run dev
 ```
 
-By default the dashboard reads traces from `http://127.0.0.1:8000`.
-Override the backend URL with:
+The dashboard calls the Bir FastAPI server straight from the browser; there
+are no Next.js API proxy routes. By default it reads from
+`http://127.0.0.1:8000`. Override the backend URL at build/dev time with:
 
 ```bash
-BIR_API_BASE_URL=http://127.0.0.1:8000 npm run dev
+NEXT_PUBLIC_BIR_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 ```
+
+The server allows the dashboard's local origins (`http://localhost:3000` and
+`http://127.0.0.1:3000`) through CORS by default; if the dashboard runs on
+another origin, set `BIR_CORS_ORIGINS` on the server side as well.
 
 Useful checks:
 

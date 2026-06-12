@@ -66,6 +66,18 @@ as summary plus per-example result rows through
 `/v1/experiments/{experiment_id}`. Duplicate experiment uploads are idempotent
 and do not overwrite the existing stored artifact.
 
+## CORS
+
+The dashboard calls the API directly from the browser, so the server allows
+its local origins (`http://localhost:3000` and `http://127.0.0.1:3000`) by
+default. Override the allowed origins with a comma-separated list:
+
+```bash
+export BIR_CORS_ORIGINS="http://localhost:3000,http://dashboard.example:4173"
+```
+
+Setting `BIR_CORS_ORIGINS` replaces the defaults instead of extending them.
+
 ## Read-only local data mode
 
 Point the server at a project's `.bir` directory to browse SDK-written traces

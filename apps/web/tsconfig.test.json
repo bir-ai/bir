@@ -9,6 +9,8 @@
     "types": ["node"]
   },
   "include": [
+    "app/api-client.ts",
+    "app/api-client.test.ts",
     "app/trace-contract.ts",
     "app/trace-contract.test.ts"
   ],

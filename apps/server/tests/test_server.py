@@ -5,6 +5,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -173,6 +174,51 @@ def post_filter_fixture_events(client: TestClient) -> None:
     for event in events:
         response = client.post("/v1/events", json=event)
         assert response.status_code == 201
+
+
+def test_cors_allows_default_dashboard_origin(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+
+    response = client.get("/v1/traces", headers={"origin": "http://localhost:3000"})
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+
+
+def test_cors_ignores_unknown_origin(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+
+    response = client.get("/v1/traces", headers={"origin": "http://evil.example"})
+
+    assert response.status_code == 200
+    assert "access-control-allow-origin" not in response.headers
+
+
+def test_cors_preflight_allows_dashboard_get(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+
+    response = client.options(
+        "/v1/traces",
+        headers={
+            "origin": "http://127.0.0.1:3000",
+            "access-control-request-method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:3000"
+    assert "GET" in response.headers["access-control-allow-methods"]
+
+
+def test_cors_origins_are_configurable_via_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BIR_CORS_ORIGINS", "http://dashboard.example:4173, http://other.example")
+    client, _ = make_client(tmp_path)
+
+    allowed = client.get("/v1/traces", headers={"origin": "http://dashboard.example:4173"})
+    default_origin = client.get("/v1/traces", headers={"origin": "http://localhost:3000"})
+
+    assert allowed.headers["access-control-allow-origin"] == "http://dashboard.example:4173"
+    assert "access-control-allow-origin" not in default_origin.headers
 
 
 def test_health_returns_ok(tmp_path: Path) -> None:
