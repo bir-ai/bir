@@ -24,13 +24,14 @@ import {
 
 type ViewMode = "traces" | "experiments";
 
-const apiBaseUrl = getApiBaseUrl();
-
 async function getExperimentDetail(experimentId: string): Promise<LoadedExperiment | null> {
   return normalizeExperiment(await fetchExperimentDetail(experimentId));
 }
 
 export default function DashboardPage() {
+  // Same-origin resolution needs the browser, so the prerendered HTML keeps a
+  // stable placeholder and the real URL fills in after hydration.
+  const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [activeView, setActiveView] = useState<ViewMode>("traces");
   const [traces, setTraces] = useState<Trace[]>([]);
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
@@ -134,6 +135,10 @@ export default function DashboardPage() {
     },
     [loadTraces, traces],
   );
+
+  useEffect(() => {
+    setApiBaseUrl(getApiBaseUrl());
+  }, []);
 
   useEffect(() => {
     void loadTraces();

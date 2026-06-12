@@ -27,10 +27,44 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function withStubbedWindow(origin: string): () => void {
+  const host = globalThis as { window?: unknown };
+  const originalWindow = host.window;
+  host.window = { location: { origin } };
+  return () => {
+    if (originalWindow === undefined) {
+      delete host.window;
+      return;
+    }
+    host.window = originalWindow;
+  };
+}
+
 test("defaults the API base URL to the local server", () => {
   delete process.env.NEXT_PUBLIC_BIR_API_BASE_URL;
 
   assert.equal(getApiBaseUrl(), "http://127.0.0.1:8000");
+});
+
+test("uses the page origin in the browser when no base URL is configured", () => {
+  delete process.env.NEXT_PUBLIC_BIR_API_BASE_URL;
+  const restore = withStubbedWindow("http://localhost:8000");
+  try {
+    assert.equal(getApiBaseUrl(), "http://localhost:8000");
+  } finally {
+    restore();
+  }
+});
+
+test("prefers a configured base URL over the page origin", () => {
+  process.env.NEXT_PUBLIC_BIR_API_BASE_URL = "http://api.example:9000";
+  const restore = withStubbedWindow("http://localhost:8000");
+  try {
+    assert.equal(getApiBaseUrl(), "http://api.example:9000");
+  } finally {
+    restore();
+    delete process.env.NEXT_PUBLIC_BIR_API_BASE_URL;
+  }
 });
 
 test("reads the API base URL from the environment and strips a trailing slash", () => {

@@ -2,8 +2,15 @@ const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 
 export function getApiBaseUrl(): string {
   const configured = process.env.NEXT_PUBLIC_BIR_API_BASE_URL;
-  const baseUrl = configured && configured.trim() ? configured.trim() : DEFAULT_API_BASE_URL;
-  return baseUrl.replace(/\/$/, "");
+  if (configured && configured.trim()) {
+    return configured.trim().replace(/\/$/, "");
+  }
+  // The static export is meant to be served by the Bir server itself, so the
+  // API shares the page origin unless a base URL was baked in at build time.
+  if (typeof window !== "undefined" && window.location.origin) {
+    return window.location.origin.replace(/\/$/, "");
+  }
+  return DEFAULT_API_BASE_URL;
 }
 
 export function fetchTraces(query: string): Promise<unknown> {

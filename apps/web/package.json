@@ -3,9 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "NEXT_TELEMETRY_DISABLED=1 next dev",
+    "dev": "NEXT_PUBLIC_BIR_API_BASE_URL=\"${NEXT_PUBLIC_BIR_API_BASE_URL:-http://127.0.0.1:8000}\" NEXT_TELEMETRY_DISABLED=1 next dev",
     "build": "NEXT_TELEMETRY_DISABLED=1 next build",
-    "start": "next start",
     "test": "tsc -p tsconfig.test.json && node --test .test-build/app/**/*.test.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint app --max-warnings=0"
