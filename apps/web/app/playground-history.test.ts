@@ -63,6 +63,29 @@ test("reconstructs evaluator scores from trace score events", () => {
   ]);
 });
 
+test("recovers the expected answer from contains_expected score metadata", () => {
+  const withExpected = makePlaygroundTrace({
+    traceId: "trace-1",
+    sessionId: "session-1",
+    output: "Hi",
+    scores: [{ name: "contains_expected", value: 0, expectedOutput: "Ankara" }],
+  });
+  const withoutExpected = makePlaygroundTrace({
+    traceId: "trace-2",
+    sessionId: "session-2",
+    output: "Hi",
+    scores: [{ name: "answered", value: 1 }],
+  });
+
+  const sessions = buildPlaygroundHistorySessions([withExpected, withoutExpected]);
+  const expectedBySession = new Map(
+    sessions.map((session) => [session.sessionId, session.entries[0].expected]),
+  );
+
+  assert.equal(expectedBySession.get("session-1"), "Ankara");
+  assert.equal(expectedBySession.get("session-2"), undefined);
+});
+
 test("sorts reconstructed sessions by latest trace end time", () => {
   const sessions = buildPlaygroundHistorySessions([
     makePlaygroundTrace({
@@ -112,7 +135,7 @@ function makePlaygroundTrace({
   messages?: { role: "system" | "user" | "assistant"; content: string }[];
   output?: string;
   totalTokens?: number;
-  scores?: { name: string; value: number }[];
+  scores?: { name: string; value: number; expectedOutput?: string }[];
 }): Trace {
   const metadata = sessionId === null ? { source } : { source, session_id: sessionId };
   const endTime = new Date(new Date(startTime).getTime() + 250).toISOString();
@@ -125,7 +148,7 @@ function makePlaygroundTrace({
       type: "score",
       startTime: endTime,
       endTime,
-      metadata,
+      metadata: score.expectedOutput === undefined ? metadata : { ...metadata, expected_output: score.expectedOutput },
       input: null,
       output: null,
       value: score.value,

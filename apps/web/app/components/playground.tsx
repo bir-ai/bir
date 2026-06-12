@@ -9,6 +9,7 @@ import {
   type PlaygroundChatReply,
   type PlaygroundStatus,
 } from "../playground-contract";
+import { buildDatasetRows, datasetFileName, serializeDatasetRows } from "../playground-dataset";
 import type { PlaygroundHistorySession } from "../playground-history";
 import { formatDate } from "./format";
 import { InlineField, Metric, PanelHead } from "./primitives";
@@ -17,6 +18,8 @@ export type PlaygroundConversationEntry = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  // Expected answer in effect when this user turn was sent, kept for dataset export.
+  expected?: string;
   reply?: PlaygroundChatReply;
 };
 
@@ -162,7 +165,10 @@ export function PlaygroundDashboard({
     }));
     setSession((current) => ({
       ...current,
-      entries: [...current.entries, { id: crypto.randomUUID(), role: "user", content }],
+      entries: [
+        ...current.entries,
+        { id: crypto.randomUUID(), role: "user", content, expected: expectedOutput.trim() || undefined },
+      ],
       draft: "",
       chatError: null,
       isSending: true,
@@ -215,6 +221,22 @@ export function PlaygroundDashboard({
     systemPrompt,
     useRetrieval,
   ]);
+
+  const visibleSessionId = isViewingHistory ? selectedHistorySession.sessionId : sessionId;
+  const datasetRows = buildDatasetRows(visibleEntries, visibleSessionId);
+
+  const exportDataset = useCallback(() => {
+    if (datasetRows.length === 0) {
+      return;
+    }
+    const blob = new Blob([serializeDatasetRows(datasetRows)], { type: "application/jsonl" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = datasetFileName(visibleSessionId);
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, [datasetRows, visibleSessionId]);
 
   const replies = visibleEntries.filter((entry) => entry.reply);
   const sessionTokens = replies.reduce((total, entry) => total + (entry.reply?.total_tokens ?? 0), 0);
@@ -407,6 +429,15 @@ export function PlaygroundDashboard({
                   : "Each exchange becomes a trace with token usage and latency."}
               </p>
             </div>
+            <button
+              className="refresh-button"
+              type="button"
+              onClick={exportDataset}
+              disabled={datasetRows.length === 0}
+              title="Download this session's turns as an evals dataset (JSONL) for bir.evals.Dataset.from_jsonl"
+            >
+              Export dataset
+            </button>
           </div>
 
           <div className="chat-log" ref={logRef}>

@@ -107,6 +107,12 @@ expected answer is provided — `contains_expected` scores on the trace. The
 trace detail view shows the full workflow: span, retrieval, generation, and
 scores.
 
+A Playground session can also be exported as an evals dataset: the "Export
+dataset" button downloads the session's turns as JSONL that loads directly
+with `bir.evals.Dataset.from_jsonl`, so a conversation you liked can be
+re-run as an experiment against another model or prompt and compared in the
+Experiments tab.
+
 The model server defaults to `http://127.0.0.1:11434`, which works with Ollama.
 Set `BIR_PLAYGROUND_BASE_URL` before starting the server to use LM Studio,
 vLLM, or another OpenAI-compatible server:

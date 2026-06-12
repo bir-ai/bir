@@ -21,6 +21,11 @@ Current views:
   toggle that records `answered`, `length_ok`, and `contains_expected` scores
   on the resulting trace; pass/fail score chips appear directly under the
   assistant reply next to the token and latency badges
+- dataset export: the "Export dataset" button above the conversation downloads
+  the session's turns as JSONL rows (`{id, input, expected, metadata}`) that
+  load directly with `bir.evals.Dataset.from_jsonl` for `run_experiment`;
+  reconstructed history sessions can be exported too, recovering the expected
+  answer from recorded `contains_expected` scores
 
 ## Development
 

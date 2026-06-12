@@ -5,6 +5,7 @@ export type PlaygroundHistoryEntry = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  expected?: string;
   reply?: PlaygroundChatReply;
 };
 
@@ -57,6 +58,7 @@ function buildSession(sessionId: string, traces: Trace[]): PlaygroundHistorySess
         id: `${trace.id}-user`,
         role: "user",
         content: userMessage.content,
+        expected: expectedOutputFromScores(trace),
       });
     }
 
@@ -124,6 +126,16 @@ function lastUserMessage(input: unknown): ChatMessage | null {
     }
   }
   return null;
+}
+
+// The contains_expected evaluator records the expected answer in its score
+// metadata, so reconstructed sessions can still be exported as datasets.
+function expectedOutputFromScores(trace: Trace): string | undefined {
+  const scoreEvent = trace.events.find(
+    (event) => event.type === "score" && event.name === "contains_expected",
+  );
+  const expected = scoreEvent?.metadata.expected_output;
+  return typeof expected === "string" && expected.length > 0 ? expected : undefined;
 }
 
 function assistantOutput(output: unknown): string | null {
