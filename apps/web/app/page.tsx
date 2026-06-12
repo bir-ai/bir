@@ -20,6 +20,7 @@ import {
   type ExperimentSummary,
   type LoadedExperiment,
 } from "./experiment-contract";
+import { buildPlaygroundHistorySessions } from "./playground-history";
 import { normalizePlaygroundStatus, type PlaygroundStatus } from "./playground-contract";
 import {
   buildTraceFilterQuery,
@@ -52,6 +53,8 @@ export default function DashboardPage() {
   const [comparisonBaseline, setComparisonBaseline] = useState<LoadedExperiment | null>(null);
   const [comparisonCandidate, setComparisonCandidate] = useState<LoadedExperiment | null>(null);
   const [playgroundStatus, setPlaygroundStatus] = useState<PlaygroundStatus | null>(null);
+  const [playgroundHistoryTraces, setPlaygroundHistoryTraces] = useState<Trace[]>([]);
+  const [selectedPlaygroundHistorySessionId, setSelectedPlaygroundHistorySessionId] = useState<string | null>(null);
   const [playgroundSession, setPlaygroundSession] = useState<PlaygroundSessionState>({
     selectedModel: null,
     systemPrompt: "",
@@ -66,9 +69,11 @@ export default function DashboardPage() {
   const [isExperimentDetailLoading, setIsExperimentDetailLoading] = useState(false);
   const [isComparisonLoading, setIsComparisonLoading] = useState(false);
   const [isPlaygroundStatusLoading, setIsPlaygroundStatusLoading] = useState(true);
+  const [isPlaygroundHistoryLoading, setIsPlaygroundHistoryLoading] = useState(false);
   const [traceError, setTraceError] = useState<string | null>(null);
   const [experimentError, setExperimentError] = useState<string | null>(null);
   const [playgroundError, setPlaygroundError] = useState<string | null>(null);
+  const [playgroundHistoryError, setPlaygroundHistoryError] = useState<string | null>(null);
   const [missingLinkedTraceId, setMissingLinkedTraceId] = useState<string | null>(null);
 
   const loadTraces = useCallback(async (filters: TraceFilterValues = traceFilters) => {
@@ -134,6 +139,21 @@ export default function DashboardPage() {
       setPlaygroundStatus(null);
     } finally {
       setIsPlaygroundStatusLoading(false);
+    }
+  }, []);
+
+  const loadPlaygroundHistory = useCallback(async () => {
+    setIsPlaygroundHistoryLoading(true);
+    setPlaygroundHistoryError(null);
+
+    try {
+      setPlaygroundHistoryTraces(normalizeTraces(await fetchTraces("")));
+    } catch (requestError) {
+      setPlaygroundHistoryError(
+        requestError instanceof Error ? requestError.message : "Playground history request failed",
+      );
+    } finally {
+      setIsPlaygroundHistoryLoading(false);
     }
   }, []);
 
@@ -206,6 +226,12 @@ export default function DashboardPage() {
     }
     setSelectedExperiment(null);
   }, [loadExperimentDetail, selectedExperimentId]);
+
+  useEffect(() => {
+    if (activeView === "playground") {
+      void loadPlaygroundHistory();
+    }
+  }, [activeView, loadPlaygroundHistory]);
 
   useEffect(() => {
     if (experiments.length < 2) {
@@ -307,12 +333,33 @@ export default function DashboardPage() {
     [comparisonBaseline, comparisonCandidate],
   );
 
+  const playgroundHistorySessions = useMemo(() => {
+    const tracesById = new Map<string, Trace>();
+    for (const trace of traces) {
+      tracesById.set(trace.id, trace);
+    }
+    for (const trace of playgroundHistoryTraces) {
+      tracesById.set(trace.id, trace);
+    }
+    return buildPlaygroundHistorySessions(Array.from(tracesById.values()));
+  }, [playgroundHistoryTraces, traces]);
+
+  useEffect(() => {
+    if (
+      selectedPlaygroundHistorySessionId &&
+      !isPlaygroundHistoryLoading &&
+      !playgroundHistorySessions.some((session) => session.sessionId === selectedPlaygroundHistorySessionId)
+    ) {
+      setSelectedPlaygroundHistorySessionId(null);
+    }
+  }, [isPlaygroundHistoryLoading, playgroundHistorySessions, selectedPlaygroundHistorySessionId]);
+
   const isActiveLoading =
     activeView === "traces"
       ? isTraceLoading
       : activeView === "experiments"
         ? isExperimentLoading || isExperimentDetailLoading || isComparisonLoading
-        : isPlaygroundStatusLoading;
+        : isPlaygroundStatusLoading || isPlaygroundHistoryLoading;
   const refreshActiveView = useCallback(() => {
     if (activeView === "traces") {
       void loadTraces();
@@ -323,7 +370,8 @@ export default function DashboardPage() {
       return;
     }
     void loadPlaygroundStatus();
-  }, [activeView, loadExperiments, loadPlaygroundStatus, loadTraces]);
+    void loadPlaygroundHistory();
+  }, [activeView, loadExperiments, loadPlaygroundHistory, loadPlaygroundStatus, loadTraces]);
 
   return (
     <main className="shell">
@@ -407,8 +455,16 @@ export default function DashboardPage() {
         <PlaygroundDashboard
           apiBaseUrl={apiBaseUrl}
           error={playgroundError}
+          historyError={playgroundHistoryError}
+          historySessions={playgroundHistorySessions}
+          isHistoryLoading={isPlaygroundHistoryLoading}
           isStatusLoading={isPlaygroundStatusLoading}
           onOpenTrace={openTraceFromPlayground}
+          onRefreshHistory={() => {
+            void loadPlaygroundHistory();
+          }}
+          onSelectHistorySession={setSelectedPlaygroundHistorySessionId}
+          selectedHistorySessionId={selectedPlaygroundHistorySessionId}
           session={playgroundSession}
           setSession={setPlaygroundSession}
           status={playgroundStatus}

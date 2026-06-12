@@ -9,6 +9,8 @@ import {
   type PlaygroundChatReply,
   type PlaygroundStatus,
 } from "../playground-contract";
+import type { PlaygroundHistorySession } from "../playground-history";
+import { formatDate } from "./format";
 import { InlineField, Metric, PanelHead } from "./primitives";
 
 export type PlaygroundConversationEntry = {
@@ -31,16 +33,28 @@ export type PlaygroundSessionState = {
 export function PlaygroundDashboard({
   apiBaseUrl,
   error,
+  historyError,
+  historySessions,
+  isHistoryLoading,
   isStatusLoading,
   onOpenTrace,
+  onRefreshHistory,
+  onSelectHistorySession,
+  selectedHistorySessionId,
   session,
   setSession,
   status,
 }: {
   apiBaseUrl: string;
   error: string | null;
+  historyError: string | null;
+  historySessions: PlaygroundHistorySession[];
+  isHistoryLoading: boolean;
   isStatusLoading: boolean;
   onOpenTrace: (traceId: string) => void;
+  onRefreshHistory: () => void;
+  onSelectHistorySession: (sessionId: string | null) => void;
+  selectedHistorySessionId: string | null;
   session: PlaygroundSessionState;
   setSession: Dispatch<SetStateAction<PlaygroundSessionState>>;
   status: PlaygroundStatus | null;
@@ -50,6 +64,13 @@ export function PlaygroundDashboard({
   const [modelsError, setModelsError] = useState<string | null>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
   const { chatError, draft, entries, isSending, selectedModel, sessionId, systemPrompt } = session;
+  const selectedHistorySession =
+    selectedHistorySessionId === null
+      ? null
+      : (historySessions.find((historySession) => historySession.sessionId === selectedHistorySessionId) ?? null);
+  const visibleEntries = selectedHistorySession?.entries ?? entries;
+  const isViewingHistory = selectedHistorySession !== null;
+  const pastSessions = historySessions.filter((historySession) => historySession.sessionId !== sessionId);
 
   const upstreamReady = status?.enabled === true && status.upstream_reachable === true;
 
@@ -101,20 +122,21 @@ export function PlaygroundDashboard({
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
-  }, [entries, isSending]);
+  }, [visibleEntries, isSending]);
 
   const startNewSession = useCallback(() => {
+    onSelectHistorySession(null);
     setSession((current) => ({
       ...current,
       sessionId: crypto.randomUUID(),
       entries: [],
       chatError: null,
     }));
-  }, [setSession]);
+  }, [onSelectHistorySession, setSession]);
 
   const sendMessage = useCallback(async () => {
     const content = draft.trim();
-    if (!content || !selectedModel || isSending) {
+    if (!content || !selectedModel || isSending || isViewingHistory) {
       return;
     }
 
@@ -149,6 +171,7 @@ export function PlaygroundDashboard({
           { id: crypto.randomUUID(), role: "assistant", content: reply.message.content, reply },
         ],
       }));
+      onRefreshHistory();
     } catch (requestError) {
       setSession((current) => ({
         ...current,
@@ -157,9 +180,19 @@ export function PlaygroundDashboard({
     } finally {
       setSession((current) => ({ ...current, isSending: false }));
     }
-  }, [draft, entries, isSending, selectedModel, sessionId, setSession, systemPrompt]);
+  }, [
+    draft,
+    entries,
+    isSending,
+    isViewingHistory,
+    onRefreshHistory,
+    selectedModel,
+    sessionId,
+    setSession,
+    systemPrompt,
+  ]);
 
-  const replies = entries.filter((entry) => entry.reply);
+  const replies = visibleEntries.filter((entry) => entry.reply);
   const sessionTokens = replies.reduce((total, entry) => total + (entry.reply?.total_tokens ?? 0), 0);
   const averageLatencyMs =
     replies.length > 0
@@ -250,6 +283,43 @@ export function PlaygroundDashboard({
             </button>
           </div>
           {modelsError ? <div className="state-box error-state">{modelsError}</div> : null}
+          {historyError ? <div className="state-box error-state">{historyError}</div> : null}
+          <div className="playground-history" aria-label="Playground session history">
+            <div className="history-head">
+              <h3>Sessions</h3>
+              <span>{isHistoryLoading ? "Loading" : `${pastSessions.length} saved`}</span>
+            </div>
+            <div className="session-items">
+              <button
+                className={selectedHistorySessionId === null ? "session-row active" : "session-row"}
+                type="button"
+                onClick={() => onSelectHistorySession(null)}
+              >
+                <span className="session-name">Current session</span>
+                <span className="session-meta">
+                  {entries.length === 0 ? "No messages yet" : `${Math.ceil(entries.length / 2)} turns`}
+                </span>
+              </button>
+              {pastSessions.map((historySession) => (
+                <button
+                  className={
+                    historySession.sessionId === selectedHistorySessionId ? "session-row active" : "session-row"
+                  }
+                  key={historySession.sessionId}
+                  type="button"
+                  onClick={() => onSelectHistorySession(historySession.sessionId)}
+                >
+                  <span className="session-name">{formatSessionName(historySession.sessionId)}</span>
+                  <span className="session-meta">
+                    {formatDate(historySession.endTime)} · {historySession.traceCount} traces
+                  </span>
+                </button>
+              ))}
+            </div>
+            {!isHistoryLoading && pastSessions.length === 0 ? (
+              <p className="subtle">Previous Playground sessions will appear here after traces are recorded.</p>
+            ) : null}
+          </div>
           <p className="subtle">
             Every reply is recorded as a trace on this Bir server, including the messages you send. Model:{" "}
             {status.upstream_base_url}
@@ -260,16 +330,20 @@ export function PlaygroundDashboard({
           <div className="detail-head">
             <div>
               <p className="eyebrow">Playground</p>
-              <h2>{selectedModel ?? "Observed chat"}</h2>
-              <p className="subtle">Each exchange becomes a trace with token usage and latency.</p>
+              <h2>{isViewingHistory ? formatSessionName(selectedHistorySession.sessionId) : (selectedModel ?? "Observed chat")}</h2>
+              <p className="subtle">
+                {isViewingHistory
+                  ? "Reconstructed from stored Playground traces. This session is read-only."
+                  : "Each exchange becomes a trace with token usage and latency."}
+              </p>
             </div>
           </div>
 
           <div className="chat-log" ref={logRef}>
-            {entries.length === 0 ? (
+            {visibleEntries.length === 0 ? (
               <div className="empty-detail">Send a message to start an observed chat.</div>
             ) : (
-              entries.map((entry) => (
+              visibleEntries.map((entry) => (
                 <article className={`chat-turn ${entry.role}`} key={entry.id}>
                   <span className="chat-role">{entry.role === "user" ? "You" : (entry.reply?.model ?? "Assistant")}</span>
                   <div className="chat-bubble">{entry.content}</div>
@@ -285,33 +359,37 @@ export function PlaygroundDashboard({
                 </article>
               ))
             )}
-            {isSending ? <p className="chat-pending">Waiting for {selectedModel ?? "the model"}…</p> : null}
-            {chatError ? <div className="error-block">{chatError}</div> : null}
+            {!isViewingHistory && isSending ? <p className="chat-pending">Waiting for {selectedModel ?? "the model"}…</p> : null}
+            {!isViewingHistory && chatError ? <div className="error-block">{chatError}</div> : null}
           </div>
 
-          <form
-            className="chat-composer"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void sendMessage();
-            }}
-          >
-            <textarea
-              placeholder="Message the model…"
-              rows={2}
-              value={draft}
-              onChange={(event) => setSession((current) => ({ ...current, draft: event.target.value }))}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  void sendMessage();
-                }
+          {isViewingHistory ? (
+            <div className="chat-readonly">This reconstructed session is read-only. Start a new session to chat.</div>
+          ) : (
+            <form
+              className="chat-composer"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void sendMessage();
               }}
-            />
-            <button className="refresh-button" type="submit" disabled={isSending || !draft.trim() || !selectedModel}>
-              {isSending ? "Sending" : "Send"}
-            </button>
-          </form>
+            >
+              <textarea
+                placeholder="Message the model…"
+                rows={2}
+                value={draft}
+                onChange={(event) => setSession((current) => ({ ...current, draft: event.target.value }))}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    void sendMessage();
+                  }
+                }}
+              />
+              <button className="refresh-button" type="submit" disabled={isSending || !draft.trim() || !selectedModel}>
+                {isSending ? "Sending" : "Send"}
+              </button>
+            </form>
+          )}
         </section>
       </section>
     </>
@@ -322,6 +400,10 @@ function formatTokenCounts(reply: PlaygroundChatReply): string {
   const inputTokens = reply.input_tokens === null ? "-" : reply.input_tokens.toString();
   const outputTokens = reply.output_tokens === null ? "-" : reply.output_tokens.toString();
   return `${inputTokens} / ${outputTokens}`;
+}
+
+function formatSessionName(sessionId: string): string {
+  return `Session ${sessionId.slice(0, 8)}`;
 }
 
 function formatLatency(latencyMs: number): string {

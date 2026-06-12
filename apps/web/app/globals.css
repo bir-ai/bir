@@ -833,6 +833,68 @@ h3 {
   gap: 12px;
 }
 
+.playground-history {
+  display: grid;
+  gap: 8px;
+}
+
+.history-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.history-head h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.history-head span {
+  color: var(--quiet);
+  font-size: 0.76rem;
+}
+
+.session-items {
+  display: grid;
+  gap: 6px;
+}
+
+.session-row {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  min-height: 54px;
+  padding: 9px 10px;
+  border: 1px solid rgba(67, 70, 75, 0.9);
+  border-radius: 8px;
+  background: rgb(45, 47, 51);
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-row:hover,
+.session-row.active {
+  border-color: rgba(48, 106, 248, 0.72);
+  background: rgb(50, 53, 58);
+}
+
+.session-name {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-meta {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
 .chat-panel {
   display: grid;
   grid-template-rows: auto minmax(360px, 1fr) auto;
@@ -907,6 +969,14 @@ h3 {
   padding: 12px 18px 16px;
   border-top: 1px solid var(--border);
   background: rgba(45, 47, 51, 0.72);
+}
+
+.chat-readonly {
+  padding: 13px 18px 16px;
+  border-top: 1px solid var(--border);
+  background: rgba(45, 47, 51, 0.72);
+  color: var(--muted);
+  font-size: 0.86rem;
 }
 
 .chat-composer textarea {
