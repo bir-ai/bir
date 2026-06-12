@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { fetchPlaygroundModels, postPlaygroundChat } from "../api-client";
 import {
   normalizePlaygroundChatReply,
@@ -11,11 +11,21 @@ import {
 } from "../playground-contract";
 import { InlineField, Metric, PanelHead } from "./primitives";
 
-type ConversationEntry = {
+export type PlaygroundConversationEntry = {
   id: string;
   role: "user" | "assistant";
   content: string;
   reply?: PlaygroundChatReply;
+};
+
+export type PlaygroundSessionState = {
+  selectedModel: string | null;
+  systemPrompt: string;
+  sessionId: string | null;
+  entries: PlaygroundConversationEntry[];
+  draft: string;
+  isSending: boolean;
+  chatError: string | null;
 };
 
 export function PlaygroundDashboard({
@@ -23,31 +33,29 @@ export function PlaygroundDashboard({
   error,
   isStatusLoading,
   onOpenTrace,
+  session,
+  setSession,
   status,
 }: {
   apiBaseUrl: string;
   error: string | null;
   isStatusLoading: boolean;
   onOpenTrace: (traceId: string) => void;
+  session: PlaygroundSessionState;
+  setSession: Dispatch<SetStateAction<PlaygroundSessionState>>;
   status: PlaygroundStatus | null;
 }) {
   const [models, setModels] = useState<string[]>([]);
   const [isModelsLoading, setIsModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<string | null>(null);
-  const [systemPrompt, setSystemPrompt] = useState("");
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [entries, setEntries] = useState<ConversationEntry[]>([]);
-  const [draft, setDraft] = useState("");
-  const [isSending, setIsSending] = useState(false);
-  const [chatError, setChatError] = useState<string | null>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
+  const { chatError, draft, entries, isSending, selectedModel, sessionId, systemPrompt } = session;
 
   const upstreamReady = status?.enabled === true && status.upstream_reachable === true;
 
   useEffect(() => {
-    setSessionId(crypto.randomUUID());
-  }, []);
+    setSession((current) => (current.sessionId ? current : { ...current, sessionId: crypto.randomUUID() }));
+  }, [setSession]);
 
   useEffect(() => {
     if (!upstreamReady) {
@@ -66,11 +74,11 @@ export function PlaygroundDashboard({
         }
         const nextModels = normalizePlaygroundModels(payload);
         setModels(nextModels);
-        setSelectedModel((current) => {
-          if (current && nextModels.includes(current)) {
+        setSession((current) => {
+          if (current.selectedModel && nextModels.includes(current.selectedModel)) {
             return current;
           }
-          return nextModels[0] ?? null;
+          return { ...current, selectedModel: nextModels[0] ?? null };
         });
       })
       .catch((requestError) => {
@@ -89,17 +97,20 @@ export function PlaygroundDashboard({
     return () => {
       isCurrentRequest = false;
     };
-  }, [status, upstreamReady]);
+  }, [setSession, status, upstreamReady]);
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [entries, isSending]);
 
   const startNewSession = useCallback(() => {
-    setSessionId(crypto.randomUUID());
-    setEntries([]);
-    setChatError(null);
-  }, []);
+    setSession((current) => ({
+      ...current,
+      sessionId: crypto.randomUUID(),
+      entries: [],
+      chatError: null,
+    }));
+  }, [setSession]);
 
   const sendMessage = useCallback(async () => {
     const content = draft.trim();
@@ -111,10 +122,13 @@ export function PlaygroundDashboard({
       role: entry.role,
       content: entry.content,
     }));
-    setEntries((current) => [...current, { id: crypto.randomUUID(), role: "user", content }]);
-    setDraft("");
-    setChatError(null);
-    setIsSending(true);
+    setSession((current) => ({
+      ...current,
+      entries: [...current.entries, { id: crypto.randomUUID(), role: "user", content }],
+      draft: "",
+      chatError: null,
+      isSending: true,
+    }));
 
     try {
       const reply = normalizePlaygroundChatReply(
@@ -128,16 +142,22 @@ export function PlaygroundDashboard({
       if (!reply) {
         throw new Error("Bir server returned an unexpected playground reply");
       }
-      setEntries((current) => [
+      setSession((current) => ({
         ...current,
-        { id: crypto.randomUUID(), role: "assistant", content: reply.message.content, reply },
-      ]);
+        entries: [
+          ...current.entries,
+          { id: crypto.randomUUID(), role: "assistant", content: reply.message.content, reply },
+        ],
+      }));
     } catch (requestError) {
-      setChatError(requestError instanceof Error ? requestError.message : "Playground chat request failed");
+      setSession((current) => ({
+        ...current,
+        chatError: requestError instanceof Error ? requestError.message : "Playground chat request failed",
+      }));
     } finally {
-      setIsSending(false);
+      setSession((current) => ({ ...current, isSending: false }));
     }
-  }, [draft, entries, isSending, selectedModel, sessionId, systemPrompt]);
+  }, [draft, entries, isSending, selectedModel, sessionId, setSession, systemPrompt]);
 
   const replies = entries.filter((entry) => entry.reply);
   const sessionTokens = replies.reduce((total, entry) => total + (entry.reply?.total_tokens ?? 0), 0);
@@ -200,7 +220,9 @@ export function PlaygroundDashboard({
               <select
                 value={selectedModel ?? ""}
                 disabled={isModelsLoading || models.length === 0}
-                onChange={(event) => setSelectedModel(event.target.value)}
+                onChange={(event) =>
+                  setSession((current) => ({ ...current, selectedModel: event.target.value }))
+                }
               >
                 {models.length === 0 ? <option value="">{isModelsLoading ? "Loading…" : "No models"}</option> : null}
                 {models.map((model) => (
@@ -217,7 +239,9 @@ export function PlaygroundDashboard({
                 placeholder="Optional system prompt"
                 rows={4}
                 value={systemPrompt}
-                onChange={(event) => setSystemPrompt(event.target.value)}
+                onChange={(event) =>
+                  setSession((current) => ({ ...current, systemPrompt: event.target.value }))
+                }
               />
             </label>
 
@@ -276,7 +300,7 @@ export function PlaygroundDashboard({
               placeholder="Message the model…"
               rows={2}
               value={draft}
-              onChange={(event) => setDraft(event.target.value)}
+              onChange={(event) => setSession((current) => ({ ...current, draft: event.target.value }))}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();

@@ -11,7 +11,7 @@ import {
 } from "./api-client";
 import { ExperimentDashboard } from "./components/experiment-dashboard";
 import { DEFAULT_TRACE_FILTERS } from "./components/labels";
-import { PlaygroundDashboard } from "./components/playground";
+import { PlaygroundDashboard, type PlaygroundSessionState } from "./components/playground";
 import { TraceDashboard } from "./components/trace-dashboard";
 import {
   compareExperiments,
@@ -52,6 +52,15 @@ export default function DashboardPage() {
   const [comparisonBaseline, setComparisonBaseline] = useState<LoadedExperiment | null>(null);
   const [comparisonCandidate, setComparisonCandidate] = useState<LoadedExperiment | null>(null);
   const [playgroundStatus, setPlaygroundStatus] = useState<PlaygroundStatus | null>(null);
+  const [playgroundSession, setPlaygroundSession] = useState<PlaygroundSessionState>({
+    selectedModel: null,
+    systemPrompt: "",
+    sessionId: null,
+    entries: [],
+    draft: "",
+    isSending: false,
+    chatError: null,
+  });
   const [isTraceLoading, setIsTraceLoading] = useState(true);
   const [isExperimentLoading, setIsExperimentLoading] = useState(true);
   const [isExperimentDetailLoading, setIsExperimentDetailLoading] = useState(false);
@@ -400,6 +409,8 @@ export default function DashboardPage() {
           error={playgroundError}
           isStatusLoading={isPlaygroundStatusLoading}
           onOpenTrace={openTraceFromPlayground}
+          session={playgroundSession}
+          setSession={setPlaygroundSession}
           status={playgroundStatus}
         />
       )}
