@@ -10,6 +10,9 @@ Minimal FastAPI ingestion server for Bir trace events.
 - `GET /v1/events`
 - `GET /v1/traces`
 - `GET /v1/traces/{trace_id}`
+- `GET /v1/playground/status`
+- `GET /v1/playground/models`
+- `POST /v1/playground/chat`
 - `POST /v1/experiments`
 - `GET /v1/experiments`
 - `GET /v1/experiments/{experiment_id}`
@@ -66,6 +69,33 @@ as summary plus per-example result rows through
 `/v1/experiments/{experiment_id}`. Duplicate experiment uploads are idempotent
 and do not overwrite the existing stored artifact.
 
+## Playground
+
+The Playground endpoints proxy one non-streaming chat turn to a local
+OpenAI-compatible model server and record that turn as ordinary Bir trace
+events in the same JSONL event store as uploaded SDK traces.
+
+- `GET /v1/playground/status` reports whether Playground writes are enabled and
+  whether the upstream model server can be reached.
+- `GET /v1/playground/models` lists model names, preferring upstream
+  `/v1/models` and falling back to Ollama's `/api/tags`.
+- `POST /v1/playground/chat` accepts `model`, `messages`, optional
+  `system_prompt`, optional `temperature`, and optional `session_id`, forwards
+  the call to `/v1/chat/completions`, records a `playground.chat` trace plus a
+  `playground.llm` generation event, and returns the assistant message,
+  `trace_id`, token counts, and latency.
+
+The upstream base URL defaults to local Ollama:
+
+```bash
+export BIR_PLAYGROUND_BASE_URL=http://127.0.0.1:11434
+```
+
+Set that variable to point at LM Studio, vLLM, or another compatible server.
+Playground inputs and outputs are captured intentionally because every chat turn
+is an explicit user action for prompt inspection. The same best-effort redaction
+used for ingested events still applies before events are written.
+
 ## CORS
 
 The dashboard calls the API directly from the browser, so the server allows
@@ -94,6 +124,9 @@ that the SDK is still appending is skipped until the write completes. All read
 endpoints work normally; `POST /v1/events`, `POST /v1/events/batch`, and
 `POST /v1/experiments` return `403` because the server does not own the data
 files.
+
+Playground endpoints are also disabled in read-only local data mode. Status
+requests return `enabled: false`; model and chat requests return `403`.
 
 Experiments endpoints read SDK-written artifacts from
 `$BIR_DATA_DIR/experiments/` directly, so `run_experiment()` results show up

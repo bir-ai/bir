@@ -210,6 +210,24 @@ def test_cors_preflight_allows_dashboard_get(tmp_path: Path) -> None:
     assert "GET" in response.headers["access-control-allow-methods"]
 
 
+def test_cors_preflight_allows_private_network_dashboard_requests(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+
+    response = client.options(
+        "/v1/playground/chat",
+        headers={
+            "origin": "http://localhost:3000",
+            "access-control-request-method": "POST",
+            "access-control-request-headers": "accept,content-type",
+            "access-control-request-private-network": "true",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert response.headers["access-control-allow-private-network"] == "true"
+
+
 def test_cors_origins_are_configurable_via_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BIR_CORS_ORIGINS", "http://dashboard.example:4173, http://other.example")
     client, _ = make_client(tmp_path)

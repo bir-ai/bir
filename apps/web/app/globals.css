@@ -296,7 +296,8 @@ h3 {
 .filter-segments button,
 .filter-clear,
 .filter-group input,
-.filter-group select {
+.filter-group select,
+.filter-group textarea {
   min-height: 34px;
   border: 1px solid rgba(67, 70, 75, 0.86);
   border-radius: 8px;
@@ -323,10 +324,18 @@ h3 {
 }
 
 .filter-group input,
-.filter-group select {
+.filter-group select,
+.filter-group textarea {
   width: 100%;
   min-width: 0;
   padding: 0 9px;
+}
+
+.filter-group textarea {
+  min-height: 96px;
+  padding: 8px 9px;
+  resize: vertical;
+  line-height: 1.45;
 }
 
 .filter-clear {
@@ -807,6 +816,112 @@ h3 {
   padding: 8px;
 }
 
+.playground-blocked {
+  grid-template-columns: 1fr;
+}
+
+.playground-blocked .state-box {
+  min-height: 220px;
+  padding: 18px;
+  text-align: center;
+  line-height: 1.45;
+}
+
+.playground-setup {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.chat-panel {
+  display: grid;
+  grid-template-rows: auto minmax(360px, 1fr) auto;
+}
+
+.chat-log {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 360px;
+  max-height: calc(100vh - 254px);
+  overflow: auto;
+  padding: 16px 18px;
+}
+
+.chat-turn {
+  display: grid;
+  gap: 6px;
+  max-width: min(760px, 100%);
+}
+
+.chat-turn.user {
+  justify-self: end;
+}
+
+.chat-turn.assistant {
+  justify-self: start;
+}
+
+.chat-role {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.chat-turn.user .chat-role {
+  justify-self: end;
+}
+
+.chat-bubble {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(67, 70, 75, 0.88);
+  border-radius: 8px;
+  background: rgb(45, 47, 51);
+  color: rgb(235, 239, 246);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-turn.user .chat-bubble {
+  border-color: rgba(48, 106, 248, 0.5);
+  background: rgba(48, 106, 248, 0.18);
+}
+
+.chat-turn-facts {
+  max-width: 100%;
+}
+
+.chat-pending {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.chat-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--border);
+  background: rgba(45, 47, 51, 0.72);
+}
+
+.chat-composer textarea {
+  width: 100%;
+  min-height: 52px;
+  max-height: 180px;
+  padding: 10px 12px;
+  border: 1px solid rgba(67, 70, 75, 0.86);
+  border-radius: 8px;
+  background: rgb(32, 33, 36);
+  color: var(--text);
+  line-height: 1.45;
+  resize: vertical;
+}
+
 .retrieval-panel {
   display: grid;
   grid-template-columns: minmax(220px, 0.75fr) minmax(280px, 1.25fr);
@@ -1024,6 +1139,18 @@ h3 {
   }
 
   .comparison-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-panel {
+    grid-template-rows: auto minmax(320px, 1fr) auto;
+  }
+
+  .chat-log {
+    max-height: none;
+  }
+
+  .chat-composer {
     grid-template-columns: 1fr;
   }
 

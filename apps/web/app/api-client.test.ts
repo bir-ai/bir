@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { fetchExperimentDetail, fetchExperimentSummaries, fetchTraces, getApiBaseUrl } from "./api-client";
+import {
+  fetchExperimentDetail,
+  fetchExperimentSummaries,
+  fetchPlaygroundModels,
+  fetchPlaygroundStatus,
+  fetchTraces,
+  getApiBaseUrl,
+  postPlaygroundChat,
+} from "./api-client";
 
 type FetchCall = {
   url: string;
@@ -109,6 +117,40 @@ test("fetches experiment summaries and detail with an encoded experiment id", as
 
     assert.equal(calls[0]?.url, "http://127.0.0.1:8000/v1/experiments");
     assert.equal(calls[1]?.url, "http://127.0.0.1:8000/v1/experiments/exp%2F1%20weird");
+  } finally {
+    restore();
+  }
+});
+
+test("fetches playground status and models from server endpoints", async () => {
+  const { calls, restore } = withStubbedFetch(async () => jsonResponse({}));
+  try {
+    await fetchPlaygroundStatus();
+    await fetchPlaygroundModels();
+
+    assert.equal(calls[0]?.url, "http://127.0.0.1:8000/v1/playground/status");
+    assert.equal(calls[1]?.url, "http://127.0.0.1:8000/v1/playground/models");
+  } finally {
+    restore();
+  }
+});
+
+test("posts playground chat requests as JSON", async () => {
+  const { calls, restore } = withStubbedFetch(async () => jsonResponse({ trace_id: "trace-1" }));
+  const payload = {
+    model: "llama3.2:1b",
+    messages: [{ role: "user", content: "Hello" }],
+    session_id: "session-1",
+  };
+
+  try {
+    const reply = await postPlaygroundChat(payload);
+
+    assert.deepEqual(reply, { trace_id: "trace-1" });
+    assert.equal(calls[0]?.url, "http://127.0.0.1:8000/v1/playground/chat");
+    assert.equal(calls[0]?.init?.method, "POST");
+    assert.equal((calls[0]?.init?.headers as Record<string, string>)["content-type"], "application/json");
+    assert.equal(calls[0]?.init?.body, JSON.stringify(payload));
   } finally {
     restore();
   }

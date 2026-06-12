@@ -17,7 +17,8 @@ Current focus:
 - Trace, span, generation, retrieval, tool call, and score recording
 - Safe opt-in input/output capture
 - Local datasets and deterministic experiment runs
-- FastAPI ingestion and a minimal local dashboard for traces and experiments
+- FastAPI ingestion and a minimal local dashboard for traces, experiments, and
+  observed prompt playground runs
 - Dependency-free LangChain callback tracing
 
 ## Python SDK
@@ -87,6 +88,29 @@ dependencies, and web dependencies, then starts:
 
 It does not install dependencies. Use `scripts/dev-local --check` for a
 non-mutating prerequisite check.
+
+### Playground
+
+The dashboard includes a Playground for quick observed prompt experiments
+against a local OpenAI-compatible model server. With Ollama running locally,
+open `http://localhost:3000`, choose Playground, select `llama3.2:1b` or another
+available model, and send a message. Bir proxies the model call through the
+FastAPI server, records the exchange as a normal trace, and links the reply back
+to the trace detail view with token usage and latency.
+
+The model server defaults to `http://127.0.0.1:11434`, which works with Ollama.
+Set `BIR_PLAYGROUND_BASE_URL` before starting the server to use LM Studio,
+vLLM, or another OpenAI-compatible server:
+
+```bash
+BIR_PLAYGROUND_BASE_URL=http://127.0.0.1:1234 scripts/dev-local
+```
+
+Playground prompts and responses are captured intentionally because each chat
+turn is an explicit user action for trace inspection. Do not paste secrets into
+the Playground. When the server runs with `BIR_DATA_DIR` read-only local data
+mode, Playground endpoints are disabled because that mode does not write server
+events.
 
 From the repository root, run the dependency-free OpenAI-style demo:
 

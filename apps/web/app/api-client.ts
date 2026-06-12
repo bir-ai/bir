@@ -25,15 +25,33 @@ export function fetchExperimentDetail(experimentId: string): Promise<unknown> {
   return requestJson(`/v1/experiments/${encodeURIComponent(experimentId)}`);
 }
 
-async function requestJson(path: string): Promise<unknown> {
+export function fetchPlaygroundStatus(): Promise<unknown> {
+  return requestJson("/v1/playground/status");
+}
+
+export function fetchPlaygroundModels(): Promise<unknown> {
+  return requestJson("/v1/playground/models");
+}
+
+export function postPlaygroundChat(chatRequest: unknown): Promise<unknown> {
+  return requestJson("/v1/playground/chat", { method: "POST", body: chatRequest });
+}
+
+async function requestJson(
+  path: string,
+  options?: { method: "POST"; body: unknown },
+): Promise<unknown> {
   const apiBaseUrl = getApiBaseUrl();
 
   let response: Response;
   try {
     response = await fetch(`${apiBaseUrl}${path}`, {
+      method: options?.method ?? "GET",
       headers: {
         accept: "application/json",
+        ...(options ? { "content-type": "application/json" } : {}),
       },
+      body: options ? JSON.stringify(options.body) : undefined,
       cache: "no-store",
     });
   } catch (error) {
@@ -43,9 +61,21 @@ async function requestJson(path: string): Promise<unknown> {
 
   const body = await response.text();
   if (!response.ok) {
-    throw new Error(`Bir server returned HTTP ${response.status}`);
+    const detail = errorDetail(body);
+    throw new Error(`Bir server returned HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
   }
   return safeJson(body);
+}
+
+function errorDetail(body: string): string | null {
+  const parsed = safeJson(body);
+  if (parsed && typeof parsed === "object" && "detail" in parsed) {
+    const detail = (parsed as { detail: unknown }).detail;
+    if (typeof detail === "string" && detail.trim()) {
+      return detail;
+    }
+  }
+  return null;
 }
 
 function safeJson(value: string): unknown {

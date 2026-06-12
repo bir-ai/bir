@@ -2,9 +2,16 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchExperimentDetail, fetchExperimentSummaries, fetchTraces, getApiBaseUrl } from "./api-client";
+import {
+  fetchExperimentDetail,
+  fetchExperimentSummaries,
+  fetchPlaygroundStatus,
+  fetchTraces,
+  getApiBaseUrl,
+} from "./api-client";
 import { ExperimentDashboard } from "./components/experiment-dashboard";
 import { DEFAULT_TRACE_FILTERS } from "./components/labels";
+import { PlaygroundDashboard } from "./components/playground";
 import { TraceDashboard } from "./components/trace-dashboard";
 import {
   compareExperiments,
@@ -13,6 +20,7 @@ import {
   type ExperimentSummary,
   type LoadedExperiment,
 } from "./experiment-contract";
+import { normalizePlaygroundStatus, type PlaygroundStatus } from "./playground-contract";
 import {
   buildTraceFilterQuery,
   buildTraceTimelineRows,
@@ -22,7 +30,7 @@ import {
   type TraceFilterValues,
 } from "./trace-contract";
 
-type ViewMode = "traces" | "experiments";
+type ViewMode = "traces" | "experiments" | "playground";
 
 async function getExperimentDetail(experimentId: string): Promise<LoadedExperiment | null> {
   return normalizeExperiment(await fetchExperimentDetail(experimentId));
@@ -43,12 +51,15 @@ export default function DashboardPage() {
   const [comparisonCandidateId, setComparisonCandidateId] = useState<string | null>(null);
   const [comparisonBaseline, setComparisonBaseline] = useState<LoadedExperiment | null>(null);
   const [comparisonCandidate, setComparisonCandidate] = useState<LoadedExperiment | null>(null);
+  const [playgroundStatus, setPlaygroundStatus] = useState<PlaygroundStatus | null>(null);
   const [isTraceLoading, setIsTraceLoading] = useState(true);
   const [isExperimentLoading, setIsExperimentLoading] = useState(true);
   const [isExperimentDetailLoading, setIsExperimentDetailLoading] = useState(false);
   const [isComparisonLoading, setIsComparisonLoading] = useState(false);
+  const [isPlaygroundStatusLoading, setIsPlaygroundStatusLoading] = useState(true);
   const [traceError, setTraceError] = useState<string | null>(null);
   const [experimentError, setExperimentError] = useState<string | null>(null);
+  const [playgroundError, setPlaygroundError] = useState<string | null>(null);
   const [missingLinkedTraceId, setMissingLinkedTraceId] = useState<string | null>(null);
 
   const loadTraces = useCallback(async (filters: TraceFilterValues = traceFilters) => {
@@ -99,6 +110,24 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const loadPlaygroundStatus = useCallback(async () => {
+    setIsPlaygroundStatusLoading(true);
+    setPlaygroundError(null);
+
+    try {
+      const status = normalizePlaygroundStatus(await fetchPlaygroundStatus());
+      if (!status) {
+        throw new Error("Bir server returned an unexpected playground status");
+      }
+      setPlaygroundStatus(status);
+    } catch (requestError) {
+      setPlaygroundError(requestError instanceof Error ? requestError.message : "Playground status request failed");
+      setPlaygroundStatus(null);
+    } finally {
+      setIsPlaygroundStatusLoading(false);
+    }
+  }, []);
+
   const loadExperimentDetail = useCallback(async (experimentId: string) => {
     setIsExperimentDetailLoading(true);
     setExperimentError(null);
@@ -136,6 +165,21 @@ export default function DashboardPage() {
     [loadTraces, traces],
   );
 
+  const openTraceFromPlayground = useCallback(
+    async (traceId: string) => {
+      setMissingLinkedTraceId(null);
+      setTraceFilters(DEFAULT_TRACE_FILTERS);
+      const refreshedTraces = await loadTraces(DEFAULT_TRACE_FILTERS);
+      setSelectedTraceId(traceId);
+      setActiveView("traces");
+
+      if (!findTraceById(refreshedTraces, traceId)) {
+        setMissingLinkedTraceId(traceId);
+      }
+    },
+    [loadTraces],
+  );
+
   useEffect(() => {
     setApiBaseUrl(getApiBaseUrl());
   }, []);
@@ -143,7 +187,8 @@ export default function DashboardPage() {
   useEffect(() => {
     void loadTraces();
     void loadExperiments();
-  }, [loadExperiments, loadTraces]);
+    void loadPlaygroundStatus();
+  }, [loadExperiments, loadPlaygroundStatus, loadTraces]);
 
   useEffect(() => {
     if (selectedExperimentId) {
@@ -254,14 +299,22 @@ export default function DashboardPage() {
   );
 
   const isActiveLoading =
-    activeView === "traces" ? isTraceLoading : isExperimentLoading || isExperimentDetailLoading || isComparisonLoading;
+    activeView === "traces"
+      ? isTraceLoading
+      : activeView === "experiments"
+        ? isExperimentLoading || isExperimentDetailLoading || isComparisonLoading
+        : isPlaygroundStatusLoading;
   const refreshActiveView = useCallback(() => {
     if (activeView === "traces") {
       void loadTraces();
       return;
     }
-    void loadExperiments();
-  }, [activeView, loadExperiments, loadTraces]);
+    if (activeView === "experiments") {
+      void loadExperiments();
+      return;
+    }
+    void loadPlaygroundStatus();
+  }, [activeView, loadExperiments, loadPlaygroundStatus, loadTraces]);
 
   return (
     <main className="shell">
@@ -290,6 +343,15 @@ export default function DashboardPage() {
             >
               Experiments
             </button>
+            <button
+              aria-selected={activeView === "playground"}
+              className={activeView === "playground" ? "active" : ""}
+              role="tab"
+              type="button"
+              onClick={() => setActiveView("playground")}
+            >
+              Playground
+            </button>
           </div>
           <button className="refresh-button" type="button" onClick={refreshActiveView} disabled={isActiveLoading}>
             {isActiveLoading ? "Refreshing" : "Refresh"}
@@ -311,7 +373,7 @@ export default function DashboardPage() {
           timelineRows={timelineRows}
           traces={traces}
         />
-      ) : (
+      ) : activeView === "experiments" ? (
         <ExperimentDashboard
           apiBaseUrl={apiBaseUrl}
           comparison={experimentComparison}
@@ -331,6 +393,14 @@ export default function DashboardPage() {
           setComparisonCandidateId={setComparisonCandidateId}
           setSelectedExperimentId={setSelectedExperimentId}
           stats={experimentStats}
+        />
+      ) : (
+        <PlaygroundDashboard
+          apiBaseUrl={apiBaseUrl}
+          error={playgroundError}
+          isStatusLoading={isPlaygroundStatusLoading}
+          onOpenTrace={openTraceFromPlayground}
+          status={playgroundStatus}
         />
       )}
     </main>

@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .experiments import JsonlExperimentStore, LocalExperimentReader
+from .playground import PlaygroundClient, PlaygroundUpstreamError, playground_base_url_from_env, run_chat
 from .schemas import (
     ExperimentIngestPayload,
     ExperimentSummaryPayload,
@@ -23,6 +24,10 @@ from .schemas import (
     LoadedTrace,
     EventStatus,
     EventType,
+    PlaygroundChatRequest,
+    PlaygroundChatResponse,
+    PlaygroundModelsResponse,
+    PlaygroundStatusResponse,
     TraceEventPayload,
 )
 from .storage import JsonlEventStore, LocalJsonlEventReader, TraceEventReader
@@ -33,6 +38,9 @@ DEFAULT_CORS_ORIGINS = ("http://localhost:3000", "http://127.0.0.1:3000")
 READ_ONLY_LOCAL_MODE_DETAIL = (
     "Ingestion is disabled: the server is running in read-only local data mode (BIR_DATA_DIR)"
 )
+PLAYGROUND_READ_ONLY_DETAIL = (
+    "The playground is disabled: the server is running in read-only local data mode (BIR_DATA_DIR)"
+)
 
 
 def create_app(
@@ -40,6 +48,7 @@ def create_app(
     event_store_path: str | Path | None = None,
     experiment_store_path: str | Path | None = None,
     local_data_dir: str | Path | None = None,
+    playground_base_url: str | None = None,
 ) -> FastAPI:
     """Create a Bir ingestion server with local JSONL-backed stores.
 
@@ -48,6 +57,11 @@ def create_app(
     local data mode: it reads ``traces.jsonl`` written by the SDK and rejects
     ingestion. Explicit store paths keep the server in ingestion mode even
     when ``BIR_DATA_DIR`` is set, so embedding callers and tests stay hermetic.
+
+    The playground proxies chat turns to the OpenAI-compatible model server at
+    ``playground_base_url`` (or the ``BIR_PLAYGROUND_BASE_URL`` environment
+    variable, defaulting to a local Ollama) and records each exchange in the
+    event store, so read-only local data mode also disables the playground.
     """
 
     if local_data_dir is not None:
@@ -65,8 +79,10 @@ def create_app(
         allow_origins=_cors_origins_from_env(),
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
+        allow_private_network=True,
     )
     app.state.read_only_local_mode = data_dir is not None
+    app.state.playground_client = PlaygroundClient(playground_base_url or playground_base_url_from_env())
     if data_dir is not None:
         app.state.event_store = LocalJsonlEventReader(data_dir / "traces.jsonl")
         app.state.experiment_store = LocalExperimentReader(data_dir / "experiments")
@@ -124,6 +140,51 @@ def create_app(
         if trace is None:
             raise HTTPException(status_code=404, detail="Trace not found")
         return trace
+
+    @app.get("/v1/playground/status", response_model=PlaygroundStatusResponse)
+    def playground_status(request: Request) -> PlaygroundStatusResponse:
+        client = _get_playground_client(request)
+        if getattr(request.app.state, "read_only_local_mode", False):
+            return PlaygroundStatusResponse(
+                enabled=False,
+                upstream_base_url=client.base_url,
+                upstream_reachable=None,
+                detail=PLAYGROUND_READ_ONLY_DETAIL,
+            )
+        reachable = client.is_reachable()
+        return PlaygroundStatusResponse(
+            enabled=True,
+            upstream_base_url=client.base_url,
+            upstream_reachable=reachable,
+            detail=None
+            if reachable
+            else (
+                f"Could not reach a model server at {client.base_url}. "
+                "Start your local model server (for example Ollama) or set BIR_PLAYGROUND_BASE_URL."
+            ),
+        )
+
+    @app.get("/v1/playground/models", response_model=PlaygroundModelsResponse)
+    def playground_models(request: Request) -> PlaygroundModelsResponse:
+        _reject_playground_in_read_only_local_mode(request)
+        client = _get_playground_client(request)
+        try:
+            return PlaygroundModelsResponse(models=client.list_models())
+        except PlaygroundUpstreamError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.post("/v1/playground/chat", response_model=PlaygroundChatResponse)
+    def playground_chat(chat: PlaygroundChatRequest, request: Request) -> PlaygroundChatResponse:
+        _reject_playground_in_read_only_local_mode(request)
+        store = _get_writable_event_store(request)
+        client = _get_playground_client(request)
+        try:
+            chat_response, events = run_chat(client, chat)
+        except PlaygroundUpstreamError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        for event in events:
+            store.append(event)
+        return chat_response
 
     @app.post("/v1/experiments", response_model=IngestExperimentResponse, status_code=201)
     def ingest_experiment(
@@ -190,6 +251,18 @@ def _local_data_dir_from_env() -> Path | None:
 def _reject_in_read_only_local_mode(request: Request) -> None:
     if getattr(request.app.state, "read_only_local_mode", False):
         raise HTTPException(status_code=403, detail=READ_ONLY_LOCAL_MODE_DETAIL)
+
+
+def _reject_playground_in_read_only_local_mode(request: Request) -> None:
+    if getattr(request.app.state, "read_only_local_mode", False):
+        raise HTTPException(status_code=403, detail=PLAYGROUND_READ_ONLY_DETAIL)
+
+
+def _get_playground_client(request: Request) -> PlaygroundClient:
+    client = request.app.state.playground_client
+    if not isinstance(client, PlaygroundClient):
+        raise RuntimeError("Bir playground client is not configured")
+    return client
 
 
 def _get_event_store(request: Request) -> TraceEventReader:

@@ -13,6 +13,8 @@ Current views:
   scores, linked trace IDs, latency, and errors
 - experiment comparison for two uploaded runs with aggregate score deltas and
   per-example regression status
+- Playground for observed local prompt experiments through the Bir server, with
+  model selection, token/latency badges, and trace links
 
 ## Development
 
@@ -39,6 +41,11 @@ NEXT_PUBLIC_BIR_API_BASE_URL=http://127.0.0.1:9000 npm run dev
 The server allows the dashboard's local origins (`http://localhost:3000` and
 `http://127.0.0.1:3000`) through CORS by default; if the dashboard runs on
 another origin, set `BIR_CORS_ORIGINS` on the server side as well.
+
+The Playground tab uses the same direct browser-to-server API calls. It is
+enabled when `/v1/playground/status` reports writable server mode and a reachable
+model server. In read-only `BIR_DATA_DIR` mode the tab shows the server's
+disabled state instead of sending chat requests.
 
 Useful checks:
 

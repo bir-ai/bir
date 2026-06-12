@@ -103,6 +103,50 @@ class HealthResponse(BaseModel):
     status: Literal["ok"]
 
 
+class PlaygroundMessage(BaseModel):
+    """One chat message exchanged through the playground."""
+
+    role: Literal["system", "user", "assistant"]
+    content: str
+
+
+class PlaygroundChatRequest(BaseModel):
+    """Playground chat turn forwarded to the upstream model server."""
+
+    model: str = Field(min_length=1)
+    messages: list[PlaygroundMessage] = Field(min_length=1)
+    system_prompt: str | None = None
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    session_id: str | None = Field(default=None, min_length=1)
+
+
+class PlaygroundChatResponse(BaseModel):
+    """Playground chat reply with the recorded trace reference and call stats."""
+
+    trace_id: str
+    message: PlaygroundMessage
+    model: str
+    input_tokens: int | None
+    output_tokens: int | None
+    total_tokens: int | None
+    latency_ms: float
+
+
+class PlaygroundModelsResponse(BaseModel):
+    """Model names available on the upstream model server."""
+
+    models: list[str]
+
+
+class PlaygroundStatusResponse(BaseModel):
+    """Playground availability report for the dashboard."""
+
+    enabled: bool
+    upstream_base_url: str
+    upstream_reachable: bool | None
+    detail: str | None
+
+
 class IngestEventResponse(BaseModel):
     """Response returned after ingesting a trace event."""
 
