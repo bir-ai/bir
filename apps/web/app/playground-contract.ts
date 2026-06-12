@@ -7,6 +7,11 @@ export type PlaygroundStatus = {
   detail: string | null;
 };
 
+export type PlaygroundScore = {
+  name: string;
+  value: number;
+};
+
 export type PlaygroundChatReply = {
   trace_id: string;
   message: { role: ChatRole; content: string };
@@ -15,6 +20,7 @@ export type PlaygroundChatReply = {
   output_tokens: number | null;
   total_tokens: number | null;
   latency_ms: number;
+  scores: PlaygroundScore[];
 };
 
 export function normalizePlaygroundStatus(value: unknown): PlaygroundStatus | null {
@@ -67,7 +73,19 @@ export function normalizePlaygroundChatReply(value: unknown): PlaygroundChatRepl
     output_tokens: value.output_tokens,
     total_tokens: value.total_tokens,
     latency_ms: value.latency_ms,
+    scores: normalizePlaygroundScores(value.scores),
   };
+}
+
+// Older servers do not return scores, so anything malformed degrades to [].
+function normalizePlaygroundScores(value: unknown): PlaygroundScore[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter(
+    (score): score is PlaygroundScore =>
+      isRecord(score) && typeof score.name === "string" && typeof score.value === "number",
+  );
 }
 
 function isChatMessage(value: unknown): value is { role: ChatRole; content: string } {

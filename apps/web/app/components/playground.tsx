@@ -421,6 +421,14 @@ export function PlaygroundDashboard({
                     <div className="event-fields chat-turn-facts">
                       <InlineField label="Tokens in / out" value={formatTokenCounts(entry.reply)} />
                       <InlineField label="Latency" value={formatLatency(entry.reply.latency_ms)} />
+                      {entry.reply.scores.map((score) => (
+                        <span
+                          className={`score-pill chat-score ${score.value > 0 ? "pass" : "fail"}`}
+                          key={score.name}
+                        >
+                          {score.name} {formatScoreValue(score.value)}
+                        </span>
+                      ))}
                       <button className="inline-action" type="button" onClick={() => onOpenTrace(entry.reply!.trace_id)}>
                         Open trace
                       </button>
@@ -464,6 +472,18 @@ export function PlaygroundDashboard({
       </section>
     </>
   );
+}
+
+function formatScoreValue(value: number): string {
+  // The built-in evaluators are pass/fail; show marks for them and keep
+  // numbers for anything else a server might return.
+  if (value === 1) {
+    return "✓";
+  }
+  if (value === 0) {
+    return "✗";
+  }
+  return value.toString();
 }
 
 function formatTokenCounts(reply: PlaygroundChatReply): string {

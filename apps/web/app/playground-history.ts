@@ -1,5 +1,5 @@
 import type { PlaygroundChatReply } from "./playground-contract";
-import type { Trace, TraceEvent } from "./trace-contract";
+import { getTraceScores, type Trace, type TraceEvent } from "./trace-contract";
 
 export type PlaygroundHistoryEntry = {
   id: string;
@@ -74,6 +74,7 @@ function buildSession(sessionId: string, traces: Trace[]): PlaygroundHistorySess
           output_tokens: usageNumber(generation.usage, "output_tokens"),
           total_tokens: usageNumber(generation.usage, "total_tokens"),
           latency_ms: latencyMs(generation),
+          scores: getTraceScores(trace.events),
         },
       });
     }

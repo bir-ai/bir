@@ -95,7 +95,9 @@ events in the same JSONL event store as uploaded SDK traces.
   single document in the output).
 - `run_evaluators` (boolean): records deterministic score events under the
   trace — `answered` (assistant output is non-empty) and `length_ok` (output
-  length within 1–4000 characters). No extra model calls are made.
+  length within 1–4000 characters). No extra model calls are made. The
+  recorded scores are also returned in the chat response as
+  `scores: [{name, value}, ...]` (empty when evaluators are off).
 - `expected_output` (string): when `run_evaluators` is set, also records a
   `contains_expected` score (case-insensitive containment check).
 

@@ -44,6 +44,25 @@ test("groups playground traces by session id and reconstructs messages", () => {
   assert.equal(sessions[0].entries[3].reply?.total_tokens, 22);
 });
 
+test("reconstructs evaluator scores from trace score events", () => {
+  const sessions = buildPlaygroundHistorySessions([
+    makePlaygroundTrace({
+      traceId: "trace-1",
+      sessionId: "session-1",
+      output: "Hi",
+      scores: [
+        { name: "answered", value: 1 },
+        { name: "contains_expected", value: 0 },
+      ],
+    }),
+  ]);
+
+  assert.deepEqual(sessions[0].entries[1].reply?.scores, [
+    { name: "answered", value: 1 },
+    { name: "contains_expected", value: 0 },
+  ]);
+});
+
 test("sorts reconstructed sessions by latest trace end time", () => {
   const sessions = buildPlaygroundHistorySessions([
     makePlaygroundTrace({
@@ -84,6 +103,7 @@ function makePlaygroundTrace({
   messages = [{ role: "user", content: "Say hello." }],
   output = "Hello.",
   totalTokens = 3,
+  scores = [],
 }: {
   traceId: string;
   sessionId: string | null;
@@ -92,15 +112,32 @@ function makePlaygroundTrace({
   messages?: { role: "system" | "user" | "assistant"; content: string }[];
   output?: string;
   totalTokens?: number;
+  scores?: { name: string; value: number }[];
 }): Trace {
   const metadata = sessionId === null ? { source } : { source, session_id: sessionId };
   const endTime = new Date(new Date(startTime).getTime() + 250).toISOString();
+  const scoreEvents = scores.map((score) =>
+    makeEvent({
+      id: `${traceId}-score-${score.name}`,
+      traceId,
+      parentId: traceId,
+      name: score.name,
+      type: "score",
+      startTime: endTime,
+      endTime,
+      metadata,
+      input: null,
+      output: null,
+      value: score.value,
+    }),
+  );
   return makeTrace({
     id: traceId,
     name: "playground.chat",
     startTime,
     endTime,
     events: [
+      ...scoreEvents,
       makeEvent({
         id: traceId,
         traceId,
@@ -171,6 +208,7 @@ function makeEvent({
   output,
   model,
   usage,
+  value,
 }: {
   id: string;
   traceId: string;
@@ -184,6 +222,7 @@ function makeEvent({
   output: unknown;
   model?: string;
   usage?: Record<string, number>;
+  value?: number;
 }): TraceEvent {
   return {
     schema_version: "1.0",
@@ -201,5 +240,6 @@ function makeEvent({
     error: null,
     model,
     usage,
+    value,
   };
 }

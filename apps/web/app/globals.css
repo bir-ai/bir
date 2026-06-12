@@ -456,6 +456,18 @@ h3 {
   color: var(--text);
 }
 
+.score-pill.chat-score.pass {
+  border-color: rgba(81, 189, 86, 0.4);
+  background: rgba(81, 189, 86, 0.12);
+  color: var(--green);
+}
+
+.score-pill.chat-score.fail {
+  border-color: rgba(237, 73, 50, 0.42);
+  background: rgba(237, 73, 50, 0.1);
+  color: var(--red);
+}
+
 .status-pill.success {
   border-color: rgba(81, 189, 86, 0.36);
   color: var(--green);

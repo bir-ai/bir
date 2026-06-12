@@ -19,7 +19,8 @@ Current views:
   `playground.prepare_context` span and, when "Use context as retrieval" is on,
   a retrieval tool call), an expected answer, and a "Run basic evaluators"
   toggle that records `answered`, `length_ok`, and `contains_expected` scores
-  on the resulting trace
+  on the resulting trace; pass/fail score chips appear directly under the
+  assistant reply next to the token and latency badges
 
 ## Development
 

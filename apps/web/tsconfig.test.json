@@ -11,6 +11,8 @@
   "include": [
     "app/api-client.ts",
     "app/api-client.test.ts",
+    "app/playground-contract.ts",
+    "app/playground-contract.test.ts",
     "app/playground-history.ts",
     "app/playground-history.test.ts",
     "app/trace-contract.ts",

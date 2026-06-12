@@ -21,6 +21,7 @@ from .schemas import (
     PlaygroundChatRequest,
     PlaygroundChatResponse,
     PlaygroundMessage,
+    PlaygroundScore,
     TraceEventPayload,
 )
 
@@ -231,6 +232,7 @@ def run_chat(
         output_tokens=output_tokens,
         total_tokens=total_tokens,
         latency_ms=latency_ms,
+        scores=[PlaygroundScore(name=event["name"], value=event["value"]) for event in score_events],
     )
     return response, events
 

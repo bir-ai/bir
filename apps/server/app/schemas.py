@@ -124,6 +124,13 @@ class PlaygroundChatRequest(BaseModel):
     run_evaluators: bool = False
 
 
+class PlaygroundScore(BaseModel):
+    """One evaluator score recorded for a playground chat turn."""
+
+    name: str
+    value: int | float
+
+
 class PlaygroundChatResponse(BaseModel):
     """Playground chat reply with the recorded trace reference and call stats."""
 
@@ -134,6 +141,7 @@ class PlaygroundChatResponse(BaseModel):
     output_tokens: int | None
     total_tokens: int | None
     latency_ms: float
+    scores: list[PlaygroundScore] = Field(default_factory=list)
 
 
 class PlaygroundModelsResponse(BaseModel):

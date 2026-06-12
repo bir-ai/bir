@@ -125,6 +125,7 @@ def test_chat_forwards_to_upstream_and_returns_reply_with_stats(tmp_path: Path) 
     assert reply["total_tokens"] == 19
     assert reply["latency_ms"] >= 0
     assert reply["trace_id"].startswith("playground-")
+    assert reply["scores"] == []
     assert len(requests) == 1
     assert requests[0]["path"] == "/v1/chat/completions"
     assert requests[0]["body"] == {
@@ -246,6 +247,10 @@ def test_chat_with_evaluators_records_score_events(tmp_path: Path) -> None:
 
         response = client.post("/v1/playground/chat", json=make_chat_request(run_evaluators=True))
 
+    assert response.json()["scores"] == [
+        {"name": "answered", "value": 1},
+        {"name": "length_ok", "value": 1},
+    ]
     trace = client.get(f"/v1/traces/{response.json()['trace_id']}").json()
     assert [event["type"] for event in trace["events"]] == ["trace", "generation", "score", "score"]
     scores = {event["name"]: event for event in trace["events"] if event["type"] == "score"}
@@ -269,6 +274,8 @@ def test_chat_with_expected_output_records_contains_expected_score(tmp_path: Pat
             json=make_chat_request(run_evaluators=True, expected_output="goodbye"),
         )
 
+    assert {"name": "contains_expected", "value": 1} in matching.json()["scores"]
+    assert {"name": "contains_expected", "value": 0} in missing.json()["scores"]
     matching_trace = client.get(f"/v1/traces/{matching.json()['trace_id']}").json()
     missing_trace = client.get(f"/v1/traces/{missing.json()['trace_id']}").json()
     matching_scores = {event["name"]: event for event in matching_trace["events"] if event["type"] == "score"}
