@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from .experiments import JsonlExperimentStore
+from .experiments import JsonlExperimentStore, LocalExperimentReader
 from .schemas import (
     ExperimentIngestPayload,
     ExperimentSummaryPayload,
@@ -24,22 +24,45 @@ from .schemas import (
     EventType,
     TraceEventPayload,
 )
-from .storage import JsonlEventStore
+from .storage import JsonlEventStore, LocalJsonlEventReader, TraceEventReader
 
 DEFAULT_EVENT_STORE_PATH = Path(".bir/server-events.jsonl")
 DEFAULT_EXPERIMENT_STORE_PATH = Path(".bir/experiments")
+READ_ONLY_LOCAL_MODE_DETAIL = (
+    "Ingestion is disabled: the server is running in read-only local data mode (BIR_DATA_DIR)"
+)
 
 
 def create_app(
     *,
     event_store_path: str | Path | None = None,
     experiment_store_path: str | Path | None = None,
+    local_data_dir: str | Path | None = None,
 ) -> FastAPI:
-    """Create a Bir ingestion server with local JSONL-backed stores."""
+    """Create a Bir ingestion server with local JSONL-backed stores.
+
+    When ``local_data_dir`` (or the ``BIR_DATA_DIR`` environment variable)
+    points at a project's ``.bir`` directory, the server runs in read-only
+    local data mode: it reads ``traces.jsonl`` written by the SDK and rejects
+    ingestion. Explicit store paths keep the server in ingestion mode even
+    when ``BIR_DATA_DIR`` is set, so embedding callers and tests stay hermetic.
+    """
+
+    if local_data_dir is not None:
+        data_dir = Path(local_data_dir)
+    elif event_store_path is None and experiment_store_path is None:
+        data_dir = _local_data_dir_from_env()
+    else:
+        data_dir = None
 
     app = FastAPI(title="Bir Ingestion Server", version="0.1.0")
-    app.state.event_store = JsonlEventStore(event_store_path or _event_store_path_from_env())
-    app.state.experiment_store = JsonlExperimentStore(experiment_store_path or _experiment_store_path_from_env())
+    app.state.read_only_local_mode = data_dir is not None
+    if data_dir is not None:
+        app.state.event_store = LocalJsonlEventReader(data_dir / "traces.jsonl")
+        app.state.experiment_store = LocalExperimentReader(data_dir / "experiments")
+    else:
+        app.state.event_store = JsonlEventStore(event_store_path or _event_store_path_from_env())
+        app.state.experiment_store = JsonlExperimentStore(experiment_store_path or _experiment_store_path_from_env())
 
     @app.exception_handler(RequestValidationError)
     def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -51,7 +74,7 @@ def create_app(
 
     @app.post("/v1/events", response_model=IngestEventResponse, status_code=201)
     def ingest_event(event: TraceEventPayload, request: Request, response: Response) -> IngestEventResponse:
-        store = _get_event_store(request)
+        store = _get_writable_event_store(request)
         accepted = 1 if store.append(event) else 0
         if accepted == 0:
             response.status_code = 200
@@ -63,7 +86,7 @@ def create_app(
         request: Request,
         response: Response,
     ) -> IngestEventBatchResponse:
-        store = _get_event_store(request)
+        store = _get_writable_event_store(request)
         accepted_ids = [event.id for event in events if store.append(event)]
         if not accepted_ids:
             response.status_code = 200
@@ -98,7 +121,7 @@ def create_app(
         request: Request,
         response: Response,
     ) -> IngestExperimentResponse:
-        store = _get_experiment_store(request)
+        store = _get_writable_experiment_store(request)
         accepted = 1 if store.save_experiment(experiment) else 0
         if accepted == 0:
             response.status_code = 200
@@ -140,14 +163,42 @@ def _experiment_store_path_from_env() -> Path:
     return DEFAULT_EXPERIMENT_STORE_PATH
 
 
-def _get_event_store(request: Request) -> JsonlEventStore:
+def _local_data_dir_from_env() -> Path | None:
+    configured_path = os.environ.get("BIR_DATA_DIR")
+    if configured_path:
+        return Path(configured_path)
+    return None
+
+
+def _reject_in_read_only_local_mode(request: Request) -> None:
+    if getattr(request.app.state, "read_only_local_mode", False):
+        raise HTTPException(status_code=403, detail=READ_ONLY_LOCAL_MODE_DETAIL)
+
+
+def _get_event_store(request: Request) -> TraceEventReader:
+    store = request.app.state.event_store
+    if not isinstance(store, TraceEventReader):
+        raise RuntimeError("Bir event store is not configured")
+    return store
+
+
+def _get_writable_event_store(request: Request) -> JsonlEventStore:
+    _reject_in_read_only_local_mode(request)
     store = request.app.state.event_store
     if not isinstance(store, JsonlEventStore):
         raise RuntimeError("Bir event store is not configured")
     return store
 
 
-def _get_experiment_store(request: Request) -> JsonlExperimentStore:
+def _get_experiment_store(request: Request) -> JsonlExperimentStore | LocalExperimentReader:
+    store = request.app.state.experiment_store
+    if not isinstance(store, (JsonlExperimentStore, LocalExperimentReader)):
+        raise RuntimeError("Bir experiment store is not configured")
+    return store
+
+
+def _get_writable_experiment_store(request: Request) -> JsonlExperimentStore:
+    _reject_in_read_only_local_mode(request)
     store = request.app.state.experiment_store
     if not isinstance(store, JsonlExperimentStore):
         raise RuntimeError("Bir experiment store is not configured")

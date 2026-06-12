@@ -45,6 +45,18 @@ from bir import send_events
 send_events("http://127.0.0.1:8000")
 ```
 
+Alternatively, run the server in read-only local data mode to browse
+`.bir/traces.jsonl` directly without uploading anything:
+
+```bash
+cd apps/server
+BIR_DATA_DIR=/path/to/your/project/.bir ../../.venv/bin/uvicorn app.main:app --reload
+```
+
+In this mode ingestion endpoints are disabled and the server picks up new
+trace events as the SDK appends them. Experiments views stay empty in this
+mode for now. See `apps/server/README.md` for details.
+
 ## Local MVP Loop
 
 Install server and web dependencies once if they are not already available:

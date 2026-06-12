@@ -13,6 +13,33 @@ from pydantic import ValidationError
 from .schemas import ExperimentExampleResultPayload, ExperimentIngestPayload, ExperimentSummaryPayload, LoadedExperiment
 
 
+class LocalExperimentReader:
+    """Empty experiment view for read-only local data mode.
+
+    SDK-written summaries under `.bir/experiments/` record `result_path`
+    relative to the project root (for example `.bir/experiments/run.jsonl`),
+    while JsonlExperimentStore resolves `result_path` relative to the store
+    directory, so reusing it here would fail on every experiment detail
+    request. Until a local-mode reader understands SDK-written paths
+    (follow-up), surface no experiments so the dashboard degrades gracefully.
+    """
+
+    def __init__(self, directory: str | Path) -> None:
+        """Create a reader rooted at the given experiment directory."""
+
+        self.directory = Path(directory)
+
+    def list_experiments(self) -> list[ExperimentSummaryPayload]:
+        """Return no experiment summaries in local data mode."""
+
+        return []
+
+    def load_experiment(self, experiment_id: str) -> LoadedExperiment | None:
+        """Return no experiment detail in local data mode."""
+
+        return None
+
+
 class JsonlExperimentStore:
     """Persist and query experiment summaries and result rows from local files."""
 

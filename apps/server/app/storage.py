@@ -1,4 +1,4 @@
-"""Append-only JSONL event storage for the Bir ingestion server."""
+"""JSONL event storage and read-only local data access for the Bir server."""
 
 from __future__ import annotations
 
@@ -19,7 +19,48 @@ EVENT_SORT_PRIORITY = {
 }
 
 
-class JsonlEventStore:
+class TraceEventReader:
+    """Shared trace queries over a `load_events()` implementation."""
+
+    def load_events(self) -> list[TraceEventPayload]:
+        """Load all available events in file order."""
+
+        raise NotImplementedError
+
+    def load_traces(
+        self,
+        *,
+        status: EventStatus | None = None,
+        name: str | None = None,
+        event_type: EventType | None = None,
+    ) -> list[LoadedTrace]:
+        """Load complete traces, optionally filtered by root status, name, or event type."""
+
+        events_by_trace_id: dict[str, list[TraceEventPayload]] = {}
+        for event in self.load_events():
+            events_by_trace_id.setdefault(event.trace_id, []).append(event)
+
+        name_filter = name.strip().lower() if name is not None else None
+        traces: list[LoadedTrace] = []
+        for trace_id, events in events_by_trace_id.items():
+            trace = _loaded_trace(trace_id, events)
+            if trace is not None and _matches_filters(
+                trace,
+                status=status,
+                name_filter=name_filter,
+                event_type=event_type,
+            ):
+                traces.append(trace)
+        return sorted(traces, key=lambda trace: (trace.start_time, trace.id))
+
+    def load_trace(self, trace_id: str) -> LoadedTrace | None:
+        """Load one complete trace by ID."""
+
+        events = [event for event in self.load_events() if event.trace_id == trace_id]
+        return _loaded_trace(trace_id, events)
+
+
+class JsonlEventStore(TraceEventReader):
     """Persist and query validated trace events from a local JSONL file.
 
     Event IDs are indexed in memory after the first duplicate check so each
@@ -93,49 +134,96 @@ class JsonlEventStore:
                     stripped = line.strip()
                     if not stripped:
                         continue
-                    try:
-                        payload = json.loads(stripped)
-                    except json.JSONDecodeError as exc:
-                        raise ValueError(f"Invalid JSON in event store {self.path} at line {line_number}") from exc
-                    if not isinstance(payload, dict):
-                        raise ValueError(f"Event store {self.path} line {line_number} must contain a JSON object")
-                    try:
-                        events.append(TraceEventPayload.model_validate(payload))
-                    except ValidationError as exc:
-                        raise ValueError(f"Invalid event in store {self.path} at line {line_number}") from exc
+                    events.append(_parse_event_line(self.path, line_number, stripped))
             return events
 
-    def load_traces(
-        self,
-        *,
-        status: EventStatus | None = None,
-        name: str | None = None,
-        event_type: EventType | None = None,
-    ) -> list[LoadedTrace]:
-        """Load complete traces, optionally filtered by root status, name, or event type."""
 
-        events_by_trace_id: dict[str, list[TraceEventPayload]] = {}
-        for event in self.load_events():
-            events_by_trace_id.setdefault(event.trace_id, []).append(event)
+class LocalJsonlEventReader(TraceEventReader):
+    """Read-only view over a trace JSONL file owned by another writer (the SDK).
 
-        name_filter = name.strip().lower() if name is not None else None
-        traces: list[LoadedTrace] = []
-        for trace_id, events in events_by_trace_id.items():
-            trace = _loaded_trace(trace_id, events)
-            if trace is not None and _matches_filters(
-                trace,
-                status=status,
-                name_filter=name_filter,
-                event_type=event_type,
-            ):
-                traces.append(trace)
-        return sorted(traces, key=lambda trace: (trace.start_time, trace.id))
+    The file is re-parsed only when its mtime or size changes. A final line
+    without a trailing newline may be a write still in progress, so an
+    unparseable tail is skipped instead of raising; it surfaces on the next
+    read after the write completes.
+    """
 
-    def load_trace(self, trace_id: str) -> LoadedTrace | None:
-        """Load one complete trace by ID."""
+    def __init__(self, path: str | Path) -> None:
+        """Create a reader over the given JSONL path."""
 
-        events = [event for event in self.load_events() if event.trace_id == trace_id]
-        return _loaded_trace(trace_id, events)
+        self.path = Path(path)
+        self._lock = Lock()
+        self._cached_signature: tuple[int, int] | None = None
+        self._cached_events: list[TraceEventPayload] = []
+
+    def load_events(self) -> list[TraceEventPayload]:
+        """Load all complete events, re-parsing the file only when it changed."""
+
+        with self._lock:
+            try:
+                stat_result = self.path.stat()
+            except FileNotFoundError:
+                self._cached_signature = None
+                self._cached_events = []
+                return []
+
+            # Stat before reading so a write that races the read invalidates
+            # the cache again on the next request instead of going unnoticed.
+            signature = (stat_result.st_mtime_ns, stat_result.st_size)
+            if signature != self._cached_signature:
+                self._cached_events = self._read_events()
+                self._cached_signature = signature
+            return list(self._cached_events)
+
+    def _read_events(self) -> list[TraceEventPayload]:
+        raw = self.path.read_bytes()
+        complete_part, _, tail = raw.rpartition(b"\n")
+
+        events: list[TraceEventPayload] = []
+        line_number = 0
+        if complete_part:
+            for line_number, line in enumerate(complete_part.decode("utf-8").split("\n"), start=1):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                events.append(_parse_event_line(self.path, line_number, stripped))
+
+        tail_event = _parse_possibly_torn_tail(self.path, line_number + 1, tail)
+        if tail_event is not None:
+            events.append(tail_event)
+        return events
+
+
+def _parse_event_line(path: Path, line_number: int, stripped: str) -> TraceEventPayload:
+    try:
+        payload = json.loads(stripped)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON in event store {path} at line {line_number}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"Event store {path} line {line_number} must contain a JSON object")
+    try:
+        return TraceEventPayload.model_validate(payload)
+    except ValidationError as exc:
+        raise ValueError(f"Invalid event in store {path} at line {line_number}") from exc
+
+
+def _parse_possibly_torn_tail(path: Path, line_number: int, tail: bytes) -> TraceEventPayload | None:
+    """Parse the final newline-less line of an externally written file.
+
+    The writer may be mid-append, so a tail that does not decode or parse as
+    JSON is treated as torn and skipped. A truncated serialized object can
+    never parse as complete JSON, so a tail that parses is a finished write
+    that is only missing its newline and is handled like any other line.
+    """
+
+    stripped_tail = tail.strip()
+    if not stripped_tail:
+        return None
+    try:
+        text = stripped_tail.decode("utf-8")
+        json.loads(text)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return _parse_event_line(path, line_number, text)
 
 
 def _loaded_trace(trace_id: str, events: list[TraceEventPayload]) -> LoadedTrace | None:

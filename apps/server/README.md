@@ -66,6 +66,29 @@ as summary plus per-example result rows through
 `/v1/experiments/{experiment_id}`. Duplicate experiment uploads are idempotent
 and do not overwrite the existing stored artifact.
 
+## Read-only local data mode
+
+Point the server at a project's `.bir` directory to browse SDK-written traces
+without uploading them:
+
+```bash
+export BIR_DATA_DIR=/path/to/your/project/.bir
+uvicorn app.main:app --reload
+```
+
+In this mode the server reads `$BIR_DATA_DIR/traces.jsonl` (the file the SDK
+writes) directly. The file is re-parsed only when it changes, and a final line
+that the SDK is still appending is skipped until the write completes. All read
+endpoints work normally; `POST /v1/events`, `POST /v1/events/batch`, and
+`POST /v1/experiments` return `403` because the server does not own the data
+files. Experiments endpoints currently return empty results in this mode;
+reading SDK-written `.bir/experiments/` artifacts directly is a follow-up.
+
+When `BIR_DATA_DIR` is unset, the server runs exactly as before with its own
+ingestion store. Passing an explicit `event_store_path` or
+`experiment_store_path` to `create_app()` also keeps the server in ingestion
+mode even when `BIR_DATA_DIR` is set.
+
 ## Development
 
 ```bash
