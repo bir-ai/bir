@@ -879,6 +879,72 @@ def test_accepts_generation_cost_with_default_currency(tmp_path: Path) -> None:
     assert event["currency"] == "USD"
 
 
+def test_persists_optional_fields_as_explicit_nulls(tmp_path: Path) -> None:
+    # The SDK omits optional keys it did not set, but the server persists every
+    # event with model_dump(exclude_none=False). The canonical persisted shape
+    # therefore spells value/model/usage/cost/currency as explicit JSON nulls. Pin
+    # it so a serialization change cannot drift it silently. See
+    # docs/IMPLEMENTATION_ROADMAP.md Stage 2.
+    client, event_store_path = make_client(tmp_path)
+
+    score_event = make_event(
+        id="score-1",
+        parent_id="trace-1",
+        name="helpfulness",
+        type="score",
+        start_time="2026-01-01T00:00:00+00:00",
+        end_time="2026-01-01T00:00:00+00:00",
+        value=0.82,
+    )
+    generation_event = make_event(
+        id="generation-1",
+        parent_id="trace-1",
+        name="local.llm",
+        type="generation",
+        usage={"input_tokens": 5, "output_tokens": 7, "total_tokens": 12},
+        cost={"input_cost": 0.000005, "output_cost": 0.000014, "total_cost": 0.000019},
+    )
+    # The posted payloads are SDK-shaped: optional keys they did not set are absent.
+    for omitted in ("model", "usage", "cost", "currency"):
+        assert omitted not in score_event
+    assert "model" not in generation_event
+    assert "currency" not in generation_event
+
+    assert client.post("/v1/events", json=score_event).status_code == 201
+    assert client.post("/v1/events", json=generation_event).status_code == 201
+
+    stored_events = {
+        event["id"]: event
+        for event in (json.loads(line) for line in event_store_path.read_text(encoding="utf-8").splitlines())
+    }
+    stored_score = stored_events["score-1"]
+    assert stored_score["value"] == 0.82
+    assert stored_score["model"] is None
+    assert stored_score["usage"] is None
+    assert stored_score["cost"] is None
+    assert stored_score["currency"] is None
+    stored_generation = stored_events["generation-1"]
+    assert stored_generation["value"] is None
+    assert stored_generation["model"] is None
+    assert stored_generation["usage"] == {"input_tokens": 5, "output_tokens": 7, "total_tokens": 12}
+    assert stored_generation["cost"] == {"input_cost": 0.000005, "output_cost": 0.000014, "total_cost": 0.000019}
+    # Cost without an explicit currency persists with the default USD.
+    assert stored_generation["currency"] == "USD"
+
+    # Reading back through the API re-validates the persisted payload and keeps the
+    # explicit null keys for every optional field.
+    events_response = client.get("/v1/events")
+    assert events_response.status_code == 200
+    by_id = {event["id"]: event for event in events_response.json()}
+    for optional_key in ("value", "model", "usage", "cost", "currency"):
+        assert optional_key in by_id["score-1"]
+        assert optional_key in by_id["generation-1"]
+    assert by_id["score-1"]["value"] == 0.82
+    assert by_id["score-1"]["model"] is None
+    assert by_id["generation-1"]["model"] is None
+    assert by_id["generation-1"]["currency"] == "USD"
+
+
 def test_rejects_bool_cost_value(tmp_path: Path) -> None:
     client, event_store_path = make_client(tmp_path)
 

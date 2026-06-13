@@ -215,6 +215,16 @@ Deliverables:
 - tests proving dashboard contract parsing handles fixture data
 - explicit handling for schema version changes
 
+Canonical persisted shape: the SDK omits optional event keys it did not set
+(`value`, `model`, `usage`, `cost`, `currency`), while the server persists every
+event with `model_dump(exclude_none=False)`. A server-written JSONL line therefore
+spells those optional fields as explicit JSON nulls, and a `score` line also
+carries its numeric `value`. Both the key-omitted and explicit-null forms are
+accepted on ingest and load on both the SDK and server readers, but the
+explicit-null form is the canonical persisted shape. Keep `JsonlEventStore.append`
+writing explicit nulls; do not switch it to `exclude_none=True`. SDK and server
+tests pin this so the persisted shape cannot drift silently.
+
 Recommended event fields:
 
 - `schema_version`

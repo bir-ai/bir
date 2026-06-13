@@ -105,6 +105,11 @@ class JsonlEventStore(TraceEventReader):
                 return False
 
             self.path.parent.mkdir(parents=True, exist_ok=True)
+            # exclude_none=False is deliberate: a persisted line spells optional
+            # fields (value/model/usage/cost/currency) as explicit JSON nulls. That
+            # explicit-null form is Bir's canonical persisted shape (the SDK instead
+            # omits keys it did not set); both forms load on either reader. Do not
+            # switch to exclude_none=True. See docs/IMPLEMENTATION_ROADMAP.md Stage 2.
             payload = event.model_dump(mode="json", exclude_none=False)
             with self.path.open("a", encoding="utf-8") as events_file:
                 events_file.write(json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False))
