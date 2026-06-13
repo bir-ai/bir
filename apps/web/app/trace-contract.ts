@@ -91,6 +91,13 @@ export type TraceScore = {
   metadata?: Record<string, unknown>;
 };
 
+export type TraceModelSummary = {
+  model: string;
+  generationCount: number;
+  totalTokens: number;
+  totalCost: number;
+};
+
 export type TraceSummary = {
   traceCount: number;
   eventCount: number;
@@ -101,6 +108,7 @@ export type TraceSummary = {
   currency: string | null;
   p50LatencyMs: number;
   p95LatencyMs: number;
+  models: TraceModelSummary[];
 };
 
 export type TraceTotals = {
@@ -279,6 +287,7 @@ export function summarizeTraces(traces: Trace[]): TraceSummary {
   let totalCost = 0;
   const costCurrencies = new Set<string>();
   const durationsMs: number[] = [];
+  const modelSummaries = new Map<string, TraceModelSummary>();
 
   for (const trace of traces) {
     eventCount += trace.events.length;
@@ -296,7 +305,8 @@ export function summarizeTraces(traces: Trace[]): TraceSummary {
         continue;
       }
       generationCount += 1;
-      totalTokens += generationTokens(event.usage);
+      const tokens = generationTokens(event.usage);
+      totalTokens += tokens;
       const cost = generationCost(event.cost);
       if (cost !== null) {
         totalCost += cost;
@@ -304,10 +314,28 @@ export function summarizeTraces(traces: Trace[]): TraceSummary {
           costCurrencies.add(event.currency);
         }
       }
+
+      // Bucket each generation by model; generations without one collapse into a
+      // shared "unknown" entry that only appears when such generations exist.
+      const modelKey = typeof event.model === "string" && event.model.length > 0 ? event.model : "unknown";
+      const bucket = modelSummaries.get(modelKey) ?? {
+        model: modelKey,
+        generationCount: 0,
+        totalTokens: 0,
+        totalCost: 0,
+      };
+      bucket.generationCount += 1;
+      bucket.totalTokens += tokens;
+      bucket.totalCost += cost ?? 0;
+      modelSummaries.set(modelKey, bucket);
     }
   }
 
   durationsMs.sort((first, second) => first - second);
+
+  const models = [...modelSummaries.values()].sort(
+    (first, second) => second.generationCount - first.generationCount || first.model.localeCompare(second.model),
+  );
 
   return {
     traceCount: traces.length,
@@ -319,6 +347,7 @@ export function summarizeTraces(traces: Trace[]): TraceSummary {
     currency: costCurrencies.size === 1 ? [...costCurrencies][0] : null,
     p50LatencyMs: percentile(durationsMs, 50),
     p95LatencyMs: percentile(durationsMs, 95),
+    models,
   };
 }
 

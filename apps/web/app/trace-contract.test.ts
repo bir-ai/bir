@@ -462,6 +462,7 @@ test("returns a zeroed summary for an empty trace list", () => {
     currency: null,
     p50LatencyMs: 0,
     p95LatencyMs: 0,
+    models: [],
   });
 });
 
@@ -506,6 +507,80 @@ test("reports null currency when generations mix currencies", () => {
 
   assert.equal(summary.currency, null);
   assert.ok(Math.abs(summary.totalCost - 0.003) < 1e-9);
+});
+
+test("groups generation tokens and cost by model ordered by generation count", () => {
+  const traces = [
+    summarizableTrace({
+      id: "trace-models",
+      generations: [
+        generationEvent({
+          id: "gen-a1",
+          model: "gpt-4o-mini",
+          usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120 },
+          cost: { total_cost: 0.0006 },
+          currency: "USD",
+        }),
+        generationEvent({
+          id: "gen-a2",
+          model: "gpt-4o-mini",
+          // No total_tokens, so the helper falls back to input + output tokens.
+          usage: { input_tokens: 50, output_tokens: 10 },
+          cost: { total_cost: 0.0004 },
+          currency: "USD",
+        }),
+        generationEvent({
+          id: "gen-b1",
+          model: "claude-3-5-sonnet",
+          usage: { total_tokens: 240 },
+          cost: { total_cost: 0.003 },
+          currency: "USD",
+        }),
+      ],
+    }),
+  ];
+
+  const summary = summarizeTraces(traces);
+
+  // gpt-4o-mini has two generations, so it sorts ahead of the single-call model.
+  assert.equal(summary.models.length, 2);
+  const [first, second] = summary.models;
+
+  assert.equal(first.model, "gpt-4o-mini");
+  assert.equal(first.generationCount, 2);
+  assert.equal(first.totalTokens, 180);
+  assert.ok(Math.abs(first.totalCost - 0.001) < 1e-9);
+
+  assert.equal(second.model, "claude-3-5-sonnet");
+  assert.equal(second.generationCount, 1);
+  assert.equal(second.totalTokens, 240);
+  assert.ok(Math.abs(second.totalCost - 0.003) < 1e-9);
+});
+
+test("buckets generations without a model under unknown and breaks count ties by model name", () => {
+  const traces = [
+    summarizableTrace({
+      id: "trace-unknown",
+      generations: [
+        generationEvent({ id: "gen-zeta", model: "zeta", usage: { total_tokens: 10 } }),
+        // No model field, so this generation collapses into the shared "unknown" bucket.
+        generationEvent({ id: "gen-none", usage: { total_tokens: 5 } }),
+        generationEvent({ id: "gen-alpha", model: "alpha", usage: { total_tokens: 7 } }),
+      ],
+    }),
+  ];
+
+  const summary = summarizeTraces(traces);
+
+  // Each model has one generation, so the tie breaks on model name ascending.
+  assert.deepEqual(
+    summary.models.map((entry) => entry.model),
+    ["alpha", "unknown", "zeta"],
+  );
+  assert.deepEqual(
+    summary.models.find((entry) => entry.model === "unknown"),
+    { model: "unknown", generationCount: 1, totalTokens: 5, totalCost: 0 },
+  );
 });
 
 test("totals a trace's generation tokens and cost", () => {

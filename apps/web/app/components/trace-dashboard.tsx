@@ -6,6 +6,7 @@ import {
   getTraceTotals,
   type Trace,
   type TraceFilterValues,
+  type TraceModelSummary,
   type TraceSummary,
   type TraceTimelineRow,
 } from "../trace-contract";
@@ -67,6 +68,8 @@ export function TraceDashboard({
         <Metric label="p95 latency" value={formatMilliseconds(stats.p95LatencyMs)} />
       </section>
 
+      {stats.models.length > 0 ? <ModelBreakdown models={stats.models} currency={stats.currency} /> : null}
+
       <section className="workspace">
         <TraceList
           apiBaseUrl={apiBaseUrl}
@@ -124,5 +127,33 @@ export function TraceDashboard({
         </section>
       </section>
     </>
+  );
+}
+
+function ModelBreakdown({ models, currency }: { models: TraceModelSummary[]; currency: string | null }) {
+  return (
+    <section className="model-breakdown" aria-label="Model breakdown">
+      <h3>Model breakdown</h3>
+      <table className="model-table">
+        <thead>
+          <tr>
+            <th scope="col">Model</th>
+            <th scope="col">Generations</th>
+            <th scope="col">Tokens</th>
+            <th scope="col">Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          {models.map((model) => (
+            <tr key={model.model}>
+              <td>{model.model}</td>
+              <td>{formatNumber(model.generationCount)}</td>
+              <td>{formatNumber(model.totalTokens)}</td>
+              <td>{currency ? `${formatNumber(model.totalCost)} ${currency}` : formatNumber(model.totalCost)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }
