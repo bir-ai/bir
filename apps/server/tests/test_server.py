@@ -1091,6 +1091,76 @@ def test_rejects_invalid_trace_filter_values(tmp_path: Path) -> None:
     assert event_type_response.status_code == 422
 
 
+def test_limits_traces_to_most_recent_n(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    for index in range(5):
+        event = make_event(
+            id=f"trace-{index}",
+            trace_id=f"trace-{index}",
+            start_time=f"2026-01-0{index + 1}T00:00:00+00:00",
+            end_time=f"2026-01-0{index + 1}T00:00:01+00:00",
+        )
+        assert client.post("/v1/events", json=event).status_code == 201
+
+    response = client.get("/v1/traces", params={"limit": 2})
+
+    assert response.status_code == 200
+    traces = response.json()
+    assert [trace["id"] for trace in traces] == ["trace-3", "trace-4"]
+
+
+def test_filters_apply_before_limit(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    events = [
+        make_event(
+            id="success-old",
+            trace_id="success-old",
+            start_time="2026-01-01T00:00:00+00:00",
+            end_time="2026-01-01T00:00:01+00:00",
+        ),
+        make_event(
+            id="success-mid",
+            trace_id="success-mid",
+            start_time="2026-01-02T00:00:00+00:00",
+            end_time="2026-01-02T00:00:01+00:00",
+        ),
+        make_event(
+            id="error-newest",
+            trace_id="error-newest",
+            status="error",
+            start_time="2026-01-03T00:00:00+00:00",
+            end_time="2026-01-03T00:00:01+00:00",
+            error="failed",
+        ),
+        make_event(
+            id="success-new",
+            trace_id="success-new",
+            start_time="2026-01-04T00:00:00+00:00",
+            end_time="2026-01-04T00:00:01+00:00",
+        ),
+    ]
+    for event in events:
+        assert client.post("/v1/events", json=event).status_code == 201
+
+    response = client.get("/v1/traces", params={"status": "success", "limit": 2})
+
+    assert response.status_code == 200
+    traces = response.json()
+    # The error trace is the newest overall, but the success filter drops it
+    # before the limit selects the two most recent survivors.
+    assert [trace["id"] for trace in traces] == ["success-mid", "success-new"]
+
+
+def test_rejects_non_positive_limit(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+
+    zero_response = client.get("/v1/traces", params={"limit": 0})
+    negative_response = client.get("/v1/traces", params={"limit": -3})
+
+    assert zero_response.status_code == 422
+    assert negative_response.status_code == 422
+
+
 def test_gets_trace_detail_with_root_first_event_order(tmp_path: Path) -> None:
     client, _ = make_client(tmp_path)
     score_event = make_event(

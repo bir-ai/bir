@@ -36,12 +36,17 @@ class TraceEventReader:
         event_type: EventType | None = None,
         service: str | None = None,
         environment: str | None = None,
+        limit: int | None = None,
     ) -> list[LoadedTrace]:
         """Load complete traces, optionally filtered by root status, name, event type, or service.
 
         ``service`` and ``environment`` match the ``metadata.service`` block the
         SDK records on trace roots from ``configure(service_name=, environment=)``,
         using the same case-insensitive substring matching as ``name``.
+
+        ``limit`` keeps only the most recent ``limit`` traces (by ``start_time``
+        then ``id``) after filtering, so the local experience stays usable as the
+        store grows. The result stays sorted ascending regardless.
         """
 
         events_by_trace_id: dict[str, list[TraceEventPayload]] = {}
@@ -63,7 +68,11 @@ class TraceEventReader:
                 environment_filter=environment_filter,
             ):
                 traces.append(trace)
-        return sorted(traces, key=lambda trace: (trace.start_time, trace.id))
+        ordered = sorted(traces, key=lambda trace: (trace.start_time, trace.id))
+        # The newest traces sort last, so the most recent N are the tail slice.
+        if limit is not None:
+            return ordered[-limit:]
+        return ordered
 
     def load_trace(self, trace_id: str) -> LoadedTrace | None:
         """Load one complete trace by ID."""
