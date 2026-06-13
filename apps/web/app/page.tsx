@@ -6,6 +6,7 @@ import {
   fetchExperimentDetail,
   fetchExperimentSummaries,
   fetchPlaygroundStatus,
+  fetchTraceDetail,
   fetchTraces,
   getApiBaseUrl,
 } from "./api-client";
@@ -26,6 +27,7 @@ import {
   buildTraceFilterQuery,
   buildTraceTimelineRows,
   findTraceById,
+  isTrace,
   normalizeTraces,
   summarizeTraces,
   type Trace,
@@ -50,6 +52,7 @@ export default function DashboardPage() {
   const [activeView, setActiveView] = useState<ViewMode>("traces");
   const [traces, setTraces] = useState<Trace[]>([]);
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
+  const [selectedTraceDetail, setSelectedTraceDetail] = useState<Trace | null>(null);
   const [traceFilters, setTraceFilters] = useState<TraceFilterValues>(DEFAULT_TRACE_FILTERS);
   const [experiments, setExperiments] = useState<ExperimentSummary[]>([]);
   const [selectedExperimentId, setSelectedExperimentId] = useState<string | null>(null);
@@ -312,9 +315,48 @@ export default function DashboardPage() {
     () => (selectedTraceId ? findTraceById(traces, selectedTraceId) : null) ?? traces[0] ?? null,
     [selectedTraceId, traces],
   );
+
+  // Load the selected trace's full events from the dedicated endpoint instead of
+  // trusting the in-memory list, which is capped at DEFAULT_TRACE_LIMIT and may
+  // omit or trim the selection. While the request is in flight or if it fails,
+  // the detail view falls back to the in-memory trace via detailTrace below.
+  useEffect(() => {
+    const traceId = selectedTrace?.id ?? null;
+    if (!traceId) {
+      setSelectedTraceDetail(null);
+      return;
+    }
+
+    let isCurrentRequest = true;
+    setSelectedTraceDetail(null);
+
+    void fetchTraceDetail(traceId)
+      .then((detail) => {
+        if (isCurrentRequest) {
+          setSelectedTraceDetail(isTrace(detail) ? detail : null);
+        }
+      })
+      .catch(() => {
+        if (isCurrentRequest) {
+          setSelectedTraceDetail(null);
+        }
+      });
+
+    return () => {
+      isCurrentRequest = false;
+    };
+  }, [selectedTrace]);
+
+  const detailTrace = useMemo(() => {
+    if (selectedTraceDetail && selectedTrace && selectedTraceDetail.id === selectedTrace.id) {
+      return selectedTraceDetail;
+    }
+    return selectedTrace;
+  }, [selectedTrace, selectedTraceDetail]);
+
   const timelineRows = useMemo(
-    () => (selectedTrace ? buildTraceTimelineRows(selectedTrace.events) : []),
-    [selectedTrace],
+    () => (detailTrace ? buildTraceTimelineRows(detailTrace.events) : []),
+    [detailTrace],
   );
   const hasActiveTraceFilters = buildTraceFilterQuery(traceFilters).length > 0;
 
@@ -425,7 +467,7 @@ export default function DashboardPage() {
           hasActiveFilters={hasActiveTraceFilters}
           filters={traceFilters}
           isLoading={isTraceLoading}
-          selectedTrace={selectedTrace}
+          selectedTrace={detailTrace}
           setSelectedTraceId={setSelectedTraceId}
           setTraceFilters={setTraceFilters}
           stats={traceStats}

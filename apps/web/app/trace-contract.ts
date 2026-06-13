@@ -481,7 +481,7 @@ function retrievalDocuments(output: unknown): RetrievalDocument[] {
   });
 }
 
-function isTrace(value: unknown): value is Trace {
+export function isTrace(value: unknown): value is Trace {
   if (!value || typeof value !== "object") {
     return false;
   }

@@ -6,6 +6,7 @@ import {
   fetchExperimentSummaries,
   fetchPlaygroundModels,
   fetchPlaygroundStatus,
+  fetchTraceDetail,
   fetchTraces,
   getApiBaseUrl,
   postPlaygroundChat,
@@ -104,6 +105,18 @@ test("fetches traces without a question mark when the query is empty", async () 
     await fetchTraces("");
 
     assert.equal(calls[0]?.url, "http://127.0.0.1:8000/v1/traces");
+  } finally {
+    restore();
+  }
+});
+
+test("fetches a trace detail with a URL-encoded trace id", async () => {
+  const { calls, restore } = withStubbedFetch(async () => jsonResponse({}));
+  try {
+    await fetchTraceDetail("trace/1 weird?");
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.url, "http://127.0.0.1:8000/v1/traces/trace%2F1%20weird%3F");
   } finally {
     restore();
   }
