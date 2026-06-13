@@ -12,6 +12,7 @@ import {
   getRetrievalDetails,
   getTraceScores,
   getTraceService,
+  getTraceTotals,
   normalizeTraces,
   summarizeTraces,
   type EventStatus,
@@ -458,6 +459,53 @@ test("reports null currency when generations mix currencies", () => {
 
   assert.equal(summary.currency, null);
   assert.ok(Math.abs(summary.totalCost - 0.003) < 1e-9);
+});
+
+test("totals a trace's generation tokens and cost", () => {
+  const events = summarizableTrace({
+    id: "trace-totals",
+    generations: [
+      generationEvent({
+        id: "g1",
+        usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120 },
+        cost: { total_cost: 0.0006 },
+        currency: "USD",
+      }),
+      generationEvent({
+        id: "g2",
+        usage: { input_tokens: 30, output_tokens: 10 },
+        cost: { total_cost: 0.0004 },
+        currency: "USD",
+      }),
+    ],
+  }).events;
+
+  const totals = getTraceTotals(events);
+
+  assert.equal(totals.totalTokens, 160);
+  assert.ok(Math.abs(totals.totalCost - 0.001) < 1e-9);
+  assert.equal(totals.currency, "USD");
+});
+
+test("returns zero totals for a trace without generations", () => {
+  const events = summarizableTrace({ id: "trace-empty" }).events;
+
+  assert.deepEqual(getTraceTotals(events), { totalTokens: 0, totalCost: 0, currency: null });
+});
+
+test("omits currency when a trace mixes generation currencies", () => {
+  const events = summarizableTrace({
+    id: "trace-mixed",
+    generations: [
+      generationEvent({ id: "g1", cost: { total_cost: 0.001 }, currency: "USD" }),
+      generationEvent({ id: "g2", cost: { total_cost: 0.002 }, currency: "EUR" }),
+    ],
+  }).events;
+
+  const totals = getTraceTotals(events);
+
+  assert.equal(totals.currency, null);
+  assert.ok(Math.abs(totals.totalCost - 0.003) < 1e-9);
 });
 
 test("normalizes valid experiment summary responses newest first", () => {

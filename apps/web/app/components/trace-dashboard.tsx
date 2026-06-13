@@ -3,6 +3,7 @@
 import {
   getTraceScores,
   getTraceService,
+  getTraceTotals,
   type Trace,
   type TraceFilterValues,
   type TraceSummary,
@@ -41,6 +42,12 @@ export function TraceDashboard({
 }) {
   const traceScores = selectedTrace ? getTraceScores(selectedTrace.events) : [];
   const traceService = selectedTrace ? getTraceService(selectedTrace) : null;
+  const traceTotals = selectedTrace ? getTraceTotals(selectedTrace.events) : null;
+  const traceCostLabel = traceTotals
+    ? traceTotals.currency
+      ? `${formatNumber(traceTotals.totalCost)} ${traceTotals.currency}`
+      : formatNumber(traceTotals.totalCost)
+    : "";
   const totalCostLabel = stats.currency
     ? `${formatNumber(stats.totalCost)} ${stats.currency}`
     : formatNumber(stats.totalCost);
@@ -86,6 +93,10 @@ export function TraceDashboard({
                   <Fact label="Started" value={formatDate(selectedTrace.start_time)} />
                   {traceService?.name ? <Fact label="Service" value={traceService.name} /> : null}
                   {traceService?.environment ? <Fact label="Environment" value={traceService.environment} /> : null}
+                  {traceTotals && traceTotals.totalTokens > 0 ? (
+                    <Fact label="Tokens" value={formatNumber(traceTotals.totalTokens)} />
+                  ) : null}
+                  {traceTotals && traceTotals.totalCost > 0 ? <Fact label="Cost" value={traceCostLabel} /> : null}
                 </div>
               </div>
 

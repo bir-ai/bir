@@ -102,6 +102,12 @@ export type TraceSummary = {
   p95LatencyMs: number;
 };
 
+export type TraceTotals = {
+  totalTokens: number;
+  totalCost: number;
+  currency: string | null;
+};
+
 export function normalizeTraces(value: unknown): Trace[] {
   if (!Array.isArray(value)) {
     return [];
@@ -230,6 +236,32 @@ export function getTraceService(trace: Trace): TraceService | null {
     return null;
   }
   return result;
+}
+
+export function getTraceTotals(events: TraceEvent[]): TraceTotals {
+  let totalTokens = 0;
+  let totalCost = 0;
+  const costCurrencies = new Set<string>();
+
+  for (const event of events) {
+    if (event.type !== "generation") {
+      continue;
+    }
+    totalTokens += generationTokens(event.usage);
+    const cost = generationCost(event.cost);
+    if (cost !== null) {
+      totalCost += cost;
+      if (typeof event.currency === "string" && event.currency.length > 0) {
+        costCurrencies.add(event.currency);
+      }
+    }
+  }
+
+  return {
+    totalTokens,
+    totalCost,
+    currency: costCurrencies.size === 1 ? [...costCurrencies][0] : null,
+  };
 }
 
 export function summarizeTraces(traces: Trace[]): TraceSummary {
