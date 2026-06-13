@@ -27,6 +27,7 @@ import {
   buildTraceTimelineRows,
   findTraceById,
   normalizeTraces,
+  summarizeTraces,
   type Trace,
   type TraceFilterValues,
 } from "./trace-contract";
@@ -312,15 +313,7 @@ export default function DashboardPage() {
   );
   const hasActiveTraceFilters = buildTraceFilterQuery(traceFilters).length > 0;
 
-  const traceStats = useMemo(() => {
-    const eventCount = traces.reduce((total, trace) => total + trace.events.length, 0);
-    const errorCount = traces.filter((trace) => trace.status === "error").length;
-    const generationCount = traces.reduce(
-      (total, trace) => total + trace.events.filter((event) => event.type === "generation").length,
-      0,
-    );
-    return { eventCount, errorCount, generationCount };
-  }, [traces]);
+  const traceStats = useMemo(() => summarizeTraces(traces), [traces]);
 
   const experimentStats = useMemo(() => {
     const exampleCount = experiments.reduce((total, experiment) => total + experiment.example_count, 0);

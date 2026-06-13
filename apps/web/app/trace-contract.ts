@@ -82,6 +82,18 @@ export type TraceScore = {
   value: number;
 };
 
+export type TraceSummary = {
+  traceCount: number;
+  eventCount: number;
+  generationCount: number;
+  errorCount: number;
+  totalTokens: number;
+  totalCost: number;
+  currency: string | null;
+  p50LatencyMs: number;
+  p95LatencyMs: number;
+};
+
 export function normalizeTraces(value: unknown): Trace[] {
   if (!Array.isArray(value)) {
     return [];
@@ -178,6 +190,57 @@ export function getTraceScores(events: TraceEvent[]): TraceScore[] {
     .map((event) => ({ name: event.name, value: event.value as number }));
 }
 
+export function summarizeTraces(traces: Trace[]): TraceSummary {
+  let eventCount = 0;
+  let generationCount = 0;
+  let errorCount = 0;
+  let totalTokens = 0;
+  let totalCost = 0;
+  const costCurrencies = new Set<string>();
+  const durationsMs: number[] = [];
+
+  for (const trace of traces) {
+    eventCount += trace.events.length;
+    if (trace.status === "error") {
+      errorCount += 1;
+    }
+
+    const durationMs = traceDurationMs(trace);
+    if (durationMs !== null) {
+      durationsMs.push(durationMs);
+    }
+
+    for (const event of trace.events) {
+      if (event.type !== "generation") {
+        continue;
+      }
+      generationCount += 1;
+      totalTokens += generationTokens(event.usage);
+      const cost = generationCost(event.cost);
+      if (cost !== null) {
+        totalCost += cost;
+        if (typeof event.currency === "string" && event.currency.length > 0) {
+          costCurrencies.add(event.currency);
+        }
+      }
+    }
+  }
+
+  durationsMs.sort((first, second) => first - second);
+
+  return {
+    traceCount: traces.length,
+    eventCount,
+    generationCount,
+    errorCount,
+    totalTokens,
+    totalCost,
+    currency: costCurrencies.size === 1 ? [...costCurrencies][0] : null,
+    p50LatencyMs: percentile(durationsMs, 50),
+    p95LatencyMs: percentile(durationsMs, 95),
+  };
+}
+
 export function buildTraceTimelineRows(events: TraceEvent[]): TraceTimelineRow[] {
   const eventsById = new Map<string, TraceEvent>();
   const childrenByParentId = new Map<string, TraceEvent[]>();
@@ -231,6 +294,45 @@ export function buildTraceTimelineRows(events: TraceEvent[]): TraceTimelineRow[]
   }
 
   return rows;
+}
+
+function traceDurationMs(trace: Trace): number | null {
+  const start = new Date(trace.start_time).getTime();
+  const end = new Date(trace.end_time).getTime();
+  if (Number.isNaN(start) || Number.isNaN(end)) {
+    return null;
+  }
+  return Math.max(0, end - start);
+}
+
+function generationTokens(usage: Record<string, number> | null | undefined): number {
+  if (!usage) {
+    return 0;
+  }
+  if (typeof usage.total_tokens === "number") {
+    return usage.total_tokens;
+  }
+  const inputTokens = typeof usage.input_tokens === "number" ? usage.input_tokens : 0;
+  const outputTokens = typeof usage.output_tokens === "number" ? usage.output_tokens : 0;
+  return inputTokens + outputTokens;
+}
+
+function generationCost(cost: Record<string, number> | null | undefined): number | null {
+  if (!cost || typeof cost.total_cost !== "number") {
+    return null;
+  }
+  return cost.total_cost;
+}
+
+// Nearest-rank percentile over an ascending list, so reported values are always
+// real observed latencies rather than interpolated points.
+function percentile(sortedAscending: number[], percentileRank: number): number {
+  if (sortedAscending.length === 0) {
+    return 0;
+  }
+  const rank = Math.ceil((percentileRank / 100) * sortedAscending.length);
+  const index = Math.min(sortedAscending.length - 1, Math.max(0, rank - 1));
+  return sortedAscending[index];
 }
 
 function retrievalQuery(input: unknown): unknown {

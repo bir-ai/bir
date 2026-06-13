@@ -25,6 +25,17 @@ export function formatDuration(startValue: string, endValue: string): string {
   return `${(duration / 1000).toFixed(2)} s`;
 }
 
+export function formatMilliseconds(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "-";
+  }
+  const milliseconds = Math.max(0, value);
+  if (milliseconds < 1000) {
+    return `${milliseconds.toFixed(0)} ms`;
+  }
+  return `${(milliseconds / 1000).toFixed(2)} s`;
+}
+
 export function formatUsage(usage: Record<string, number> | null | undefined): string {
   if (!usage) {
     return "";

@@ -12,6 +12,8 @@ import {
   getRetrievalDetails,
   getTraceScores,
   normalizeTraces,
+  summarizeTraces,
+  type EventStatus,
   type Trace,
   type TraceEvent,
 } from "./trace-contract";
@@ -292,6 +294,122 @@ test("marks events whose parent is missing as orphan timeline rows", () => {
   assert.equal(orphanRow.isOrphan, true);
 });
 
+test("summarizes generation tokens and cost across traces", () => {
+  const traces = [
+    summarizableTrace({
+      id: "trace-a",
+      start: "2026-01-01T00:00:00.000+00:00",
+      end: "2026-01-01T00:00:00.100+00:00",
+      generations: [
+        generationEvent({
+          id: "gen-a",
+          usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120 },
+          cost: { total_cost: 0.0006 },
+          currency: "USD",
+        }),
+      ],
+    }),
+    summarizableTrace({
+      id: "trace-b",
+      start: "2026-01-01T00:00:00.000+00:00",
+      end: "2026-01-01T00:00:00.300+00:00",
+      generations: [
+        generationEvent({
+          id: "gen-b",
+          // No total_tokens, so the helper falls back to input + output tokens.
+          usage: { input_tokens: 30, output_tokens: 10 },
+          cost: { total_cost: 0.0004 },
+          currency: "USD",
+        }),
+      ],
+    }),
+  ];
+
+  const summary = summarizeTraces(traces);
+
+  assert.equal(summary.traceCount, 2);
+  assert.equal(summary.eventCount, 4);
+  assert.equal(summary.generationCount, 2);
+  assert.equal(summary.errorCount, 0);
+  assert.equal(summary.totalTokens, 160);
+  assert.ok(Math.abs(summary.totalCost - 0.001) < 1e-9);
+  assert.equal(summary.currency, "USD");
+});
+
+test("computes p50 and p95 latency over trace root durations", () => {
+  const baseStart = "2026-01-01T00:00:00.000+00:00";
+  const baseMs = Date.parse(baseStart);
+  const traces = [100, 300, 200, 400].map((durationMs, index) =>
+    summarizableTrace({
+      id: `trace-${index}`,
+      start: baseStart,
+      end: new Date(baseMs + durationMs).toISOString(),
+    }),
+  );
+
+  const summary = summarizeTraces(traces);
+
+  assert.equal(summary.p50LatencyMs, 200);
+  assert.equal(summary.p95LatencyMs, 400);
+});
+
+test("returns a zeroed summary for an empty trace list", () => {
+  assert.deepEqual(summarizeTraces([]), {
+    traceCount: 0,
+    eventCount: 0,
+    generationCount: 0,
+    errorCount: 0,
+    totalTokens: 0,
+    totalCost: 0,
+    currency: null,
+    p50LatencyMs: 0,
+    p95LatencyMs: 0,
+  });
+});
+
+test("handles traces without generations or usage and counts errors", () => {
+  const traces = [
+    summarizableTrace({
+      id: "trace-no-gen",
+      status: "error",
+      start: "2026-01-01T00:00:00.000+00:00",
+      end: "2026-01-01T00:00:00.050+00:00",
+    }),
+    summarizableTrace({
+      id: "trace-bare-gen",
+      generations: [generationEvent({ id: "gen-bare" })],
+    }),
+  ];
+
+  const summary = summarizeTraces(traces);
+
+  assert.equal(summary.generationCount, 1);
+  assert.equal(summary.errorCount, 1);
+  assert.equal(summary.totalTokens, 0);
+  assert.equal(summary.totalCost, 0);
+  assert.equal(summary.currency, null);
+  // Durations are [0, 50]; nearest-rank p95 picks the max so the 50ms trace counts.
+  assert.equal(summary.p95LatencyMs, 50);
+});
+
+test("reports null currency when generations mix currencies", () => {
+  const traces = [
+    summarizableTrace({
+      id: "trace-usd",
+      generations: [generationEvent({ id: "gen-usd", cost: { total_cost: 0.001 }, currency: "USD" })],
+    }),
+    summarizableTrace({
+      id: "trace-eur",
+      generations: [generationEvent({ id: "gen-eur", cost: { total_cost: 0.002 }, currency: "EUR" })],
+    }),
+  ];
+
+  const summary = summarizeTraces(traces);
+
+  assert.equal(summary.currency, null);
+  assert.ok(Math.abs(summary.totalCost - 0.003) < 1e-9);
+});
+
 test("normalizes valid experiment summary responses newest first", () => {
   const summaries = normalizeExperimentSummaries([
     makeExperimentSummary({ experiment_id: "experiment-1", start_time: "2026-01-01T00:00:00+00:00" }),
@@ -529,6 +647,60 @@ function makeLoadedExperiment({
   const experiment = normalizeExperiment({ ...summary, results });
   assert.ok(experiment);
   return experiment;
+}
+
+function generationEvent(overrides: Partial<TraceEvent>): TraceEvent {
+  return {
+    schema_version: "1.0",
+    id: "generation",
+    trace_id: "trace",
+    parent_id: "trace",
+    name: "playground.llm",
+    type: "generation",
+    start_time: "2026-01-01T00:00:00+00:00",
+    end_time: "2026-01-01T00:00:00+00:00",
+    status: "success",
+    metadata: {},
+    input: null,
+    output: null,
+    error: null,
+    ...overrides,
+  };
+}
+
+function summarizableTrace(options: {
+  id: string;
+  status?: EventStatus;
+  start?: string;
+  end?: string;
+  generations?: TraceEvent[];
+}): Trace {
+  const start = options.start ?? "2026-01-01T00:00:00+00:00";
+  const end = options.end ?? start;
+  const status = options.status ?? "success";
+  const root: TraceEvent = {
+    schema_version: "1.0",
+    id: options.id,
+    trace_id: options.id,
+    parent_id: null,
+    name: "workflow",
+    type: "trace",
+    start_time: start,
+    end_time: end,
+    status,
+    metadata: {},
+    input: null,
+    output: null,
+    error: null,
+  };
+  return {
+    id: options.id,
+    name: "workflow",
+    start_time: start,
+    end_time: end,
+    status,
+    events: [root, ...(options.generations ?? [])],
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,7 +1,13 @@
 "use client";
 
-import { getTraceScores, type Trace, type TraceFilterValues, type TraceTimelineRow } from "../trace-contract";
-import { formatDate, formatDuration, formatNumber } from "./format";
+import {
+  getTraceScores,
+  type Trace,
+  type TraceFilterValues,
+  type TraceSummary,
+  type TraceTimelineRow,
+} from "../trace-contract";
+import { formatDate, formatDuration, formatMilliseconds, formatNumber } from "./format";
 import { statusLabels } from "./labels";
 import { Fact, InlineField, Metric } from "./primitives";
 import { TraceList } from "./trace-list";
@@ -28,19 +34,26 @@ export function TraceDashboard({
   selectedTrace: Trace | null;
   setSelectedTraceId: (traceId: string) => void;
   setTraceFilters: (filters: TraceFilterValues) => void;
-  stats: { eventCount: number; errorCount: number; generationCount: number };
+  stats: TraceSummary;
   timelineRows: TraceTimelineRow[];
   traces: Trace[];
 }) {
   const traceScores = selectedTrace ? getTraceScores(selectedTrace.events) : [];
+  const totalCostLabel = stats.currency
+    ? `${formatNumber(stats.totalCost)} ${stats.currency}`
+    : formatNumber(stats.totalCost);
 
   return (
     <>
       <section className="metric-strip" aria-label="Trace summary">
-        <Metric label="Traces" value={traces.length.toString()} />
+        <Metric label="Traces" value={stats.traceCount.toString()} />
         <Metric label="Events" value={stats.eventCount.toString()} />
         <Metric label="Generations" value={stats.generationCount.toString()} />
         <Metric label="Errors" value={stats.errorCount.toString()} tone={stats.errorCount > 0 ? "bad" : "good"} />
+        <Metric label="Total tokens" value={formatNumber(stats.totalTokens)} />
+        <Metric label="Total cost" value={totalCostLabel} />
+        <Metric label="p50 latency" value={formatMilliseconds(stats.p50LatencyMs)} />
+        <Metric label="p95 latency" value={formatMilliseconds(stats.p95LatencyMs)} />
       </section>
 
       <section className="workspace">
