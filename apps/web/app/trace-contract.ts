@@ -41,6 +41,13 @@ export type TraceFilterValues = {
   status?: string | null;
   name?: string | null;
   event_type?: string | null;
+  service?: string | null;
+  environment?: string | null;
+};
+
+export type TraceService = {
+  name?: string;
+  environment?: string;
 };
 
 export type RetrievalDocument = {
@@ -110,6 +117,8 @@ export function buildTraceFilterQuery(filters: TraceFilterValues): string {
   const status = filters.status?.trim();
   const name = filters.name?.trim();
   const eventType = filters.event_type?.trim();
+  const service = filters.service?.trim();
+  const environment = filters.environment?.trim();
 
   if (status && status !== "all") {
     params.set("status", status);
@@ -119,6 +128,12 @@ export function buildTraceFilterQuery(filters: TraceFilterValues): string {
   }
   if (eventType && eventType !== "all") {
     params.set("event_type", eventType);
+  }
+  if (service) {
+    params.set("service", service);
+  }
+  if (environment) {
+    params.set("environment", environment);
   }
   return params.toString();
 }
@@ -188,6 +203,26 @@ export function getTraceScores(events: TraceEvent[]): TraceScore[] {
   return events
     .filter((event) => event.type === "score" && typeof event.value === "number")
     .map((event) => ({ name: event.name, value: event.value as number }));
+}
+
+export function getTraceService(trace: Trace): TraceService | null {
+  const root = trace.events.find((event) => event.type === "trace" && event.id === trace.id);
+  const service = root?.metadata.service;
+  if (!isRecord(service)) {
+    return null;
+  }
+
+  const result: TraceService = {};
+  if (typeof service.name === "string" && service.name.length > 0) {
+    result.name = service.name;
+  }
+  if (typeof service.environment === "string" && service.environment.length > 0) {
+    result.environment = service.environment;
+  }
+  if (result.name === undefined && result.environment === undefined) {
+    return null;
+  }
+  return result;
 }
 
 export function summarizeTraces(traces: Trace[]): TraceSummary {

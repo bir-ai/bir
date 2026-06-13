@@ -17,6 +17,13 @@ Minimal FastAPI ingestion server for Bir trace events.
 - `GET /v1/experiments`
 - `GET /v1/experiments/{experiment_id}`
 
+`GET /v1/traces` accepts optional query parameters to filter the returned
+traces: `status` (`success`/`error`), `name` (case-insensitive substring of the
+root trace name), `event_type` (keeps traces containing at least one event of
+that type), and `service`/`environment` (case-insensitive substring of the
+`metadata.service` block the SDK records from `configure(service_name=,
+environment=)`). Filters combine with AND.
+
 Events are validated with Pydantic and persisted as JSONL. By default, the
 server writes to `.bir/server-events.jsonl`. Override that path with:
 

@@ -124,6 +124,7 @@ def post_filter_fixture_events(client: TestClient) -> None:
             name="answer_question",
             start_time="2026-01-01T00:00:00+00:00",
             end_time="2026-01-01T00:00:01+00:00",
+            metadata={"service": {"name": "rag-api", "environment": "production"}},
         ),
         make_event(
             id="generation-success",
@@ -142,6 +143,7 @@ def post_filter_fixture_events(client: TestClient) -> None:
             start_time="2026-01-02T00:00:00+00:00",
             end_time="2026-01-02T00:00:01+00:00",
             error="failed",
+            metadata={"service": {"name": "billing-api", "environment": "staging"}},
         ),
         make_event(
             id="span-error",
@@ -1022,6 +1024,39 @@ def test_filters_traces_by_contained_event_type(tmp_path: Path) -> None:
     assert response.status_code == 200
     traces = response.json()
     assert [trace["id"] for trace in traces] == ["trace-success"]
+
+
+def test_filters_traces_by_case_insensitive_service(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    post_filter_fixture_events(client)
+
+    response = client.get("/v1/traces", params={"service": "RAG"})
+
+    assert response.status_code == 200
+    traces = response.json()
+    assert [trace["id"] for trace in traces] == ["trace-success"]
+
+
+def test_filters_traces_by_environment(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    post_filter_fixture_events(client)
+
+    response = client.get("/v1/traces", params={"environment": "staging"})
+
+    assert response.status_code == 200
+    traces = response.json()
+    assert [trace["id"] for trace in traces] == ["trace-error"]
+
+
+def test_blank_service_filter_is_ignored(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    post_filter_fixture_events(client)
+
+    response = client.get("/v1/traces", params={"service": "   "})
+
+    assert response.status_code == 200
+    traces = response.json()
+    assert [trace["id"] for trace in traces] == ["trace-success", "trace-error", "trace-tool"]
 
 
 def test_combines_trace_filters(tmp_path: Path) -> None:

@@ -34,14 +34,23 @@ class TraceEventReader:
         status: EventStatus | None = None,
         name: str | None = None,
         event_type: EventType | None = None,
+        service: str | None = None,
+        environment: str | None = None,
     ) -> list[LoadedTrace]:
-        """Load complete traces, optionally filtered by root status, name, or event type."""
+        """Load complete traces, optionally filtered by root status, name, event type, or service.
+
+        ``service`` and ``environment`` match the ``metadata.service`` block the
+        SDK records on trace roots from ``configure(service_name=, environment=)``,
+        using the same case-insensitive substring matching as ``name``.
+        """
 
         events_by_trace_id: dict[str, list[TraceEventPayload]] = {}
         for event in self.load_events():
             events_by_trace_id.setdefault(event.trace_id, []).append(event)
 
         name_filter = name.strip().lower() if name is not None else None
+        service_filter = service.strip().lower() if service is not None else None
+        environment_filter = environment.strip().lower() if environment is not None else None
         traces: list[LoadedTrace] = []
         for trace_id, events in events_by_trace_id.items():
             trace = _loaded_trace(trace_id, events)
@@ -50,6 +59,8 @@ class TraceEventReader:
                 status=status,
                 name_filter=name_filter,
                 event_type=event_type,
+                service_filter=service_filter,
+                environment_filter=environment_filter,
             ):
                 traces.append(trace)
         return sorted(traces, key=lambda trace: (trace.start_time, trace.id))
@@ -216,6 +227,8 @@ def _matches_filters(
     status: EventStatus | None,
     name_filter: str | None,
     event_type: EventType | None,
+    service_filter: str | None,
+    environment_filter: str | None,
 ) -> bool:
     if status is not None and trace.status != status:
         return False
@@ -223,7 +236,28 @@ def _matches_filters(
         return False
     if event_type is not None and not any(event.type == event_type for event in trace.events):
         return False
+    if service_filter or environment_filter:
+        service_name, service_environment = _trace_service(trace)
+        if service_filter and (service_name is None or service_filter not in service_name.lower()):
+            return False
+        if environment_filter and (service_environment is None or environment_filter not in service_environment.lower()):
+            return False
     return True
+
+
+def _trace_service(trace: LoadedTrace) -> tuple[str | None, str | None]:
+    root = next((event for event in trace.events if event.type == "trace" and event.id == trace.id), None)
+    if root is None:
+        return (None, None)
+    service = root.metadata.get("service")
+    if not isinstance(service, dict):
+        return (None, None)
+    name = service.get("name")
+    environment = service.get("environment")
+    return (
+        name if isinstance(name, str) else None,
+        environment if isinstance(environment, str) else None,
+    )
 
 
 def _event_sort_key(event: TraceEventPayload) -> tuple[str, int, str, str]:

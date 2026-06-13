@@ -2,8 +2,10 @@
 
 import {
   buildTraceFilterQuery,
+  getTraceService,
   type Trace,
   type TraceFilterValues,
+  type TraceService,
 } from "../trace-contract";
 import { formatDuration } from "./format";
 import { DEFAULT_TRACE_FILTERS, statusLabels, typeLabels } from "./labels";
@@ -41,23 +43,27 @@ export function TraceList({
       {isLoading && traces.length === 0 ? <TraceSkeleton /> : null}
 
       <div className="trace-items">
-        {traces.map((trace) => (
-          <button
-            className={trace.id === selectedTraceId ? "trace-row active" : "trace-row"}
-            key={trace.id}
-            type="button"
-            onClick={() => setSelectedTraceId(trace.id)}
-          >
-            <span className={`status-dot ${trace.status}`} aria-hidden="true" />
-            <span className="trace-row-main">
-              <span className="trace-name">{trace.name}</span>
-              <span className="trace-meta">
-                {trace.events.length} events · {formatDuration(trace.start_time, trace.end_time)}
+        {traces.map((trace) => {
+          const service = getTraceService(trace);
+          return (
+            <button
+              className={trace.id === selectedTraceId ? "trace-row active" : "trace-row"}
+              key={trace.id}
+              type="button"
+              onClick={() => setSelectedTraceId(trace.id)}
+            >
+              <span className={`status-dot ${trace.status}`} aria-hidden="true" />
+              <span className="trace-row-main">
+                <span className="trace-name">{trace.name}</span>
+                <span className="trace-meta">
+                  {trace.events.length} events · {formatDuration(trace.start_time, trace.end_time)}
+                  {service ? ` · ${formatTraceService(service)}` : ""}
+                </span>
               </span>
-            </span>
-            <span className={`status-pill ${trace.status}`}>{statusLabels[trace.status]}</span>
-          </button>
-        ))}
+              <span className={`status-pill ${trace.status}`}>{statusLabels[trace.status]}</span>
+            </button>
+          );
+        })}
       </div>
     </aside>
   );
@@ -73,6 +79,8 @@ function TraceFilterControls({
   const status = filters.status ?? "all";
   const eventType = filters.event_type ?? "all";
   const name = filters.name ?? "";
+  const service = filters.service ?? "";
+  const environment = filters.environment ?? "";
   const hasActiveFilters = buildTraceFilterQuery(filters).length > 0;
 
   return (
@@ -104,6 +112,24 @@ function TraceFilterControls({
       </label>
 
       <label className="filter-group">
+        <span>Service</span>
+        <input
+          type="search"
+          value={service}
+          onChange={(event) => setTraceFilters({ ...filters, service: event.target.value })}
+        />
+      </label>
+
+      <label className="filter-group">
+        <span>Environment</span>
+        <input
+          type="search"
+          value={environment}
+          onChange={(event) => setTraceFilters({ ...filters, environment: event.target.value })}
+        />
+      </label>
+
+      <label className="filter-group">
         <span>Event Type</span>
         <select
           value={eventType}
@@ -125,4 +151,11 @@ function TraceFilterControls({
       ) : null}
     </div>
   );
+}
+
+function formatTraceService(service: TraceService): string {
+  if (service.name && service.environment) {
+    return `${service.name} (${service.environment})`;
+  }
+  return service.name ?? service.environment ?? "";
 }

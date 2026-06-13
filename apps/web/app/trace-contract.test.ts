@@ -11,6 +11,7 @@ import {
   getPromptDetails,
   getRetrievalDetails,
   getTraceScores,
+  getTraceService,
   normalizeTraces,
   summarizeTraces,
   type EventStatus,
@@ -41,6 +42,42 @@ test("omits empty and default trace filters", () => {
   });
 
   assert.equal(query, "");
+});
+
+test("includes service and environment trace filters in the query", () => {
+  const query = buildTraceFilterQuery({
+    status: "all",
+    name: "",
+    event_type: "all",
+    service: " rag-api ",
+    environment: "production",
+  });
+
+  assert.equal(query, "service=rag-api&environment=production");
+});
+
+test("extracts service metadata from the trace root event", () => {
+  const trace = summarizableTrace({
+    id: "trace-service",
+    rootMetadata: { service: { name: "rag-api", environment: "production" } },
+  });
+
+  assert.deepEqual(getTraceService(trace), { name: "rag-api", environment: "production" });
+});
+
+test("returns null when the trace root has no service metadata", () => {
+  const trace = summarizableTrace({ id: "trace-bare" });
+
+  assert.equal(getTraceService(trace), null);
+});
+
+test("ignores non-string service metadata fields", () => {
+  const trace = summarizableTrace({
+    id: "trace-partial",
+    rootMetadata: { service: { name: "rag-api", environment: 7 } },
+  });
+
+  assert.deepEqual(getTraceService(trace), { name: "rag-api" });
 });
 
 test("normalizes valid trace responses from the shared contract fixture", () => {
@@ -674,6 +711,7 @@ function summarizableTrace(options: {
   start?: string;
   end?: string;
   generations?: TraceEvent[];
+  rootMetadata?: Record<string, unknown>;
 }): Trace {
   const start = options.start ?? "2026-01-01T00:00:00+00:00";
   const end = options.end ?? start;
@@ -688,7 +726,7 @@ function summarizableTrace(options: {
     start_time: start,
     end_time: end,
     status,
-    metadata: {},
+    metadata: options.rootMetadata ?? {},
     input: null,
     output: null,
     error: null,

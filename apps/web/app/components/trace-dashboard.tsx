@@ -2,6 +2,7 @@
 
 import {
   getTraceScores,
+  getTraceService,
   type Trace,
   type TraceFilterValues,
   type TraceSummary,
@@ -39,6 +40,7 @@ export function TraceDashboard({
   traces: Trace[];
 }) {
   const traceScores = selectedTrace ? getTraceScores(selectedTrace.events) : [];
+  const traceService = selectedTrace ? getTraceService(selectedTrace) : null;
   const totalCostLabel = stats.currency
     ? `${formatNumber(stats.totalCost)} ${stats.currency}`
     : formatNumber(stats.totalCost);
@@ -82,6 +84,8 @@ export function TraceDashboard({
                   <Fact label="Status" value={statusLabels[selectedTrace.status]} tone={selectedTrace.status} />
                   <Fact label="Duration" value={formatDuration(selectedTrace.start_time, selectedTrace.end_time)} />
                   <Fact label="Started" value={formatDate(selectedTrace.start_time)} />
+                  {traceService?.name ? <Fact label="Service" value={traceService.name} /> : null}
+                  {traceService?.environment ? <Fact label="Environment" value={traceService.environment} /> : null}
                 </div>
               </div>
 

@@ -129,9 +129,17 @@ def create_app(
         status: EventStatus | None = Query(default=None),
         name: str | None = Query(default=None),
         event_type: EventType | None = Query(default=None),
+        service: str | None = Query(default=None),
+        environment: str | None = Query(default=None),
     ) -> list[LoadedTrace]:
         store = _get_event_store(request)
-        return store.load_traces(status=status, name=name, event_type=event_type)
+        return store.load_traces(
+            status=status,
+            name=name,
+            event_type=event_type,
+            service=service,
+            environment=environment,
+        )
 
     @app.get("/v1/traces/{trace_id}", response_model=LoadedTrace)
     def get_trace(trace_id: str, request: Request) -> LoadedTrace:
