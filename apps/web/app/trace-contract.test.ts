@@ -268,6 +268,19 @@ test("collects score events from a trace", () => {
   assert.deepEqual(scores, [{ name: "helpfulness", value: 0.82 }]);
 });
 
+test("carries score metadata when present", () => {
+  const scoreEvent = contractTrace.events.find((event) => event.type === "score");
+  assert.ok(scoreEvent);
+  const annotatedScore: TraceEvent = {
+    ...scoreEvent,
+    metadata: { reason: "cites context", threshold: 0.5 },
+  };
+
+  assert.deepEqual(getTraceScores([annotatedScore]), [
+    { name: "helpfulness", value: 0.82, metadata: { reason: "cites context", threshold: 0.5 } },
+  ]);
+});
+
 test("skips score events without a numeric value when collecting scores", () => {
   const scoreEvent = contractTrace.events.find((event) => event.type === "score");
   assert.ok(scoreEvent);

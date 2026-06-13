@@ -92,7 +92,12 @@ export function TraceDashboard({
               {traceScores.length > 0 ? (
                 <section className="score-grid trace-score-strip" aria-label="Trace scores">
                   {traceScores.map((score) => (
-                    <InlineField label={score.name} value={formatNumber(score.value)} key={score.name} />
+                    <InlineField
+                      label={score.name}
+                      value={formatNumber(score.value)}
+                      title={score.metadata ? JSON.stringify(score.metadata) : undefined}
+                      key={score.name}
+                    />
                   ))}
                 </section>
               ) : null}

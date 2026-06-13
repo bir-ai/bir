@@ -76,7 +76,10 @@ function buildSession(sessionId: string, traces: Trace[]): PlaygroundHistorySess
           output_tokens: usageNumber(generation.usage, "output_tokens"),
           total_tokens: usageNumber(generation.usage, "total_tokens"),
           latency_ms: latencyMs(generation),
-          scores: getTraceScores(trace.events),
+          // The live chat reply carries metadata-free {name, value} scores, so
+          // reconstructed history replies drop score metadata to match; the full
+          // metadata still shows on the score events in the trace timeline.
+          scores: getTraceScores(trace.events).map(({ name, value }) => ({ name, value })),
         },
       });
     }

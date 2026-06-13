@@ -38,9 +38,9 @@ export function Fact({
   );
 }
 
-export function InlineField({ label, value }: { label: string; value: string }) {
+export function InlineField({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
-    <span className="inline-field">
+    <span className="inline-field" title={title}>
       <span>{label}</span>
       <strong>{value}</strong>
     </span>

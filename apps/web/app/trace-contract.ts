@@ -87,6 +87,7 @@ export type GenerationChatDetails = {
 export type TraceScore = {
   name: string;
   value: number;
+  metadata?: Record<string, unknown>;
 };
 
 export type TraceSummary = {
@@ -202,7 +203,13 @@ export function getGenerationChatDetails(event: TraceEvent): GenerationChatDetai
 export function getTraceScores(events: TraceEvent[]): TraceScore[] {
   return events
     .filter((event) => event.type === "score" && typeof event.value === "number")
-    .map((event) => ({ name: event.name, value: event.value as number }));
+    .map((event) => {
+      const score: TraceScore = { name: event.name, value: event.value as number };
+      if (isRecord(event.metadata) && Object.keys(event.metadata).length > 0) {
+        score.metadata = event.metadata;
+      }
+      return score;
+    });
 }
 
 export function getTraceService(trace: Trace): TraceService | null {
