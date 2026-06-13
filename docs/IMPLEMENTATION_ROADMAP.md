@@ -760,10 +760,12 @@ next high-confidence slices are:
 2. Add a model/provider breakdown to the dashboard trace summary using the
    existing `summarizeTraces` aggregation.
 
-Deferred until the sync path is explicitly declared stable: async `@observe`
-(the decorator raises `TypeError` for coroutine functions today by design).
-SQLite storage, authentication, billing, LLM-as-judge evaluation, and publishing
-remain deferred.
+Async `@observe` now traces coroutine functions on the stable sync path,
+producing the same trace and span events. The remaining async follow-up is async
+variants of the `span()`, `generation()`, and `tool_call()` context managers;
+they already work as sync calls inside async functions. SQLite storage,
+authentication, billing, LLM-as-judge evaluation, and publishing remain
+deferred.
 
 ## Definition Of Done For Each Step
 
