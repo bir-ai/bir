@@ -92,6 +92,18 @@ def answer_question(question: str) -> str:
     return answer
 ```
 
+Use `trace()` for workflows that are easier to wrap manually than decorate:
+
+```python
+from bir import generation, score, span, trace
+
+with trace("answer_question"):
+    with span("draft_answer"):
+        with generation("local.llm") as gen:
+            gen.set_output("ok")
+    score("helpfulness", 0.82)
+```
+
 Input and output capture is disabled by default. Enable it only when you want to
 store request and response payloads locally.
 Generation token usage and cost are optional user-provided values. Bir records
