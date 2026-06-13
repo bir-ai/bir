@@ -1202,6 +1202,17 @@ def test_ingests_schema_contract_fixtures(tmp_path: Path) -> None:
         "generation",
         "score",
     ]
+    assert trace["events"][0]["metadata"] == {
+        "service": {"name": "rag-api", "environment": "production"}
+    }
+    assert trace["events"][3]["metadata"] == {
+        "provider": "local",
+        "prompt": {
+            "name": "answer_question",
+            "version": "v1",
+            "template_sha256": "83ae0f830c7c24dbe19a8c08a882747e09a11257a5153d4a1ac46c9a0ab4374a",
+        },
+    }
 
 
 def test_ingests_sdk_generated_events(tmp_path: Path) -> None:

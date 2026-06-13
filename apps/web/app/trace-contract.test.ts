@@ -81,6 +81,10 @@ test("ignores non-string service metadata fields", () => {
   assert.deepEqual(getTraceService(trace), { name: "rag-api" });
 });
 
+test("extracts service metadata from the shared contract fixture root", () => {
+  assert.deepEqual(getTraceService(contractTrace), { name: "rag-api", environment: "production" });
+});
+
 test("normalizes valid trace responses from the shared contract fixture", () => {
   const traces = normalizeTraces(contractTraceResponseFixture);
 
@@ -169,6 +173,17 @@ test("extracts prompt metadata from generation events", () => {
     variables: { question: "What is Bir?" },
     rendered: "Answer What is Bir?",
     metadata: { owner: "evals" },
+  });
+});
+
+test("extracts prompt metadata from the shared contract fixture generation", () => {
+  const generationEvent = contractTrace.events.find((event) => event.type === "generation");
+  assert.ok(generationEvent);
+
+  assert.deepEqual(getPromptDetails(generationEvent), {
+    name: "answer_question",
+    version: "v1",
+    template_sha256: "83ae0f830c7c24dbe19a8c08a882747e09a11257a5153d4a1ac46c9a0ab4374a",
   });
 });
 
