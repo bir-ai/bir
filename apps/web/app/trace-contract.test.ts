@@ -57,6 +57,38 @@ test("includes service and environment trace filters in the query", () => {
   assert.equal(query, "service=rag-api&environment=production");
 });
 
+test("includes a positive integer limit in the trace filter query", () => {
+  assert.equal(buildTraceFilterQuery({ limit: 100 }), "limit=100");
+});
+
+test("omits the limit when it is undefined", () => {
+  assert.equal(buildTraceFilterQuery({ status: "all", name: "", event_type: "all" }), "");
+});
+
+test("omits an invalid limit from the trace filter query", () => {
+  assert.equal(buildTraceFilterQuery({ limit: 0 }), "");
+  assert.equal(buildTraceFilterQuery({ limit: -5 }), "");
+  assert.equal(buildTraceFilterQuery({ limit: 12.5 }), "");
+  assert.equal(buildTraceFilterQuery({ limit: Number.NaN }), "");
+  assert.equal(buildTraceFilterQuery({ limit: Number.POSITIVE_INFINITY }), "");
+});
+
+test("composes the limit with existing trace filters", () => {
+  const query = buildTraceFilterQuery({
+    status: "error",
+    name: " answer question ",
+    event_type: "generation",
+    service: " rag-api ",
+    environment: "production",
+    limit: 50,
+  });
+
+  assert.equal(
+    query,
+    "status=error&name=answer+question&event_type=generation&service=rag-api&environment=production&limit=50",
+  );
+});
+
 test("extracts service metadata from the trace root event", () => {
   const trace = summarizableTrace({
     id: "trace-service",

@@ -26,6 +26,7 @@ export function TraceDashboard({
   setTraceFilters,
   stats,
   timelineRows,
+  traceLimit,
   traces,
 }: {
   apiBaseUrl: string;
@@ -38,6 +39,7 @@ export function TraceDashboard({
   setTraceFilters: (filters: TraceFilterValues) => void;
   stats: TraceSummary;
   timelineRows: TraceTimelineRow[];
+  traceLimit: number;
   traces: Trace[];
 }) {
   const traceScores = selectedTrace ? getTraceScores(selectedTrace.events) : [];
@@ -75,6 +77,7 @@ export function TraceDashboard({
           selectedTraceId={selectedTrace?.id ?? null}
           setSelectedTraceId={setSelectedTraceId}
           setTraceFilters={setTraceFilters}
+          traceLimit={traceLimit}
           traces={traces}
         />
 

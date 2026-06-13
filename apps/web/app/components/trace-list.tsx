@@ -20,6 +20,7 @@ export function TraceList({
   selectedTraceId,
   setSelectedTraceId,
   setTraceFilters,
+  traceLimit,
   traces,
 }: {
   apiBaseUrl: string;
@@ -30,6 +31,7 @@ export function TraceList({
   selectedTraceId: string | null;
   setSelectedTraceId: (traceId: string) => void;
   setTraceFilters: (filters: TraceFilterValues) => void;
+  traceLimit: number;
   traces: Trace[];
 }) {
   return (
@@ -65,6 +67,10 @@ export function TraceList({
           );
         })}
       </div>
+
+      {traces.length >= traceLimit ? (
+        <p className="trace-limit-hint">Showing the most recent {traceLimit} traces.</p>
+      ) : null}
     </aside>
   );
 }

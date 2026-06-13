@@ -366,6 +366,13 @@ h3 {
   gap: 8px;
 }
 
+.trace-limit-hint {
+  margin-top: 12px;
+  text-align: center;
+  color: var(--quiet);
+  font-size: 0.78rem;
+}
+
 .trace-row {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr) auto;

@@ -43,6 +43,7 @@ export type TraceFilterValues = {
   event_type?: string | null;
   service?: string | null;
   environment?: string | null;
+  limit?: number;
 };
 
 export type TraceService = {
@@ -126,6 +127,7 @@ export function buildTraceFilterQuery(filters: TraceFilterValues): string {
   const eventType = filters.event_type?.trim();
   const service = filters.service?.trim();
   const environment = filters.environment?.trim();
+  const limit = filters.limit;
 
   if (status && status !== "all") {
     params.set("status", status);
@@ -141,6 +143,11 @@ export function buildTraceFilterQuery(filters: TraceFilterValues): string {
   }
   if (environment) {
     params.set("environment", environment);
+  }
+  // Only forward a positive, finite integer: the server rejects limit <= 0 and a
+  // stray NaN/Infinity would serialize into a meaningless query parameter.
+  if (typeof limit === "number" && Number.isInteger(limit) && limit > 0) {
+    params.set("limit", String(limit));
   }
   return params.toString();
 }

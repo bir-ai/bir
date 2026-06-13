@@ -34,6 +34,11 @@ import {
 
 type ViewMode = "traces" | "experiments" | "playground";
 
+// Cap the browse fetch so large local trace stores stay fast to page through.
+// The server returns the most recent N (by start_time then id) and
+// normalizeTraces re-sorts newest first, so this is a recency window.
+const DEFAULT_TRACE_LIMIT = 100;
+
 async function getExperimentDetail(experimentId: string): Promise<LoadedExperiment | null> {
   return normalizeExperiment(await fetchExperimentDetail(experimentId));
 }
@@ -86,7 +91,7 @@ export default function DashboardPage() {
     setTraceError(null);
 
     try {
-      const query = buildTraceFilterQuery(filters);
+      const query = buildTraceFilterQuery({ ...filters, limit: DEFAULT_TRACE_LIMIT });
       const nextTraces = normalizeTraces(await fetchTraces(query));
       setTraces(nextTraces);
       setSelectedTraceId((current) => {
@@ -425,6 +430,7 @@ export default function DashboardPage() {
           setTraceFilters={setTraceFilters}
           stats={traceStats}
           timelineRows={timelineRows}
+          traceLimit={DEFAULT_TRACE_LIMIT}
           traces={traces}
         />
       ) : activeView === "experiments" ? (
