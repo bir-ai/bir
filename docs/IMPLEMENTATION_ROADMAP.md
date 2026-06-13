@@ -116,11 +116,27 @@ The current implementation has moved beyond the first foundation commits:
 - the server accepts, stores, lists, and returns experiment detail artifacts
 - the dashboard includes Traces and Experiments views with experiment
   list/detail inspection
+- the dashboard renders a focused prompt panel with prompt name, version,
+  template hash, and opt-in rendered prompt on generation details
+- the server and dashboard filter traces by root status, root name, contained
+  event type, service, and environment
+- the dashboard compares a baseline experiment against a candidate run and
+  reports aggregate score deltas plus regressed, missing, new, improved, and
+  unchanged examples
+- `bir.evals.answer_context_overlap()` provides a deterministic RAG
+  answer/context faithfulness heuristic
+- the dashboard trace summary shows error counts, p50/p95 latency, total tokens,
+  and total cost
+- the FastAPI server can serve the dashboard's static export from
+  `BIR_DASHBOARD_DIR` on the same origin as the API
+- a shared redaction fixture pins SDK and server secret redaction together, and
+  the shared trace fixture covers prompt and service metadata
 
-The next work should build on this contract instead of replacing it. The highest
-confidence next slices are product-facing improvements around focused prompt
-display, experiment comparison, faithfulness evaluation, dashboard filtering,
-and trace query ergonomics.
+The next work should build on this contract instead of replacing it. With prompt
+display, experiment comparison, faithfulness scoring, trace filtering, and trace
+summaries already shipped, the highest-confidence remaining slices are trace
+query ergonomics (recency ordering and a result limit) and the remaining
+production-observability breakdowns.
 
 ## Stage 1: Python SDK Release Candidate Hygiene
 
@@ -297,10 +313,10 @@ Run the relevant existing checks.
 
 ## Stage 4: Trace Detail API And Dashboard
 
-Status: partial. The server trace detail endpoint is implemented and the
-dashboard renders useful detail from the trace list response. Remaining useful
-work is to use the dedicated detail endpoint where it improves UX, and to add
-more focused panels only when the timeline becomes hard to scan.
+Status: mostly complete. The server trace detail endpoint is implemented, the
+dashboard renders the nested timeline, and focused generation, prompt, and
+retrieval panels surface details without scanning raw metadata. Remaining
+optional work is to use the dedicated detail endpoint where it improves UX.
 
 Goal: make the local dashboard useful for debugging one trace.
 
@@ -415,9 +431,10 @@ external vector database dependencies.
 
 ## Stage 6: Prompt Logging And Prompt Versioning
 
-Status: first slice implemented. The SDK has a `prompt()` helper that attaches
-prompt name, version, template hash, and optional prompt payload metadata to
-generation events under `metadata.prompt`.
+Status: mostly complete. The SDK `prompt()` helper attaches prompt name,
+version, template hash, and optional prompt payload metadata to generation
+events under `metadata.prompt`, and the dashboard renders a focused prompt panel
+on generation details.
 
 Goal: let users connect model outputs to the prompt versions that produced them.
 
@@ -429,8 +446,10 @@ Deliverables:
 - template hash: implemented
 - template and variables: opt-in capture implemented
 - rendered prompt, only when capture is enabled: implemented
-- dashboard display for prompt version and rendered prompt
-- comparison path between prompt versions
+- dashboard display for prompt version and rendered prompt: implemented through
+  the prompt panel
+- dedicated prompt-version comparison: not yet; run-level comparison is
+  available through experiment comparison
 
 Suggested SDK shape:
 
@@ -528,8 +547,8 @@ existing score model only if that can be done cleanly in this small change.
 Status: mostly complete for the local JSONL slice. The SDK can load/store local
 dataset JSONL files and run sync tasks over examples with deterministic
 evaluators, writing one JSONL result row per example plus a sibling summary. The
-server can ingest experiment artifacts, and the dashboard can list experiments
-and show per-example detail.
+server can ingest experiment artifacts, and the dashboard can list experiments,
+show per-example detail, and compare a baseline run against a candidate run.
 
 Goal: let users run a task over examples and compare results.
 
@@ -543,7 +562,8 @@ Deliverables:
 - latency per example: implemented
 - dashboard experiment list: implemented
 - dashboard experiment detail: implemented
-- baseline comparison
+- baseline comparison: implemented through the dashboard experiment comparison
+  view
 
 Suggested local dataset format:
 
@@ -601,12 +621,14 @@ Goal: help users detect unsupported answers, especially in RAG systems.
 
 Deliverables:
 
-- faithfulness evaluator interface
-- context relevance metrics
-- answer/context overlap baseline
-- optional LLM judge later
-- dashboard score display
-- docs explaining limitations
+- faithfulness evaluator interface: implemented through the shared deterministic
+  evaluator interface
+- context relevance metrics: not yet
+- answer/context overlap baseline: implemented via `answer_context_overlap()`
+- optional LLM judge: deferred
+- dashboard score display: covered by generic score display; faithfulness-specific
+  grouping not yet
+- docs explaining limitations: implemented in the evaluator docstring
 
 Initial non-LLM metrics:
 
@@ -620,11 +642,11 @@ cost, latency, and prompt management.
 
 Suggested commits:
 
-1. Document faithfulness evaluation scope and limitations.
-2. Add one deterministic RAG faithfulness helper.
-3. Add tests with retrieved documents.
+1. Document faithfulness evaluation scope and limitations: implemented.
+2. Add one deterministic RAG faithfulness helper: implemented.
+3. Add tests with retrieved documents: implemented.
 4. Add dashboard score grouping for faithfulness metrics.
-5. Add optional LLM judge design document, not implementation.
+5. Add optional LLM judge design document, not implementation: deferred.
 
 Codex task brief:
 
@@ -636,27 +658,31 @@ judge provider dependencies in this step.
 
 ## Stage 10: Production Observability Basics
 
-Status: first slice implemented. `configure()` accepts `service_name` and
-`environment` and records them on trace root events under `metadata.service`.
-Server query filters and summary views for service metadata are not implemented
-yet.
+Status: in progress. `configure()` records `service_name` and `environment`
+under `metadata.service`. The server and dashboard now filter traces by root
+status, root name, contained event type, service, and environment, and the
+dashboard trace summary shows error counts, p50/p95 latency, total tokens, and
+total cost. Remaining work is a model/provider breakdown, dedicated slow and
+failed trace views beyond the status filter, and optional sampling
+configuration.
 
 Goal: make local traces useful for production debugging without adding enterprise
 management features.
 
 Deliverables:
 
-- service name
-- environment name
-- trace filtering
-- trace search
-- error rate summaries
-- latency summaries
-- token and cost totals
-- model/provider breakdown
-- slow traces view
-- failed traces view
-- optional sampling configuration
+- service name: implemented
+- environment name: implemented
+- trace filtering: implemented for status, name, event type, service, and
+  environment
+- trace search: partial through the root-name substring filter
+- error rate summaries: implemented as dashboard error counts
+- latency summaries: implemented as dashboard p50/p95 latency
+- token and cost totals: implemented in the dashboard trace summary
+- model/provider breakdown: not yet
+- slow traces view: not yet; sort and dedicated view still open
+- failed traces view: covered by the `status=error` filter
+- optional sampling configuration: not yet
 
 Suggested SDK configuration:
 
@@ -671,11 +697,11 @@ configure(
 
 Suggested commits:
 
-1. Add service and environment metadata.
-2. Add server query filters.
-3. Add dashboard trace filters.
-4. Add latency and error summaries.
-5. Add token and cost summary charts.
+1. Add service and environment metadata: implemented.
+2. Add server query filters: implemented.
+3. Add dashboard trace filters: implemented.
+4. Add latency and error summaries: implemented.
+5. Add a model/provider breakdown to the trace summary.
 6. Add sampling configuration, if needed.
 
 Codex task brief:
@@ -688,14 +714,24 @@ systems. Include tests for any new query or SDK behavior.
 
 ## Recommended Milestone Order
 
-1. Keep release-candidate checks passing while publishing remains deferred
-2. Keep trace contract hardening in place as schema changes
-3. Add a focused dashboard prompt panel for generation prompt metadata
-4. Add useful trace filters and query parameters
-5. Add experiment comparison dashboard
-6. Add faithfulness and hallucination evaluation
-7. Add production observability summaries
-8. Add SQLite storage, only when JSONL becomes limiting
+Already delivered:
+
+- release-candidate checks and trace contract hardening kept passing
+- focused dashboard prompt panel for generation prompt metadata
+- trace filtering across the server and dashboard
+- experiment comparison dashboard
+- deterministic faithfulness and hallucination scoring
+- core production-observability summaries (error counts, latency p50/p95, token
+  and cost totals)
+
+Remaining order:
+
+1. Keep release-candidate checks and trace contract hardening passing as schemas
+   change
+2. Add `/v1/traces` recency ordering and a result limit
+3. Add the remaining production-observability breakdowns (model/provider) and
+   optional sampling
+4. Add SQLite storage, only when JSONL becomes limiting
 
 ## First Ten Minimal Commits
 
@@ -714,11 +750,20 @@ Completed or effectively covered:
 
 Next minimal commits:
 
-1. Add a focused dashboard prompt panel so prompt name, version, template hash,
-   and optional rendered prompt are easier to scan than raw metadata.
-2. Add server query filters for trace status, name, and event type.
-3. Add experiment comparison for two uploaded JSONL experiment results.
-4. Add one deterministic faithfulness or hallucination evaluator for RAG output.
+The previous four (dashboard prompt panel, server query filters, experiment
+comparison, and a deterministic faithfulness evaluator) are now implemented. The
+next high-confidence slices are:
+
+1. Add `/v1/traces` recency ordering and a `limit` query parameter (server
+   `storage.py` and `main.py` plus the web client) so large local stores stay
+   fast to browse.
+2. Add a model/provider breakdown to the dashboard trace summary using the
+   existing `summarizeTraces` aggregation.
+
+Deferred until the sync path is explicitly declared stable: async `@observe`
+(the decorator raises `TypeError` for coroutine functions today by design).
+SQLite storage, authentication, billing, LLM-as-judge evaluation, and publishing
+remain deferred.
 
 ## Definition Of Done For Each Step
 

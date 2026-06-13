@@ -143,16 +143,20 @@ when changing event fields.
 ## Trace Filtering
 
 Use the dashboard's trace filters, or query the ingestion server directly, to
-triage local traces by root status, root trace name, or contained event type:
+triage local traces by root status, root trace name, contained event type, or
+the service and environment recorded by `configure()`:
 
 ```bash
 curl "http://127.0.0.1:8000/v1/traces?status=error"
 curl "http://127.0.0.1:8000/v1/traces?name=answer"
 curl "http://127.0.0.1:8000/v1/traces?event_type=generation"
+curl "http://127.0.0.1:8000/v1/traces?service=rag-api"
+curl "http://127.0.0.1:8000/v1/traces?environment=production"
 ```
 
-Filters inspect only root trace status, root trace name, and event type. They do
-not search captured input, output, metadata, or error payloads.
+Filters match root trace status, root trace name, contained event type, and the
+service and environment from `metadata.service`. They do not search arbitrary
+captured input, output, other metadata, or error payloads.
 
 ## Retrieval Events
 
