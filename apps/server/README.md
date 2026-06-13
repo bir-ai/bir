@@ -134,6 +134,35 @@ export BIR_CORS_ORIGINS="http://localhost:3000,http://dashboard.example:4173"
 
 Setting `BIR_CORS_ORIGINS` replaces the defaults instead of extending them.
 
+## Serving the dashboard
+
+The server can also serve the web dashboard's static export, so a single
+process at `http://127.0.0.1:8000` serves both the API and the UI. Build the
+export once:
+
+```bash
+cd apps/web
+npm run build
+```
+
+This emits a static site to `apps/web/out/`. Point the server at that directory
+with `BIR_DASHBOARD_DIR`:
+
+```bash
+cd apps/server
+BIR_DASHBOARD_DIR=../web/out ../../.venv/bin/uvicorn app.main:app --reload
+```
+
+The dashboard is then served at `http://127.0.0.1:8000/`, while the API stays at
+`/health` and `/v1/*` (those routes keep precedence over the catch-all mount).
+The dashboard calls the API on the same origin, so no CORS configuration is
+needed. Serving works in read-only local data mode too, so one process can both
+serve the UI and browse SDK-written traces.
+
+When `BIR_DASHBOARD_DIR` is unset — or points at a directory that has not been
+built yet — the server runs exactly as before and serves only the API. The
+server never builds the dashboard for you; run `npm run build` first.
+
 ## Read-only local data mode
 
 Point the server at a project's `.bir` directory to browse SDK-written traces

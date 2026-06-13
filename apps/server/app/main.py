@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from .experiments import JsonlExperimentStore, LocalExperimentReader
 from .playground import PlaygroundClient, PlaygroundUpstreamError, playground_base_url_from_env, run_chat
@@ -32,6 +34,8 @@ from .schemas import (
 )
 from .storage import JsonlEventStore, LocalJsonlEventReader, TraceEventReader
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_EVENT_STORE_PATH = Path(".bir/server-events.jsonl")
 DEFAULT_EXPERIMENT_STORE_PATH = Path(".bir/experiments")
 DEFAULT_CORS_ORIGINS = ("http://localhost:3000", "http://127.0.0.1:3000")
@@ -49,6 +53,7 @@ def create_app(
     experiment_store_path: str | Path | None = None,
     local_data_dir: str | Path | None = None,
     playground_base_url: str | None = None,
+    dashboard_dir: str | Path | None = None,
 ) -> FastAPI:
     """Create a Bir ingestion server with local JSONL-backed stores.
 
@@ -62,6 +67,11 @@ def create_app(
     ``playground_base_url`` (or the ``BIR_PLAYGROUND_BASE_URL`` environment
     variable, defaulting to a local Ollama) and records each exchange in the
     event store, so read-only local data mode also disables the playground.
+
+    When ``dashboard_dir`` (or the ``BIR_DASHBOARD_DIR`` environment variable)
+    points at the web dashboard's static export, that build is served at ``/``
+    so one process serves both the API and the UI. Serving is independent of
+    read-only local data mode, since browsing traces is its primary use.
     """
 
     if local_data_dir is not None:
@@ -225,6 +235,10 @@ def create_app(
             raise HTTPException(status_code=404, detail="Experiment not found")
         return experiment
 
+    # Mount the dashboard last so /health and /v1/* keep precedence over the
+    # catch-all static mount at "/".
+    _mount_dashboard(app, dashboard_dir)
+
     return app
 
 
@@ -254,6 +268,36 @@ def _local_data_dir_from_env() -> Path | None:
     if configured_path:
         return Path(configured_path)
     return None
+
+
+def _dashboard_dir_from_env() -> Path | None:
+    configured_path = os.environ.get("BIR_DASHBOARD_DIR")
+    if configured_path:
+        return Path(configured_path)
+    return None
+
+
+def _mount_dashboard(app: FastAPI, dashboard_dir: str | Path | None) -> None:
+    """Serve the web dashboard's static export at ``/`` when it is available.
+
+    The dashboard is built with ``cd apps/web && npm run build`` into
+    ``apps/web/out``. We never auto-build it: when no directory is configured,
+    or the configured one does not exist yet, the server keeps serving only the
+    API and behavior is unchanged.
+    """
+
+    configured = dashboard_dir if dashboard_dir is not None else _dashboard_dir_from_env()
+    if configured is None:
+        return
+    directory = Path(configured)
+    if not directory.is_dir():
+        logger.info(
+            "Bir dashboard directory %s not found; run `cd apps/web && npm run build` "
+            "to build the static dashboard, or unset BIR_DASHBOARD_DIR to serve only the API.",
+            directory,
+        )
+        return
+    app.mount("/", StaticFiles(directory=directory, html=True), name="dashboard")
 
 
 def _reject_in_read_only_local_mode(request: Request) -> None:

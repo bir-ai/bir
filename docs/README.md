@@ -69,6 +69,25 @@ cd apps/web
 npm run dev
 ```
 
+### Serve the dashboard from the server
+
+For a single process that serves both the API and the UI, build the dashboard's
+static export once and point the server at it with `BIR_DASHBOARD_DIR`:
+
+```bash
+cd apps/web
+npm run build  # emits the static site to apps/web/out
+
+cd ../server
+BIR_DASHBOARD_DIR=../web/out ../../.venv/bin/python -m uvicorn app.main:app --reload
+```
+
+Open `http://127.0.0.1:8000`. The dashboard is served at `/`, the API stays at
+`/health` and `/v1/*`, and the UI calls the API on the same origin (no CORS
+setup). This also works in read-only local data mode (`BIR_DATA_DIR`). When
+`BIR_DASHBOARD_DIR` is unset or the export is not built yet, the server serves
+only the API, unchanged.
+
 ## Core SDK Pattern
 
 ```python
