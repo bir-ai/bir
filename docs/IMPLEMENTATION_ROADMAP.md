@@ -771,12 +771,11 @@ Delivered since the first ten:
 
 Next minimal commits:
 
-Async `@observe` now traces coroutine functions on the stable sync path,
-producing the same trace and span events. The remaining async follow-up is async
-variants of the `span()`, `generation()`, and `tool_call()` context managers;
-they already work as sync calls inside async functions. SQLite storage,
-authentication, billing, LLM-as-judge evaluation, and publishing remain
-deferred.
+Async `@observe` traces coroutine functions on the stable sync path, and the
+`span()`, `generation()`, `tool_call()`, `retrieval()`, and `trace()` context
+managers now all support `async with`, delegating to their sync `__enter__`/
+`__exit__` so both paths record the same events. SQLite storage, authentication,
+billing, LLM-as-judge evaluation, and publishing remain deferred.
 
 ## Definition Of Done For Each Step
 
