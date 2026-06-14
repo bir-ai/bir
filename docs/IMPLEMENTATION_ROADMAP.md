@@ -758,17 +758,17 @@ Completed or effectively covered:
 9. Add retrieval event shape documentation and SDK helper.
 10. Harden dashboard contract tests against the shared JSONL fixture.
 
+Delivered since the first ten:
+
+- the dashboard prompt panel, server query filters, experiment comparison, and a
+  deterministic faithfulness evaluator
+- `/v1/traces` recency ordering with an optional `limit` query parameter (server
+  `storage.py` and `main.py` plus the web client), so large local stores stay
+  fast to browse
+- a model breakdown on the dashboard trace summary, built on the existing
+  `summarizeTraces` aggregation
+
 Next minimal commits:
-
-The previous four (dashboard prompt panel, server query filters, experiment
-comparison, and a deterministic faithfulness evaluator) are now implemented. The
-next high-confidence slices are:
-
-1. Add `/v1/traces` recency ordering and a `limit` query parameter (server
-   `storage.py` and `main.py` plus the web client) so large local stores stay
-   fast to browse.
-2. Add a model/provider breakdown to the dashboard trace summary using the
-   existing `summarizeTraces` aggregation.
 
 Async `@observe` now traces coroutine functions on the stable sync path,
 producing the same trace and span events. The remaining async follow-up is async

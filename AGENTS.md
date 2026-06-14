@@ -27,13 +27,16 @@ server, dashboard, evaluation, dataset, experiment, and prompt workflows.
 
 ```text
 apps/
-  server/        # FastAPI backend and ingestion API
-  web/           # Dashboard UI
+  server/        # FastAPI backend, ingestion API, and playground proxy (app/playground.py)
+  web/           # Dashboard UI, incl. Playground tab (app/components/playground.tsx, app/playground-*.ts)
 packages/
   python-sdk/    # Python SDK for tracing, spans, generations, tool calls, eval scores
 examples/
   openai-demo/   # Minimal OpenAI tracing example
   langchain-demo/# LangChain integration example
+  ollama-demo/   # Real local LLM tracing demo against a running Ollama model
+scripts/
+  dev-local      # One-command local dev loop (FastAPI server + dashboard)
 docs/            # Documentation
 ```
 
@@ -142,6 +145,20 @@ Preferred stack:
 * shadcn/ui where useful
 
 Do not over-design the UI. Prioritize clarity.
+
+## Playground
+
+The dashboard includes a Playground tab for sending chat turns to a local
+OpenAI-compatible model server and recording each exchange as a normal trace.
+
+* Server proxy in `apps/server/app/playground.py`; UI in
+  `apps/web/app/components/playground.tsx`.
+* Forwards chat turns to a local model server (Ollama by default) and records
+  each exchange as a regular trace in the same event store.
+* Local-default and stdlib-only (uses `urllib`; adds no new dependencies).
+* User-initiated from the dashboard, not background traffic.
+* Configurable via `BIR_PLAYGROUND_BASE_URL` (for example LM Studio or vLLM).
+* Disabled in read-only `BIR_DATA_DIR` mode, like ingestion.
 
 ## Data Model Guidelines
 
