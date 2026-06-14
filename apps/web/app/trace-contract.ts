@@ -16,7 +16,8 @@ export type TraceEvent = {
   input: unknown;
   output: unknown;
   error: string | null;
-  value?: number;
+  // Persisted as explicit null on non-score events (model_dump exclude_none=False).
+  value?: number | null;
   model?: string | null;
   usage?: Record<string, number> | null;
   cost?: Record<string, number> | null;
