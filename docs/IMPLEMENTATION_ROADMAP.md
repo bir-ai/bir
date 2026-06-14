@@ -672,9 +672,10 @@ Status: in progress. `configure()` records `service_name` and `environment`
 under `metadata.service`. The server and dashboard now filter traces by root
 status, root name, contained event type, service, and environment; traces can be
 ordered slowest-first for triage; and the dashboard trace summary shows error
-counts, p50/p95 latency, total tokens, and total cost. Remaining work is a
+counts, p50/p95 latency, total tokens, and total cost. Opt-in trace sampling is
+available through `configure(sample_rate=...)`. Remaining work is a
 model/provider breakdown, a dedicated slow-trace view beyond the slowest sort,
-failed trace views beyond the status filter, and optional sampling configuration.
+and failed trace views beyond the status filter.
 
 Goal: make local traces useful for production debugging without adding enterprise
 management features.
@@ -693,7 +694,7 @@ Deliverables:
 - slow traces view: partial through the `sort=slowest` ordering on the server
   and a Recent/Slowest toggle in the dashboard; a dedicated view is still open
 - failed traces view: covered by the `status=error` filter
-- optional sampling configuration: not yet
+- optional sampling configuration: implemented as `configure(sample_rate=...)`
 
 Suggested SDK configuration:
 
@@ -713,7 +714,7 @@ Suggested commits:
 3. Add dashboard trace filters: implemented.
 4. Add latency and error summaries: implemented.
 5. Add a model/provider breakdown to the trace summary.
-6. Add sampling configuration, if needed.
+6. Add sampling configuration: implemented.
 
 Codex task brief:
 
@@ -740,8 +741,7 @@ Remaining order:
 1. Keep release-candidate checks and trace contract hardening passing as schemas
    change
 2. Add `/v1/traces` recency ordering and a result limit
-3. Add the remaining production-observability breakdowns (model/provider) and
-   optional sampling
+3. Add the remaining production-observability breakdowns (model/provider)
 4. Add SQLite storage, only when JSONL becomes limiting
 
 ## First Ten Minimal Commits

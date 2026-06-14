@@ -167,6 +167,21 @@ curl "http://127.0.0.1:8000/v1/traces?sort=slowest"
 curl "http://127.0.0.1:8000/v1/traces?sort=slowest&status=error&limit=20"
 ```
 
+## Trace Sampling
+
+For high-volume local runs, set a sample rate so the JSONL store stays bounded.
+`sample_rate` is the probability (`0.0` to `1.0`) that a trace is recorded and
+defaults to `1.0`. The decision is made once per trace root and inherited by
+every nested span, generation, tool call, retrieval, and score, so a sampled-out
+trace writes nothing. The observed function still runs and still raises its own
+exceptions; only the writes are skipped.
+
+```python
+from bir import configure
+
+configure(sample_rate=0.25)  # keep about a quarter of traces
+```
+
 ## Retrieval Events
 
 RAG retrieval inspection builds on the current event contract instead of adding
