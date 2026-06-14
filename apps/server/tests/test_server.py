@@ -1271,6 +1271,91 @@ def test_rejects_non_positive_limit(tmp_path: Path) -> None:
     assert negative_response.status_code == 422
 
 
+def test_sorts_traces_by_slowest_root_duration(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    durations = {"trace-fast": 1, "trace-slow": 3, "trace-mid": 2}
+    for trace_id, seconds in durations.items():
+        event = make_event(
+            id=trace_id,
+            trace_id=trace_id,
+            start_time="2026-01-01T00:00:00+00:00",
+            end_time=f"2026-01-01T00:00:0{seconds}+00:00",
+        )
+        assert client.post("/v1/events", json=event).status_code == 201
+
+    response = client.get("/v1/traces", params={"sort": "slowest"})
+
+    assert response.status_code == 200
+    traces = response.json()
+    assert [trace["id"] for trace in traces] == ["trace-slow", "trace-mid", "trace-fast"]
+
+
+def test_slowest_sort_with_limit_returns_top_n_slowest(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    durations = {"trace-fast": 1, "trace-slow": 4, "trace-mid": 2, "trace-slower": 3}
+    for trace_id, seconds in durations.items():
+        event = make_event(
+            id=trace_id,
+            trace_id=trace_id,
+            start_time="2026-01-01T00:00:00+00:00",
+            end_time=f"2026-01-01T00:00:0{seconds}+00:00",
+        )
+        assert client.post("/v1/events", json=event).status_code == 201
+
+    response = client.get("/v1/traces", params={"sort": "slowest", "limit": 2})
+
+    assert response.status_code == 200
+    traces = response.json()
+    # The two slowest survive the limit, still in slowest-first order.
+    assert [trace["id"] for trace in traces] == ["trace-slow", "trace-slower"]
+
+
+def test_slowest_sort_keeps_filters(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    events = [
+        make_event(
+            id="success-slowest",
+            trace_id="success-slowest",
+            start_time="2026-01-01T00:00:00+00:00",
+            end_time="2026-01-01T00:00:05+00:00",
+        ),
+        make_event(
+            id="error-mid",
+            trace_id="error-mid",
+            status="error",
+            start_time="2026-01-01T00:00:00+00:00",
+            end_time="2026-01-01T00:00:03+00:00",
+            error="failed",
+        ),
+        make_event(
+            id="error-fast",
+            trace_id="error-fast",
+            status="error",
+            start_time="2026-01-01T00:00:00+00:00",
+            end_time="2026-01-01T00:00:01+00:00",
+            error="failed",
+        ),
+    ]
+    for event in events:
+        assert client.post("/v1/events", json=event).status_code == 201
+
+    response = client.get("/v1/traces", params={"status": "error", "sort": "slowest"})
+
+    assert response.status_code == 200
+    traces = response.json()
+    # The success trace is slowest overall, but the status filter drops it before
+    # the slowest ordering ranks the surviving error traces.
+    assert [trace["id"] for trace in traces] == ["error-mid", "error-fast"]
+
+
+def test_rejects_invalid_trace_sort_value(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+
+    response = client.get("/v1/traces", params={"sort": "newest"})
+
+    assert response.status_code == 422
+
+
 def test_gets_trace_detail_with_root_first_event_order(tmp_path: Path) -> None:
     client, _ = make_client(tmp_path)
     score_event = make_event(

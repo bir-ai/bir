@@ -26,6 +26,7 @@ from .schemas import (
     LoadedTrace,
     EventStatus,
     EventType,
+    TraceSort,
     PlaygroundChatRequest,
     PlaygroundChatResponse,
     PlaygroundModelsResponse,
@@ -141,6 +142,7 @@ def create_app(
         event_type: EventType | None = Query(default=None),
         service: str | None = Query(default=None),
         environment: str | None = Query(default=None),
+        sort: TraceSort = Query(default="recent"),
         limit: int | None = Query(default=None, gt=0),
     ) -> list[LoadedTrace]:
         store = _get_event_store(request)
@@ -150,6 +152,7 @@ def create_app(
             event_type=event_type,
             service=service,
             environment=environment,
+            sort=sort,
             limit=limit,
         )
 

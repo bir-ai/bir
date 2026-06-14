@@ -89,6 +89,38 @@ test("composes the limit with existing trace filters", () => {
   );
 });
 
+test("forwards the slowest sort and omits the default recent sort", () => {
+  assert.equal(buildTraceFilterQuery({ sort: "slowest" }), "sort=slowest");
+  assert.equal(buildTraceFilterQuery({ sort: "recent" }), "");
+  assert.equal(buildTraceFilterQuery({ status: "all", name: "", event_type: "all" }), "");
+});
+
+test("composes the slowest sort with existing trace filters", () => {
+  const query = buildTraceFilterQuery({ status: "error", sort: "slowest", limit: 50 });
+
+  assert.equal(query, "status=error&sort=slowest&limit=50");
+});
+
+test("orders normalized traces slowest first by root duration", () => {
+  const baseStart = "2026-01-01T00:00:00.000+00:00";
+  const baseMs = Date.parse(baseStart);
+  const response = [100, 400, 200].map((durationMs, index) => ({
+    ...summarizableTrace({
+      id: `trace-${index}`,
+      start: baseStart,
+      end: new Date(baseMs + durationMs).toISOString(),
+    }),
+  }));
+
+  const recent = normalizeTraces(response);
+  const slowest = normalizeTraces(response, "slowest");
+
+  // Equal start times, so recency leaves the ids in their original order.
+  assert.deepEqual(recent.map((trace) => trace.id), ["trace-0", "trace-1", "trace-2"]);
+  // 400ms (trace-1) is slowest, then 200ms (trace-2), then 100ms (trace-0).
+  assert.deepEqual(slowest.map((trace) => trace.id), ["trace-1", "trace-2", "trace-0"]);
+});
+
 test("extracts service metadata from the trace root event", () => {
   const trace = summarizableTrace({
     id: "trace-service",

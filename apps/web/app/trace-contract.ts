@@ -1,5 +1,6 @@
 export type EventStatus = "success" | "error";
 export type EventType = "trace" | "span" | "generation" | "tool_call" | "score";
+export type TraceSort = "recent" | "slowest";
 
 export type TraceEvent = {
   schema_version: "1.0";
@@ -43,6 +44,7 @@ export type TraceFilterValues = {
   event_type?: string | null;
   service?: string | null;
   environment?: string | null;
+  sort?: TraceSort;
   limit?: number;
 };
 
@@ -117,11 +119,22 @@ export type TraceTotals = {
   currency: string | null;
 };
 
-export function normalizeTraces(value: unknown): Trace[] {
+export function normalizeTraces(value: unknown, sort: TraceSort = "recent"): Trace[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  return value.filter(isTrace).sort((a, b) => b.start_time.localeCompare(a.start_time));
+  const traces = value.filter(isTrace);
+  if (sort === "slowest") {
+    // Mirror the server's slowest-first ordering (duration desc, then recency
+    // then id) so the displayed order is stable regardless of response order.
+    return traces.sort(
+      (a, b) =>
+        (traceDurationMs(b) ?? 0) - (traceDurationMs(a) ?? 0) ||
+        b.start_time.localeCompare(a.start_time) ||
+        b.id.localeCompare(a.id),
+    );
+  }
+  return traces.sort((a, b) => b.start_time.localeCompare(a.start_time));
 }
 
 export function findTraceById(traces: Trace[], traceId: string): Trace | null {
@@ -135,6 +148,7 @@ export function buildTraceFilterQuery(filters: TraceFilterValues): string {
   const eventType = filters.event_type?.trim();
   const service = filters.service?.trim();
   const environment = filters.environment?.trim();
+  const sort = filters.sort;
   const limit = filters.limit;
 
   if (status && status !== "all") {
@@ -151,6 +165,10 @@ export function buildTraceFilterQuery(filters: TraceFilterValues): string {
   }
   if (environment) {
     params.set("environment", environment);
+  }
+  // Only forward a non-default sort so default browse URLs stay clean.
+  if (sort === "slowest") {
+    params.set("sort", sort);
   }
   // Only forward a positive, finite integer: the server rejects limit <= 0 and a
   // stray NaN/Infinity would serialize into a meaningless query parameter.

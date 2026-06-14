@@ -13,6 +13,7 @@ from .redaction import redact_secret_text, redact_value
 SCHEMA_VERSION = "1.0"
 EventType = Literal["trace", "span", "generation", "tool_call", "score"]
 EventStatus = Literal["success", "error"]
+TraceSort = Literal["recent", "slowest"]
 
 
 class TraceEventPayload(BaseModel):

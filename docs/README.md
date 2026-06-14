@@ -158,6 +158,15 @@ Filters match root trace status, root trace name, contained event type, and the
 service and environment from `metadata.service`. They do not search arbitrary
 captured input, output, other metadata, or error payloads.
 
+To triage slow traces, order results by root-trace duration (longest first) with
+`sort=slowest`; the default `sort=recent` preserves the most-recent-first order.
+The dashboard exposes the same choice as a Recent/Slowest toggle.
+
+```bash
+curl "http://127.0.0.1:8000/v1/traces?sort=slowest"
+curl "http://127.0.0.1:8000/v1/traces?sort=slowest&status=error&limit=20"
+```
+
 ## Retrieval Events
 
 RAG retrieval inspection builds on the current event contract instead of adding

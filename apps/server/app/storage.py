@@ -9,7 +9,7 @@ from threading import Lock
 from pydantic import ValidationError
 
 from .jsonl import iter_jsonl_lines_tolerating_torn_tail
-from .schemas import EventStatus, EventType, LoadedTrace, TraceEventPayload
+from .schemas import EventStatus, EventType, LoadedTrace, TraceEventPayload, TraceSort
 
 EVENT_SORT_PRIORITY = {
     "trace": 0,
@@ -36,6 +36,7 @@ class TraceEventReader:
         event_type: EventType | None = None,
         service: str | None = None,
         environment: str | None = None,
+        sort: TraceSort = "recent",
         limit: int | None = None,
     ) -> list[LoadedTrace]:
         """Load complete traces, optionally filtered by root status, name, event type, or service.
@@ -44,9 +45,14 @@ class TraceEventReader:
         SDK records on trace roots from ``configure(service_name=, environment=)``,
         using the same case-insensitive substring matching as ``name``.
 
-        ``limit`` keeps only the most recent ``limit`` traces (by ``start_time``
-        then ``id``) after filtering, so the local experience stays usable as the
-        store grows. The result stays sorted ascending regardless.
+        ``sort`` chooses the ordering. ``"recent"`` (the default) sorts ascending
+        by ``start_time`` then ``id``, so with ``limit`` the most recent N are the
+        tail slice. ``"slowest"`` sorts by root-trace duration descending (ties
+        fall back to recency then ``id``), so with ``limit`` the slowest N are the
+        head slice.
+
+        ``limit`` keeps only that many traces after filtering and ordering, so the
+        local experience stays usable as the store grows.
         """
 
         events_by_trace_id: dict[str, list[TraceEventPayload]] = {}
@@ -68,6 +74,18 @@ class TraceEventReader:
                 environment_filter=environment_filter,
             ):
                 traces.append(trace)
+        if sort == "slowest":
+            # Slowest first by root-trace duration; ties fall back to recency then
+            # id so the order stays deterministic. reverse=True flips every key, so
+            # the slowest N are the head slice under ``limit``.
+            ordered = sorted(
+                traces,
+                key=lambda trace: (trace.end_time - trace.start_time, trace.start_time, trace.id),
+                reverse=True,
+            )
+            if limit is not None:
+                return ordered[:limit]
+            return ordered
         ordered = sorted(traces, key=lambda trace: (trace.start_time, trace.id))
         # The newest traces sort last, so the most recent N are the tail slice.
         if limit is not None:

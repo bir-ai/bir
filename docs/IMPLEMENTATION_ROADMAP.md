@@ -670,11 +670,11 @@ judge provider dependencies in this step.
 
 Status: in progress. `configure()` records `service_name` and `environment`
 under `metadata.service`. The server and dashboard now filter traces by root
-status, root name, contained event type, service, and environment, and the
-dashboard trace summary shows error counts, p50/p95 latency, total tokens, and
-total cost. Remaining work is a model/provider breakdown, dedicated slow and
-failed trace views beyond the status filter, and optional sampling
-configuration.
+status, root name, contained event type, service, and environment; traces can be
+ordered slowest-first for triage; and the dashboard trace summary shows error
+counts, p50/p95 latency, total tokens, and total cost. Remaining work is a
+model/provider breakdown, a dedicated slow-trace view beyond the slowest sort,
+failed trace views beyond the status filter, and optional sampling configuration.
 
 Goal: make local traces useful for production debugging without adding enterprise
 management features.
@@ -690,7 +690,8 @@ Deliverables:
 - latency summaries: implemented as dashboard p50/p95 latency
 - token and cost totals: implemented in the dashboard trace summary
 - model/provider breakdown: not yet
-- slow traces view: not yet; sort and dedicated view still open
+- slow traces view: partial through the `sort=slowest` ordering on the server
+  and a Recent/Slowest toggle in the dashboard; a dedicated view is still open
 - failed traces view: covered by the `status=error` filter
 - optional sampling configuration: not yet
 

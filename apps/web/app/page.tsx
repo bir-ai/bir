@@ -95,7 +95,7 @@ export default function DashboardPage() {
 
     try {
       const query = buildTraceFilterQuery({ ...filters, limit: DEFAULT_TRACE_LIMIT });
-      const nextTraces = normalizeTraces(await fetchTraces(query));
+      const nextTraces = normalizeTraces(await fetchTraces(query), filters.sort);
       setTraces(nextTraces);
       setSelectedTraceId((current) => {
         if (current && nextTraces.some((trace) => trace.id === current)) {
