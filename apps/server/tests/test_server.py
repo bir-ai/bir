@@ -17,6 +17,7 @@ CONTRACT_SCHEMA_PATH = ROOT / "tests" / "fixtures" / "event-schema-v1.json"
 from bir import configure, generation, load_traces, observe, retrieval, score, span
 from bir._sdk import _reset_config_for_tests, _safe_capture, _safe_error
 
+import app.storage as storage
 from app.main import create_app
 from app.redaction import redact_secret_text, redact_value
 from app.schemas import TraceEventPayload
@@ -738,6 +739,49 @@ def test_new_store_instance_detects_duplicates_in_existing_file(tmp_path: Path) 
     assert second_store.append(new_event) is True
     stored_events = [json.loads(line) for line in event_store_path.read_text(encoding="utf-8").splitlines()]
     assert [stored["id"] for stored in stored_events] == ["trace-1", "span-1"]
+
+
+def test_load_events_caches_parsed_events_for_unchanged_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    store = JsonlEventStore(tmp_path / "events.jsonl")
+    store.append(TraceEventPayload.model_validate(make_event()))
+    store.append(TraceEventPayload.model_validate(make_event(id="span-1", type="span", parent_id="trace-1")))
+
+    parse_calls = 0
+    original_parse = storage._parse_event_line
+
+    def counting_parse(path: Path, line_number: int, stripped: str) -> TraceEventPayload:
+        nonlocal parse_calls
+        parse_calls += 1
+        return original_parse(path, line_number, stripped)
+
+    monkeypatch.setattr(storage, "_parse_event_line", counting_parse)
+
+    first = store.load_events()
+    parses_after_first = parse_calls
+    second = store.load_events()
+
+    assert [event.id for event in first] == ["trace-1", "span-1"]
+    assert [event.id for event in second] == ["trace-1", "span-1"]
+    # The first load parses each line once; the unchanged second load reuses the cache.
+    assert parses_after_first == 2
+    assert parse_calls == parses_after_first
+
+
+def test_load_events_reflects_appends_and_stays_idempotent(tmp_path: Path) -> None:
+    store = JsonlEventStore(tmp_path / "events.jsonl")
+    assert store.append(TraceEventPayload.model_validate(make_event())) is True
+
+    assert [event.id for event in store.load_events()] == ["trace-1"]
+
+    # An event appended after a load is visible on the next load_events().
+    span = TraceEventPayload.model_validate(make_event(id="span-1", type="span", parent_id="trace-1"))
+    assert store.append(span) is True
+    assert [event.id for event in store.load_events()] == ["trace-1", "span-1"]
+
+    # A duplicate id is rejected and does not change what loads.
+    duplicate = TraceEventPayload.model_validate(make_event(id="span-1", type="span", parent_id="trace-1"))
+    assert store.append(duplicate) is False
+    assert [event.id for event in store.load_events()] == ["trace-1", "span-1"]
 
 
 def test_rejects_invalid_event_payload(tmp_path: Path) -> None:

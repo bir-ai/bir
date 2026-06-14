@@ -84,9 +84,15 @@ class TraceEventReader:
 class JsonlEventStore(TraceEventReader):
     """Persist and query validated trace events from a local JSONL file.
 
-    Event IDs are indexed in memory after the first duplicate check so each
-    append stays O(1) instead of rescanning the file. The store assumes it is
-    the only writer of its JSONL file while the process is running.
+    Two in-memory caches keep repeated access cheap, both assuming this process
+    is the only writer of the JSONL file while it runs:
+
+    * Event IDs are indexed after the first duplicate check so each append stays
+      O(1) instead of rescanning the file.
+    * Parsed events are cached behind an ``(st_mtime_ns, st_size)`` signature so a
+      read does no parse/validate work while the file is unchanged. A successful
+      append extends that cache and refreshes the signature in step with the line
+      it wrote. This mirrors ``LocalJsonlEventReader``.
     """
 
     def __init__(self, path: str | Path) -> None:
@@ -95,6 +101,8 @@ class JsonlEventStore(TraceEventReader):
         self.path = Path(path)
         self._lock = Lock()
         self._event_ids: set[str] | None = None
+        self._cached_signature: tuple[int, int] | None = None
+        self._cached_events: list[TraceEventPayload] = []
 
     def append(self, event: TraceEventPayload) -> bool:
         """Append an event unless its ID already exists."""
@@ -115,6 +123,14 @@ class JsonlEventStore(TraceEventReader):
                 events_file.write(json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False))
                 events_file.write("\n")
             event_ids.add(event.id)
+            # Keep the parsed-event cache in step with the line we just wrote so a
+            # read that follows this append does not re-parse the whole store. As
+            # the sole writer, appending the validated event and refreshing the
+            # signature matches what a reload would produce. When the cache has not
+            # been populated yet, leave it for the next read to build from scratch.
+            if self._cached_signature is not None:
+                self._cached_events.append(event)
+                self._cached_signature = self._current_signature()
             return True
 
     def has_event(self, event_id: str) -> bool:
@@ -148,20 +164,34 @@ class JsonlEventStore(TraceEventReader):
         return event_ids
 
     def load_events(self) -> list[TraceEventPayload]:
-        """Load all persisted events in file order."""
+        """Load all persisted events in file order, re-parsing only when the file changed."""
 
         with self._lock:
-            if not self.path.exists():
+            try:
+                signature = self._current_signature()
+            except FileNotFoundError:
+                self._cached_signature = None
+                self._cached_events = []
                 return []
 
-            events: list[TraceEventPayload] = []
-            with self.path.open("r", encoding="utf-8") as events_file:
-                for line_number, line in enumerate(events_file, start=1):
-                    stripped = line.strip()
-                    if not stripped:
-                        continue
-                    events.append(_parse_event_line(self.path, line_number, stripped))
-            return events
+            if signature != self._cached_signature:
+                self._cached_events = self._read_events()
+                self._cached_signature = signature
+            return list(self._cached_events)
+
+    def _current_signature(self) -> tuple[int, int]:
+        stat_result = self.path.stat()
+        return (stat_result.st_mtime_ns, stat_result.st_size)
+
+    def _read_events(self) -> list[TraceEventPayload]:
+        events: list[TraceEventPayload] = []
+        with self.path.open("r", encoding="utf-8") as events_file:
+            for line_number, line in enumerate(events_file, start=1):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                events.append(_parse_event_line(self.path, line_number, stripped))
+        return events
 
 
 class LocalJsonlEventReader(TraceEventReader):
