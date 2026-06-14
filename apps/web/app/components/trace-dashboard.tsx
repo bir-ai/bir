@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  getTraceScores,
+  getTraceScoreGroups,
   getTraceService,
   getTraceTotals,
   type Trace,
@@ -12,7 +12,8 @@ import {
 } from "../trace-contract";
 import { formatDate, formatDuration, formatMilliseconds, formatNumber } from "./format";
 import { statusLabels } from "./labels";
-import { Fact, InlineField, Metric } from "./primitives";
+import { Fact, Metric } from "./primitives";
+import { TraceScorePanel } from "./trace-detail-panels";
 import { TraceList } from "./trace-list";
 import { TraceTimeline } from "./trace-timeline";
 
@@ -43,7 +44,7 @@ export function TraceDashboard({
   traceLimit: number;
   traces: Trace[];
 }) {
-  const traceScores = selectedTrace ? getTraceScores(selectedTrace.events) : [];
+  const traceScoreGroups = selectedTrace ? getTraceScoreGroups(selectedTrace.events) : [];
   const traceService = selectedTrace ? getTraceService(selectedTrace) : null;
   const traceTotals = selectedTrace ? getTraceTotals(selectedTrace.events) : null;
   const traceCostLabel = traceTotals
@@ -106,18 +107,7 @@ export function TraceDashboard({
                 </div>
               </div>
 
-              {traceScores.length > 0 ? (
-                <section className="score-grid trace-score-strip" aria-label="Trace scores">
-                  {traceScores.map((score) => (
-                    <InlineField
-                      label={score.name}
-                      value={formatNumber(score.value)}
-                      title={score.metadata ? JSON.stringify(score.metadata) : undefined}
-                      key={score.name}
-                    />
-                  ))}
-                </section>
-              ) : null}
+              {traceScoreGroups.length > 0 ? <TraceScorePanel groups={traceScoreGroups} /> : null}
 
               <TraceTimeline rows={timelineRows} />
             </>

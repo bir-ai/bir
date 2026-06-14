@@ -10,6 +10,7 @@ import {
   getGenerationChatDetails,
   getPromptDetails,
   getRetrievalDetails,
+  getTraceScoreGroups,
   getTraceScores,
   getTraceService,
   getTraceTotals,
@@ -368,6 +369,50 @@ test("skips score events without a numeric value when collecting scores", () => 
   delete valuelessScore.value;
 
   assert.deepEqual(getTraceScores([valuelessScore]), []);
+});
+
+test("splits faithfulness scores into their own group ahead of other scores", () => {
+  const scoreEvent = contractTrace.events.find((event) => event.type === "score");
+  assert.ok(scoreEvent);
+  // scoreEvent is the fixture "helpfulness" 0.82 score, an ordinary score.
+  const faithfulnessScore: TraceEvent = {
+    ...scoreEvent,
+    id: "score-overlap",
+    name: "answer_context_overlap",
+    value: 0.74,
+    metadata: { overlap_ratio: 0.74, min_ratio: 0.5 },
+  };
+
+  // Faithfulness leads even though its score appears second in the event list.
+  assert.deepEqual(getTraceScoreGroups([scoreEvent, faithfulnessScore]), [
+    {
+      key: "faithfulness",
+      scores: [{ name: "answer_context_overlap", value: 0.74, metadata: { overlap_ratio: 0.74, min_ratio: 0.5 } }],
+    },
+    { key: "other", scores: [{ name: "helpfulness", value: 0.82 }] },
+  ]);
+});
+
+test("routes scores into the faithfulness group via score metadata", () => {
+  const scoreEvent = contractTrace.events.find((event) => event.type === "score");
+  assert.ok(scoreEvent);
+  const taggedScore: TraceEvent = {
+    ...scoreEvent,
+    id: "score-tagged",
+    name: "custom_grounding",
+    metadata: { group: "faithfulness" },
+  };
+
+  assert.deepEqual(getTraceScoreGroups([taggedScore]), [
+    { key: "faithfulness", scores: [{ name: "custom_grounding", value: 0.82, metadata: { group: "faithfulness" } }] },
+  ]);
+});
+
+test("returns no score groups when a trace has no scores", () => {
+  const generationEvent = contractTrace.events.find((event) => event.type === "generation");
+  assert.ok(generationEvent);
+
+  assert.deepEqual(getTraceScoreGroups([generationEvent]), []);
 });
 
 test("ignores malformed trace responses without throwing", () => {

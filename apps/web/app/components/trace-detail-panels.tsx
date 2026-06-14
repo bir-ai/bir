@@ -1,6 +1,29 @@
-import type { GenerationChatDetails, PromptDetails, RetrievalDetails } from "../trace-contract";
+import type { GenerationChatDetails, PromptDetails, RetrievalDetails, TraceScoreGroup } from "../trace-contract";
 import { formatNumber, formatPayloadValue } from "./format";
+import { scoreGroupLabels } from "./labels";
 import { InlineField, Payload } from "./primitives";
+
+export function TraceScorePanel({ groups }: { groups: TraceScoreGroup[] }) {
+  return (
+    <section className="trace-scores" aria-label="Trace scores">
+      {groups.map((group) => (
+        <div className="trace-score-group" key={group.key}>
+          <h4>{scoreGroupLabels[group.key]}</h4>
+          <div className="score-grid">
+            {group.scores.map((score) => (
+              <InlineField
+                label={score.name}
+                value={formatNumber(score.value)}
+                title={score.metadata ? JSON.stringify(score.metadata) : undefined}
+                key={score.name}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
 
 export function GenerationPanel({ details }: { details: GenerationChatDetails }) {
   return (

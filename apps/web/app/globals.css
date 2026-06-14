@@ -914,13 +914,29 @@ h3 {
   padding: 8px;
 }
 
-.trace-score-strip {
+.trace-scores {
+  display: grid;
+  gap: 10px;
   margin-top: 10px;
-  min-height: 0;
+}
+
+.trace-score-group {
+  min-width: 0;
   border: 1px solid rgba(67, 70, 75, 0.74);
   border-radius: 8px;
-  border-bottom: 1px solid rgba(67, 70, 75, 0.74);
   background: rgba(32, 33, 36, 0.62);
+}
+
+.trace-score-group h4 {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(67, 70, 75, 0.74);
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+}
+
+.trace-score-group .score-grid {
+  border-bottom: none;
 }
 
 .generation-panel {

@@ -94,6 +94,13 @@ export type TraceScore = {
   metadata?: Record<string, unknown>;
 };
 
+export type TraceScoreGroupKey = "faithfulness" | "other";
+
+export type TraceScoreGroup = {
+  key: TraceScoreGroupKey;
+  scores: TraceScore[];
+};
+
 export type TraceModelSummary = {
   model: string;
   generationCount: number;
@@ -250,6 +257,34 @@ export function getTraceScores(events: TraceEvent[]): TraceScore[] {
       }
       return score;
     });
+}
+
+// Faithfulness/RAG-quality evaluators, anchored on the SDK's
+// answer_context_overlap plus the score names developers commonly use for the
+// same family. A score can also opt in via metadata.group === "faithfulness".
+const FAITHFULNESS_SCORE_NAMES = new Set(["answer_context_overlap", "faithfulness", "groundedness"]);
+
+export function getTraceScoreGroups(events: TraceEvent[]): TraceScoreGroup[] {
+  const faithfulness: TraceScore[] = [];
+  const other: TraceScore[] = [];
+  for (const score of getTraceScores(events)) {
+    (isFaithfulnessScore(score) ? faithfulness : other).push(score);
+  }
+
+  // Only return groups that have scores so the detail view never renders an
+  // empty labeled section; faithfulness stays first for a stable read order.
+  const groups: TraceScoreGroup[] = [];
+  if (faithfulness.length > 0) {
+    groups.push({ key: "faithfulness", scores: faithfulness });
+  }
+  if (other.length > 0) {
+    groups.push({ key: "other", scores: other });
+  }
+  return groups;
+}
+
+function isFaithfulnessScore(score: TraceScore): boolean {
+  return FAITHFULNESS_SCORE_NAMES.has(score.name) || score.metadata?.group === "faithfulness";
 }
 
 export function getTraceService(trace: Trace): TraceService | null {

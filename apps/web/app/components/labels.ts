@@ -2,7 +2,7 @@ import type {
   ExperimentComparisonStatus,
   ExperimentStatus,
 } from "../experiment-contract";
-import type { EventStatus, EventType, TraceFilterValues, TraceSort } from "../trace-contract";
+import type { EventStatus, EventType, TraceFilterValues, TraceScoreGroupKey, TraceSort } from "../trace-contract";
 
 export const statusLabels: Record<EventStatus | ExperimentStatus, string> = {
   success: "Success",
@@ -28,6 +28,11 @@ export const typeLabels: Record<EventType, string> = {
 export const sortLabels: Record<TraceSort, string> = {
   recent: "Recent",
   slowest: "Slowest",
+};
+
+export const scoreGroupLabels: Record<TraceScoreGroupKey, string> = {
+  faithfulness: "Faithfulness & RAG quality",
+  other: "Other scores",
 };
 
 export const DEFAULT_TRACE_FILTERS: TraceFilterValues = {
