@@ -46,18 +46,51 @@ from bir import send_events
 send_events("http://127.0.0.1:8000")
 ```
 
-Alternatively, run the server in read-only local data mode to browse
-`.bir/traces.jsonl` directly without uploading anything:
+Alternatively, browse `.bir/traces.jsonl` in the dashboard without uploading
+anything — see [Browse traces locally](#browse-traces-locally) below.
 
-```bash
-cd apps/server
-BIR_DATA_DIR=/path/to/your/project/.bir ../../.venv/bin/uvicorn app.main:app --reload
-```
+## Browse traces locally
 
-In this mode ingestion endpoints are disabled, the server picks up new trace
-events as the SDK appends them, and `run_experiment()` results under
-`.bir/experiments/` appear without a `send_experiment()` upload. See
-`apps/server/README.md` for details.
+Record traces with the SDK, then read them back in the dashboard from one server
+process — no uploading. The server reads the SDK's trace file directly and serves
+the dashboard on the same origin.
+
+1. Record traces. The SDK writes them to `.bir/traces.jsonl` in your working
+   directory by default (override with `configure(trace_path="...")`). To
+   generate a trace without writing any code, run the bundled demo from the
+   repository root — it writes to `examples/openai-demo/.bir/traces.jsonl`:
+
+   ```bash
+   cd examples/openai-demo
+   PYTHONPATH=../../packages/python-sdk/src python3 demo.py
+   ```
+
+2. Build the dashboard's static export once. This emits a static site to
+   `apps/web/out/`:
+
+   ```bash
+   cd apps/web
+   npm run build
+   ```
+
+3. Start the server pointed at the `.bir` directory that holds `traces.jsonl`,
+   serving the dashboard from the same origin. Use your project's `.bir`
+   directory, or the demo's for the trace recorded above:
+
+   ```bash
+   cd apps/server
+   BIR_DATA_DIR=../../examples/openai-demo/.bir \
+   BIR_DASHBOARD_DIR=../web/out \
+   ../../.venv/bin/uvicorn app.main:app --reload
+   ```
+
+4. Open `http://127.0.0.1:8000/` in a browser. The dashboard and the API
+   (`/health`, `/v1/*`) share one origin, so no CORS setup is needed.
+
+The server re-reads `traces.jsonl` as the SDK appends to it, and `run_experiment()`
+results under `.bir/experiments/` show up without a `send_experiment()` upload.
+Because this is read-only local data mode, ingestion and Playground endpoints
+return `403`. See `apps/server/README.md` for the full reference.
 
 ## Local MVP Loop
 

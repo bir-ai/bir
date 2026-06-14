@@ -24,6 +24,21 @@ that type), and `service`/`environment` (case-insensitive substring of the
 `metadata.service` block the SDK records from `configure(service_name=,
 environment=)`). Filters combine with AND.
 
+`limit` returns only the most recent N traces (ordered by start time, then id)
+after the filters are applied, so large local stores stay browsable. It must be
+a positive integer, and the returned traces stay sorted oldest-first:
+
+```bash
+curl 'http://127.0.0.1:8000/v1/traces?status=error&limit=20'
+```
+
+`GET /v1/traces/{trace_id}` returns a single trace by id, with its events ordered
+by start time (the trace root first), or `404` when no trace with that id exists:
+
+```bash
+curl http://127.0.0.1:8000/v1/traces/<trace-id>
+```
+
 Events are validated with Pydantic and persisted as JSONL. By default, the
 server writes to `.bir/server-events.jsonl`. Override that path with:
 
