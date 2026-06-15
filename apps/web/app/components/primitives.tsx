@@ -12,9 +12,32 @@ export function PanelHead({ title, subtitle }: { title: string; subtitle: string
   );
 }
 
-export function Metric({ label, value, tone }: { label: string; value: string; tone?: "good" | "bad" }) {
+export function Metric({
+  label,
+  value,
+  tone,
+  onClick,
+  active,
+  title,
+}: {
+  label: string;
+  value: string;
+  tone?: "good" | "bad";
+  onClick?: () => void;
+  active?: boolean;
+  title?: string;
+}) {
+  const className = `metric ${tone ?? ""}${active ? " active" : ""}`;
+  if (onClick) {
+    return (
+      <button type="button" className={`${className} metric-button`} aria-pressed={active} title={title} onClick={onClick}>
+        <span>{label}</span>
+        <strong>{value}</strong>
+      </button>
+    );
+  }
   return (
-    <div className={`metric ${tone ?? ""}`}>
+    <div className={className} title={title}>
       <span>{label}</span>
       <strong>{value}</strong>
     </div>

@@ -186,6 +186,18 @@ export function buildTraceFilterQuery(filters: TraceFilterValues): string {
   return params.toString();
 }
 
+// One-click triage helpers: keep the "errors only" status shortcut in one place
+// so the quick toggle and the failed-count chip stay in lockstep.
+export function isErrorsOnlyFilter(filters: TraceFilterValues): boolean {
+  return filters.status === "error";
+}
+
+export function toggleErrorsOnlyFilter(filters: TraceFilterValues): TraceFilterValues {
+  // Turning the shortcut off clears the status to "all" rather than restoring a
+  // previous value, so the result is predictable from the filters alone.
+  return { ...filters, status: isErrorsOnlyFilter(filters) ? "all" : "error" };
+}
+
 export function getRetrievalDetails(event: TraceEvent): RetrievalDetails | null {
   if (event.type !== "tool_call" || event.metadata.kind !== "retrieval") {
     return null;

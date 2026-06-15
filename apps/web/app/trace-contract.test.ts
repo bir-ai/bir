@@ -14,8 +14,10 @@ import {
   getTraceScores,
   getTraceService,
   getTraceTotals,
+  isErrorsOnlyFilter,
   normalizeTraces,
   summarizeTraces,
+  toggleErrorsOnlyFilter,
   type EventStatus,
   type Trace,
   type TraceEvent,
@@ -100,6 +102,29 @@ test("composes the slowest sort with existing trace filters", () => {
   const query = buildTraceFilterQuery({ status: "error", sort: "slowest", limit: 50 });
 
   assert.equal(query, "status=error&sort=slowest&limit=50");
+});
+
+test("detects the errors-only status shortcut", () => {
+  assert.equal(isErrorsOnlyFilter({ status: "error" }), true);
+  assert.equal(isErrorsOnlyFilter({ status: "all" }), false);
+  assert.equal(isErrorsOnlyFilter({ status: "success" }), false);
+  assert.equal(isErrorsOnlyFilter({}), false);
+});
+
+test("toggles the errors-only shortcut on while preserving other filters", () => {
+  assert.deepEqual(
+    toggleErrorsOnlyFilter({ status: "all", name: "answer", service: "rag-api", sort: "slowest" }),
+    { status: "error", name: "answer", service: "rag-api", sort: "slowest" },
+  );
+  // Any non-error status turns the shortcut on rather than acting as a no-op.
+  assert.deepEqual(toggleErrorsOnlyFilter({ status: "success" }), { status: "error" });
+});
+
+test("toggles the errors-only shortcut back off to all", () => {
+  assert.deepEqual(
+    toggleErrorsOnlyFilter({ status: "error", sort: "slowest" }),
+    { status: "all", sort: "slowest" },
+  );
 });
 
 test("orders normalized traces slowest first by root duration", () => {

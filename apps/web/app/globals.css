@@ -227,6 +227,64 @@ h3 {
   color: var(--red);
 }
 
+.metric-button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.metric-button:hover {
+  border-color: rgba(237, 73, 50, 0.6);
+}
+
+.metric.active {
+  border-color: rgba(237, 73, 50, 0.85);
+  background: rgba(237, 73, 50, 0.12);
+}
+
+.trace-triage {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 18px;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(39, 40, 43, 0.92);
+  box-shadow: 0 12px 28px var(--shadow);
+}
+
+.trace-triage .filter-segments {
+  grid-auto-flow: column;
+  grid-template-columns: none;
+  grid-auto-columns: minmax(92px, 1fr);
+}
+
+.triage-toggle {
+  min-height: 34px;
+  padding: 0 16px;
+  border: 1px solid rgba(67, 70, 75, 0.86);
+  border-radius: 8px;
+  background: rgb(45, 47, 51);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.triage-toggle:hover,
+.triage-toggle.active {
+  border-color: rgba(237, 73, 50, 0.72);
+  background: rgba(237, 73, 50, 0.18);
+  color: var(--red);
+}
+
 .model-breakdown {
   position: relative;
   z-index: 1;

@@ -4,14 +4,17 @@ import {
   getTraceScoreGroups,
   getTraceService,
   getTraceTotals,
+  isErrorsOnlyFilter,
+  toggleErrorsOnlyFilter,
   type Trace,
   type TraceFilterValues,
   type TraceModelSummary,
+  type TraceSort,
   type TraceSummary,
   type TraceTimelineRow,
 } from "../trace-contract";
 import { formatDate, formatDuration, formatMilliseconds, formatNumber } from "./format";
-import { statusLabels } from "./labels";
+import { sortLabels, statusLabels } from "./labels";
 import { Fact, Metric } from "./primitives";
 import { TraceScorePanel } from "./trace-detail-panels";
 import { TraceList } from "./trace-list";
@@ -55,6 +58,7 @@ export function TraceDashboard({
   const totalCostLabel = stats.currency
     ? `${formatNumber(stats.totalCost)} ${stats.currency}`
     : formatNumber(stats.totalCost);
+  const errorsOnly = isErrorsOnlyFilter(filters);
 
   return (
     <>
@@ -62,12 +66,21 @@ export function TraceDashboard({
         <Metric label="Traces" value={stats.traceCount.toString()} />
         <Metric label="Events" value={stats.eventCount.toString()} />
         <Metric label="Generations" value={stats.generationCount.toString()} />
-        <Metric label="Errors" value={stats.errorCount.toString()} tone={stats.errorCount > 0 ? "bad" : "good"} />
+        <Metric
+          label="Errors"
+          value={stats.errorCount.toString()}
+          tone={stats.errorCount > 0 ? "bad" : "good"}
+          active={errorsOnly}
+          title={errorsOnly ? "Showing errors only — click to clear" : "Show errors only"}
+          onClick={() => setTraceFilters(toggleErrorsOnlyFilter(filters))}
+        />
         <Metric label="Total tokens" value={formatNumber(stats.totalTokens)} />
         <Metric label="Total cost" value={totalCostLabel} />
         <Metric label="p50 latency" value={formatMilliseconds(stats.p50LatencyMs)} />
         <Metric label="p95 latency" value={formatMilliseconds(stats.p95LatencyMs)} />
       </section>
+
+      <TraceTriageBar errorsOnly={errorsOnly} filters={filters} setTraceFilters={setTraceFilters} />
 
       {stats.models.length > 0 ? <ModelBreakdown models={stats.models} currency={stats.currency} /> : null}
 
@@ -117,6 +130,53 @@ export function TraceDashboard({
         </section>
       </section>
     </>
+  );
+}
+
+// Prominent, one-click triage row: an "Errors only" status shortcut plus the
+// Recent/Slowest sort toggle, both bound to the shared trace filter state.
+function TraceTriageBar({
+  errorsOnly,
+  filters,
+  setTraceFilters,
+}: {
+  errorsOnly: boolean;
+  filters: TraceFilterValues;
+  setTraceFilters: (filters: TraceFilterValues) => void;
+}) {
+  const sort = filters.sort ?? "recent";
+
+  return (
+    <section className="trace-triage" aria-label="Trace triage">
+      <div className="filter-group">
+        <span>Triage</span>
+        <button
+          aria-pressed={errorsOnly}
+          className={errorsOnly ? "triage-toggle active" : "triage-toggle"}
+          type="button"
+          onClick={() => setTraceFilters(toggleErrorsOnlyFilter(filters))}
+        >
+          Errors only
+        </button>
+      </div>
+
+      <div className="filter-group">
+        <span>Order</span>
+        <div className="filter-segments" role="group" aria-label="Trace order">
+          {(["recent", "slowest"] as const satisfies readonly TraceSort[]).map((nextSort) => (
+            <button
+              aria-pressed={sort === nextSort}
+              className={sort === nextSort ? "active" : ""}
+              key={nextSort}
+              type="button"
+              onClick={() => setTraceFilters({ ...filters, sort: nextSort })}
+            >
+              {sortLabels[nextSort]}
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 

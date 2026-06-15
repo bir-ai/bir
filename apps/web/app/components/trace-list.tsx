@@ -6,10 +6,9 @@ import {
   type Trace,
   type TraceFilterValues,
   type TraceService,
-  type TraceSort,
 } from "../trace-contract";
 import { formatDuration } from "./format";
-import { DEFAULT_TRACE_FILTERS, sortLabels, statusLabels, typeLabels } from "./labels";
+import { DEFAULT_TRACE_FILTERS, statusLabels, typeLabels } from "./labels";
 import { PanelHead, TraceSkeleton } from "./primitives";
 
 export function TraceList({
@@ -88,7 +87,6 @@ function TraceFilterControls({
   const name = filters.name ?? "";
   const service = filters.service ?? "";
   const environment = filters.environment ?? "";
-  const sort = filters.sort ?? "recent";
   const hasActiveFilters = buildTraceFilterQuery(filters).length > 0;
 
   return (
@@ -105,23 +103,6 @@ function TraceFilterControls({
               onClick={() => setTraceFilters({ ...filters, status: nextStatus })}
             >
               {nextStatus === "all" ? "All" : statusLabels[nextStatus]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="filter-group">
-        <span>Order</span>
-        <div className="filter-segments" role="group" aria-label="Trace order">
-          {(["recent", "slowest"] as const satisfies readonly TraceSort[]).map((nextSort) => (
-            <button
-              aria-pressed={sort === nextSort}
-              className={sort === nextSort ? "active" : ""}
-              key={nextSort}
-              type="button"
-              onClick={() => setTraceFilters({ ...filters, sort: nextSort })}
-            >
-              {sortLabels[nextSort]}
             </button>
           ))}
         </div>
