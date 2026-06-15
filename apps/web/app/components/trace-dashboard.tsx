@@ -190,18 +190,27 @@ function ModelBreakdown({ models, currency }: { models: TraceModelSummary[]; cur
             <th scope="col">Model</th>
             <th scope="col">Generations</th>
             <th scope="col">Tokens</th>
+            <th scope="col">Input</th>
+            <th scope="col">Output</th>
             <th scope="col">Cost</th>
           </tr>
         </thead>
         <tbody>
-          {models.map((model) => (
-            <tr key={model.model}>
-              <td>{model.model}</td>
-              <td>{formatNumber(model.generationCount)}</td>
-              <td>{formatNumber(model.totalTokens)}</td>
-              <td>{currency ? `${formatNumber(model.totalCost)} ${currency}` : formatNumber(model.totalCost)}</td>
-            </tr>
-          ))}
+          {models.map((model) => {
+            // Models whose generations report only total_tokens have no known
+            // split; show a dash rather than a misleading zero in that case.
+            const hasTokenSplit = model.inputTokens + model.outputTokens > 0;
+            return (
+              <tr key={model.model}>
+                <td>{model.model}</td>
+                <td>{formatNumber(model.generationCount)}</td>
+                <td>{formatNumber(model.totalTokens)}</td>
+                <td>{hasTokenSplit ? formatNumber(model.inputTokens) : "-"}</td>
+                <td>{hasTokenSplit ? formatNumber(model.outputTokens) : "-"}</td>
+                <td>{currency ? `${formatNumber(model.totalCost)} ${currency}` : formatNumber(model.totalCost)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </section>

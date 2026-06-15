@@ -105,6 +105,11 @@ export type TraceModelSummary = {
   model: string;
   generationCount: number;
   totalTokens: number;
+  // Reported input/output split. Generations that send only total_tokens leave
+  // these at 0 rather than inferring a breakdown, so the two need not sum to
+  // totalTokens.
+  inputTokens: number;
+  outputTokens: number;
   totalCost: number;
 };
 
@@ -372,6 +377,7 @@ export function summarizeTraces(traces: Trace[]): TraceSummary {
       }
       generationCount += 1;
       const tokens = generationTokens(event.usage);
+      const { inputTokens, outputTokens } = generationTokenSplit(event.usage);
       totalTokens += tokens;
       const cost = generationCost(event.cost);
       if (cost !== null) {
@@ -388,10 +394,14 @@ export function summarizeTraces(traces: Trace[]): TraceSummary {
         model: modelKey,
         generationCount: 0,
         totalTokens: 0,
+        inputTokens: 0,
+        outputTokens: 0,
         totalCost: 0,
       };
       bucket.generationCount += 1;
       bucket.totalTokens += tokens;
+      bucket.inputTokens += inputTokens;
+      bucket.outputTokens += outputTokens;
       bucket.totalCost += cost ?? 0;
       modelSummaries.set(modelKey, bucket);
     }
@@ -491,6 +501,19 @@ function generationTokens(usage: Record<string, number> | null | undefined): num
   const inputTokens = typeof usage.input_tokens === "number" ? usage.input_tokens : 0;
   const outputTokens = typeof usage.output_tokens === "number" ? usage.output_tokens : 0;
   return inputTokens + outputTokens;
+}
+
+// Reported input/output token split. Unlike generationTokens this never derives
+// a value: a generation that sends only total_tokens has an unknown split, so
+// both sides stay 0 instead of guessing a breakdown from the total.
+function generationTokenSplit(usage: Record<string, number> | null | undefined): {
+  inputTokens: number;
+  outputTokens: number;
+} {
+  return {
+    inputTokens: usage && typeof usage.input_tokens === "number" ? usage.input_tokens : 0,
+    outputTokens: usage && typeof usage.output_tokens === "number" ? usage.output_tokens : 0,
+  };
 }
 
 function generationCost(cost: Record<string, number> | null | undefined): number | null {

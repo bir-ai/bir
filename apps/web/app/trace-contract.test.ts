@@ -651,11 +651,18 @@ test("groups generation tokens and cost by model ordered by generation count", (
   assert.equal(first.model, "gpt-4o-mini");
   assert.equal(first.generationCount, 2);
   assert.equal(first.totalTokens, 180);
+  // Both gpt-4o-mini generations report the split, so it sums field by field.
+  assert.equal(first.inputTokens, 150);
+  assert.equal(first.outputTokens, 30);
   assert.ok(Math.abs(first.totalCost - 0.001) < 1e-9);
 
   assert.equal(second.model, "claude-3-5-sonnet");
   assert.equal(second.generationCount, 1);
   assert.equal(second.totalTokens, 240);
+  // claude-3-5-sonnet reports only total_tokens, so the split stays unknown (0/0)
+  // rather than being derived from the 240-token total.
+  assert.equal(second.inputTokens, 0);
+  assert.equal(second.outputTokens, 0);
   assert.ok(Math.abs(second.totalCost - 0.003) < 1e-9);
 });
 
@@ -681,7 +688,7 @@ test("buckets generations without a model under unknown and breaks count ties by
   );
   assert.deepEqual(
     summary.models.find((entry) => entry.model === "unknown"),
-    { model: "unknown", generationCount: 1, totalTokens: 5, totalCost: 0 },
+    { model: "unknown", generationCount: 1, totalTokens: 5, inputTokens: 0, outputTokens: 0, totalCost: 0 },
   );
 });
 
