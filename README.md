@@ -264,6 +264,49 @@ The handler records LLM/chat callbacks as generation events and retrieve
 callbacks as retrieval tool calls without adding LlamaIndex as an SDK
 dependency. Other LlamaIndex event types are ignored for now.
 
+## OpenAI
+
+Wrap an OpenAI chat completion call to record it as a generation, without adding
+`openai` as an SDK dependency:
+
+```python
+from openai import OpenAI
+
+from bir import observe
+from bir.integrations.openai import trace_chat_completion
+
+
+@observe()
+def answer_question(question: str) -> str:
+    client = OpenAI()
+    response = trace_chat_completion(
+        client.chat.completions.create,
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": question}],
+    )
+    return response.choices[0].message.content
+```
+
+Streaming calls keep the generation open until the stream is consumed:
+
+```python
+from bir import trace
+
+with trace("chat"):
+    stream = trace_chat_completion(
+        client.chat.completions.create,
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "Stream an answer"}],
+        stream=True,
+        stream_options={"include_usage": True},
+    )
+    for chunk in stream:
+        print(chunk.choices[0].delta.content or "", end="")
+```
+
+The streaming output is the concatenated assistant text deltas. Usage is recorded
+when OpenAI includes it on the final chunk.
+
 ## Anthropic
 
 Wrap an Anthropic Messages call to record it as a generation, without adding
