@@ -9,6 +9,7 @@ import {
   type Trace,
   type TraceFilterValues,
   type TraceModelSummary,
+  type TraceProviderSummary,
   type TraceSort,
   type TraceSummary,
   type TraceTimelineRow,
@@ -83,6 +84,8 @@ export function TraceDashboard({
       <TraceTriageBar errorsOnly={errorsOnly} filters={filters} setTraceFilters={setTraceFilters} />
 
       {stats.models.length > 0 ? <ModelBreakdown models={stats.models} currency={stats.currency} /> : null}
+
+      {stats.providers.length > 0 ? <ProviderBreakdown providers={stats.providers} currency={stats.currency} /> : null}
 
       <section className="workspace">
         <TraceList
@@ -208,6 +211,55 @@ function ModelBreakdown({ models, currency }: { models: TraceModelSummary[]; cur
                 <td>{hasTokenSplit ? formatNumber(model.inputTokens) : "-"}</td>
                 <td>{hasTokenSplit ? formatNumber(model.outputTokens) : "-"}</td>
                 <td>{currency ? `${formatNumber(model.totalCost)} ${currency}` : formatNumber(model.totalCost)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+// Same shape as ModelBreakdown, bucketed by provider instead of model; it reuses
+// the model-breakdown/model-table styles so the two summaries read identically.
+function ProviderBreakdown({
+  providers,
+  currency,
+}: {
+  providers: TraceProviderSummary[];
+  currency: string | null;
+}) {
+  return (
+    <section className="model-breakdown" aria-label="Provider breakdown">
+      <h3>Provider breakdown</h3>
+      <table className="model-table">
+        <thead>
+          <tr>
+            <th scope="col">Provider</th>
+            <th scope="col">Generations</th>
+            <th scope="col">Tokens</th>
+            <th scope="col">Input</th>
+            <th scope="col">Output</th>
+            <th scope="col">Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          {providers.map((provider) => {
+            // Providers whose generations report only total_tokens have no known
+            // split; show a dash rather than a misleading zero in that case.
+            const hasTokenSplit = provider.inputTokens + provider.outputTokens > 0;
+            return (
+              <tr key={provider.provider}>
+                <td>{provider.provider}</td>
+                <td>{formatNumber(provider.generationCount)}</td>
+                <td>{formatNumber(provider.totalTokens)}</td>
+                <td>{hasTokenSplit ? formatNumber(provider.inputTokens) : "-"}</td>
+                <td>{hasTokenSplit ? formatNumber(provider.outputTokens) : "-"}</td>
+                <td>
+                  {currency
+                    ? `${formatNumber(provider.totalCost)} ${currency}`
+                    : formatNumber(provider.totalCost)}
+                </td>
               </tr>
             );
           })}

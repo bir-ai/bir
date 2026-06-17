@@ -134,9 +134,9 @@ The current implementation has moved beyond the first foundation commits:
 
 The next work should build on this contract instead of replacing it. With prompt
 display, experiment comparison, faithfulness scoring, trace filtering, trace
-summaries, recency-ordered trace queries with a result limit, and a model
-breakdown already shipped, the highest-confidence remaining slices are a provider
-breakdown and a dedicated slow/failed-trace view.
+summaries, recency-ordered trace queries with a result limit, and model and
+provider breakdowns already shipped, the highest-confidence remaining slice is a
+dedicated slow/failed-trace view.
 
 ## Stage 1: Python SDK Release Candidate Hygiene
 
@@ -672,10 +672,10 @@ Status: in progress. `configure()` records `service_name` and `environment`
 under `metadata.service`. The server and dashboard now filter traces by root
 status, root name, contained event type, service, and environment; traces can be
 ordered slowest-first for triage; and the dashboard trace summary shows error
-counts, p50/p95 latency, total tokens, total cost, and a model breakdown. Opt-in
-trace sampling is available through `configure(sample_rate=...)`. Remaining work
-is a provider breakdown, a dedicated slow-trace view beyond the slowest sort, and
-failed trace views beyond the status filter.
+counts, p50/p95 latency, total tokens, total cost, and model and provider
+breakdowns. Opt-in trace sampling is available through `configure(sample_rate=...)`.
+Remaining work is a dedicated slow-trace view beyond the slowest sort, and failed
+trace views beyond the status filter.
 
 Goal: make local traces useful for production debugging without adding enterprise
 management features.
@@ -691,7 +691,8 @@ Deliverables:
 - latency summaries: implemented as dashboard p50/p95 latency
 - token and cost totals: implemented in the dashboard trace summary
 - model breakdown: implemented in the dashboard trace summary
-- provider breakdown: not yet
+- provider breakdown: implemented in the dashboard trace summary, derived from
+  generation `metadata.provider` or the generation name prefix
 - slow traces view: partial through the `sort=slowest` ordering on the server
   and a Recent/Slowest toggle in the dashboard; a dedicated view is still open
 - failed traces view: covered by the `status=error` filter
@@ -715,7 +716,7 @@ Suggested commits:
 3. Add dashboard trace filters: implemented.
 4. Add latency and error summaries: implemented.
 5. Add a model breakdown to the trace summary: implemented; a provider breakdown
-   is still open.
+   is also implemented.
 6. Add sampling configuration: implemented.
 
 Codex task brief:
@@ -739,15 +740,13 @@ Already delivered:
   and cost totals)
 - `/v1/traces` recency ordering, an optional result limit, and slowest-first
   ordering for triage
-- a model breakdown on the dashboard trace summary
+- model and provider breakdowns on the dashboard trace summary
 
 Remaining order:
 
-1. Add a provider breakdown to the trace summary (the model breakdown already
-   shipped)
-2. Add a dedicated slow/failed-trace view beyond the existing slowest sort and
+1. Add a dedicated slow/failed-trace view beyond the existing slowest sort and
    `status=error` filter
-3. Add SQLite storage, only when JSONL becomes limiting
+2. Add SQLite storage, only when JSONL becomes limiting
 
 ## First Ten Minimal Commits
 
@@ -771,8 +770,8 @@ Delivered since the first ten:
 - `/v1/traces` recency ordering with an optional `limit` query parameter (server
   `storage.py` and `main.py` plus the web client), so large local stores stay
   fast to browse
-- a model breakdown on the dashboard trace summary, built on the existing
-  `summarizeTraces` aggregation
+- model and provider breakdowns on the dashboard trace summary, built on the
+  existing `summarizeTraces` aggregation
 
 Next minimal commits:
 

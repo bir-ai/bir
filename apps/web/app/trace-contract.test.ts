@@ -565,6 +565,7 @@ test("returns a zeroed summary for an empty trace list", () => {
     p50LatencyMs: 0,
     p95LatencyMs: 0,
     models: [],
+    providers: [],
   });
 });
 
@@ -690,6 +691,111 @@ test("buckets generations without a model under unknown and breaks count ties by
     summary.models.find((entry) => entry.model === "unknown"),
     { model: "unknown", generationCount: 1, totalTokens: 5, inputTokens: 0, outputTokens: 0, totalCost: 0 },
   );
+});
+
+test("groups generation tokens and cost by provider ordered by generation count", () => {
+  const traces = [
+    summarizableTrace({
+      id: "trace-providers",
+      generations: [
+        generationEvent({
+          id: "gen-p1",
+          // metadata.provider wins over the default "playground.llm" name prefix.
+          metadata: { provider: "openai" },
+          usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120 },
+          cost: { total_cost: 0.0006 },
+          currency: "USD",
+        }),
+        generationEvent({
+          id: "gen-p2",
+          metadata: { provider: "openai" },
+          // No total_tokens, so the helper falls back to input + output tokens.
+          usage: { input_tokens: 50, output_tokens: 10 },
+          cost: { total_cost: 0.0004 },
+          currency: "USD",
+        }),
+        generationEvent({
+          id: "gen-p3",
+          metadata: { provider: "anthropic" },
+          usage: { total_tokens: 240 },
+          cost: { total_cost: 0.003 },
+          currency: "USD",
+        }),
+      ],
+    }),
+  ];
+
+  const summary = summarizeTraces(traces);
+
+  // openai has two generations, so it sorts ahead of the single-call provider.
+  assert.equal(summary.providers.length, 2);
+  const [first, second] = summary.providers;
+
+  assert.equal(first.provider, "openai");
+  assert.equal(first.generationCount, 2);
+  assert.equal(first.totalTokens, 180);
+  // Both openai generations report the split, so it sums field by field.
+  assert.equal(first.inputTokens, 150);
+  assert.equal(first.outputTokens, 30);
+  assert.ok(Math.abs(first.totalCost - 0.001) < 1e-9);
+
+  assert.equal(second.provider, "anthropic");
+  assert.equal(second.generationCount, 1);
+  assert.equal(second.totalTokens, 240);
+  // anthropic reports only total_tokens, so the split stays unknown (0/0) rather
+  // than being derived from the 240-token total.
+  assert.equal(second.inputTokens, 0);
+  assert.equal(second.outputTokens, 0);
+  assert.ok(Math.abs(second.totalCost - 0.003) < 1e-9);
+});
+
+test("derives the provider from the generation name and breaks count ties by provider name", () => {
+  const traces = [
+    summarizableTrace({
+      id: "trace-provider-names",
+      generations: [
+        // Dotted names derive the provider from the namespace prefix.
+        generationEvent({ id: "gen-openai", name: "openai.chat.completions", usage: { total_tokens: 10 } }),
+        // No provider metadata and a dotless name, so this collapses into "unknown".
+        generationEvent({ id: "gen-bare", name: "generate", usage: { total_tokens: 5 } }),
+        generationEvent({ id: "gen-anthropic", name: "anthropic.messages", usage: { total_tokens: 7 } }),
+      ],
+    }),
+  ];
+
+  const summary = summarizeTraces(traces);
+
+  // Each provider has one generation, so the tie breaks on provider name ascending.
+  assert.deepEqual(
+    summary.providers.map((entry) => entry.provider),
+    ["anthropic", "openai", "unknown"],
+  );
+  assert.deepEqual(
+    summary.providers.find((entry) => entry.provider === "unknown"),
+    { provider: "unknown", generationCount: 1, totalTokens: 5, inputTokens: 0, outputTokens: 0, totalCost: 0 },
+  );
+});
+
+test("prefers metadata.provider over the generation name prefix", () => {
+  const traces = [
+    summarizableTrace({
+      id: "trace-provider-override",
+      generations: [
+        generationEvent({
+          id: "gen-override",
+          // The name would derive "openai", but the explicit provider wins.
+          name: "openai.chat.completions",
+          metadata: { provider: "azure-openai" },
+          usage: { total_tokens: 100 },
+        }),
+      ],
+    }),
+  ];
+
+  const summary = summarizeTraces(traces);
+
+  assert.equal(summary.providers.length, 1);
+  assert.equal(summary.providers[0].provider, "azure-openai");
 });
 
 test("totals a trace's generation tokens and cost", () => {

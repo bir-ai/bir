@@ -113,6 +113,17 @@ export type TraceModelSummary = {
   totalCost: number;
 };
 
+export type TraceProviderSummary = {
+  provider: string;
+  generationCount: number;
+  totalTokens: number;
+  // Same reported-only input/output split as TraceModelSummary: generations that
+  // send just total_tokens leave these at 0 instead of inferring a breakdown.
+  inputTokens: number;
+  outputTokens: number;
+  totalCost: number;
+};
+
 export type TraceSummary = {
   traceCount: number;
   eventCount: number;
@@ -124,6 +135,7 @@ export type TraceSummary = {
   p50LatencyMs: number;
   p95LatencyMs: number;
   models: TraceModelSummary[];
+  providers: TraceProviderSummary[];
 };
 
 export type TraceTotals = {
@@ -359,6 +371,7 @@ export function summarizeTraces(traces: Trace[]): TraceSummary {
   const costCurrencies = new Set<string>();
   const durationsMs: number[] = [];
   const modelSummaries = new Map<string, TraceModelSummary>();
+  const providerSummaries = new Map<string, TraceProviderSummary>();
 
   for (const trace of traces) {
     eventCount += trace.events.length;
@@ -404,6 +417,24 @@ export function summarizeTraces(traces: Trace[]): TraceSummary {
       bucket.outputTokens += outputTokens;
       bucket.totalCost += cost ?? 0;
       modelSummaries.set(modelKey, bucket);
+
+      // Bucket the same generation by provider, derived from metadata or the
+      // generation name; generations without either collapse into "unknown".
+      const providerKey = deriveProvider(event);
+      const providerBucket = providerSummaries.get(providerKey) ?? {
+        provider: providerKey,
+        generationCount: 0,
+        totalTokens: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        totalCost: 0,
+      };
+      providerBucket.generationCount += 1;
+      providerBucket.totalTokens += tokens;
+      providerBucket.inputTokens += inputTokens;
+      providerBucket.outputTokens += outputTokens;
+      providerBucket.totalCost += cost ?? 0;
+      providerSummaries.set(providerKey, providerBucket);
     }
   }
 
@@ -411,6 +442,10 @@ export function summarizeTraces(traces: Trace[]): TraceSummary {
 
   const models = [...modelSummaries.values()].sort(
     (first, second) => second.generationCount - first.generationCount || first.model.localeCompare(second.model),
+  );
+
+  const providers = [...providerSummaries.values()].sort(
+    (first, second) => second.generationCount - first.generationCount || first.provider.localeCompare(second.provider),
   );
 
   return {
@@ -424,6 +459,7 @@ export function summarizeTraces(traces: Trace[]): TraceSummary {
     p50LatencyMs: percentile(durationsMs, 50),
     p95LatencyMs: percentile(durationsMs, 95),
     models,
+    providers,
   };
 }
 
@@ -521,6 +557,23 @@ function generationCost(cost: Record<string, number> | null | undefined): number
     return null;
   }
   return cost.total_cost;
+}
+
+// Provider attribution for a generation: an explicit non-empty metadata.provider
+// wins, otherwise fall back to the namespace prefix of a dotted generation name
+// such as "openai.chat.completions" -> "openai" or "local.llm" -> "local". Names
+// without a namespace prefix have no derivable provider and collapse into
+// "unknown".
+function deriveProvider(event: TraceEvent): string {
+  const provider = event.metadata.provider;
+  if (typeof provider === "string" && provider.length > 0) {
+    return provider;
+  }
+  const dotIndex = event.name.indexOf(".");
+  if (dotIndex > 0) {
+    return event.name.slice(0, dotIndex);
+  }
+  return "unknown";
 }
 
 // Nearest-rank percentile over an ascending list, so reported values are always
