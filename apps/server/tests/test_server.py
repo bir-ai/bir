@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -9,8 +8,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[3]
-SDK_SRC = ROOT / "packages" / "python-sdk" / "src"
-sys.path.insert(0, str(SDK_SRC))
+# bir is installed as a published package (declared in apps/server dev
+# dependencies); the SDK source lives in the separate bir repository.
 CONTRACT_EVENTS_PATH = ROOT / "tests" / "fixtures" / "valid-events.jsonl"
 CONTRACT_SCHEMA_PATH = ROOT / "tests" / "fixtures" / "event-schema-v1.json"
 

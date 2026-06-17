@@ -1,0 +1,11 @@
+{
+  "include": [
+    "apps/server/app",
+    "apps/server/tests"
+  ],
+  "extraPaths": [
+    "apps/server"
+  ],
+  "venvPath": ".",
+  "venv": ".venv"
+}
