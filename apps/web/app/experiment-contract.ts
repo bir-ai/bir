@@ -82,6 +82,14 @@ export function normalizeExperiment(value: unknown): LoadedExperiment | null {
   return value;
 }
 
+// One-click triage for the experiment detail view: narrow the rendered example
+// rows down to failed runs (status "error") so a failing experiment is easy to
+// scan, mirroring the trace list's errors-only shortcut. The input order is
+// preserved, so the filtered view matches the order of the full list.
+export function filterFailedResults(results: ExperimentExampleResult[]): ExperimentExampleResult[] {
+  return results.filter((result) => result.status === "error");
+}
+
 export function compareExperiments(baseline: LoadedExperiment, candidate: LoadedExperiment): ExperimentComparison {
   const rows = buildComparisonRows(baseline.results, candidate.results).sort(compareRows);
   const counts = emptyComparisonCounts();

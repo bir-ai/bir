@@ -18,7 +18,9 @@
     "app/playground-history.ts",
     "app/playground-history.test.ts",
     "app/trace-contract.ts",
-    "app/trace-contract.test.ts"
+    "app/trace-contract.test.ts",
+    "app/experiment-contract.ts",
+    "app/experiment-contract.test.ts"
   ],
   "exclude": ["node_modules", ".test-build"]
 }

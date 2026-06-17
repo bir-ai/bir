@@ -1,10 +1,13 @@
 "use client";
 
-import type {
-  ExperimentComparison,
-  ExperimentExampleResult,
-  ExperimentSummary,
-  LoadedExperiment,
+import { useState } from "react";
+
+import {
+  filterFailedResults,
+  type ExperimentComparison,
+  type ExperimentExampleResult,
+  type ExperimentSummary,
+  type LoadedExperiment,
 } from "../experiment-contract";
 import { formatDate, formatDuration, formatNumber } from "./format";
 import { statusLabels } from "./labels";
@@ -84,22 +87,12 @@ export function ExperimentDetailPanel({
 
             {isDetailLoading && !selectedExperiment ? <TraceSkeleton /> : null}
             {selectedExperiment ? (
-              <div className="experiment-results">
-                {selectedExperiment.results.map((result) => {
-                  const traceId = result.trace_id ?? null;
-                  const isLinkedTraceMissing = traceId !== null && missingLinkedTraceId === traceId && !isTraceLoading;
-
-                  return (
-                    <ExperimentResultRow
-                      hasLinkedTrace={traceId !== null}
-                      isLinkedTraceMissing={isLinkedTraceMissing}
-                      onOpenTrace={onOpenTrace}
-                      result={result}
-                      key={result.id}
-                    />
-                  );
-                })}
-              </div>
+              <ExperimentResultList
+                isTraceLoading={isTraceLoading}
+                missingLinkedTraceId={missingLinkedTraceId}
+                onOpenTrace={onOpenTrace}
+                results={selectedExperiment.results}
+              />
             ) : !isDetailLoading ? (
               <div className="empty-detail">No experiment detail loaded.</div>
             ) : null}
@@ -109,6 +102,66 @@ export function ExperimentDetailPanel({
         <div className="empty-detail">No experiment selected.</div>
       )}
     </section>
+  );
+}
+
+// Per-example result list with a one-click "Failed only" triage toggle that
+// mirrors the trace list's "Errors only" shortcut. Filtering runs through the
+// pure filterFailedResults helper so the rule stays unit-testable; when the
+// toggle is on and nothing failed we show a small empty state instead of an
+// empty list.
+function ExperimentResultList({
+  isTraceLoading,
+  missingLinkedTraceId,
+  onOpenTrace,
+  results,
+}: {
+  isTraceLoading: boolean;
+  missingLinkedTraceId: string | null;
+  onOpenTrace: (traceId: string) => void;
+  results: ExperimentExampleResult[];
+}) {
+  const [failedOnly, setFailedOnly] = useState(false);
+  const visibleResults = failedOnly ? filterFailedResults(results) : results;
+
+  return (
+    <>
+      <section className="trace-triage" aria-label="Experiment triage">
+        <div className="filter-group">
+          <span>Triage</span>
+          <button
+            aria-pressed={failedOnly}
+            className={failedOnly ? "triage-toggle active" : "triage-toggle"}
+            title={failedOnly ? "Showing failed examples only — click to clear" : "Show failed examples only"}
+            type="button"
+            onClick={() => setFailedOnly((previous) => !previous)}
+          >
+            Failed only
+          </button>
+        </div>
+      </section>
+
+      {failedOnly && visibleResults.length === 0 ? (
+        <div className="empty-detail">No failed examples.</div>
+      ) : (
+        <div className="experiment-results">
+          {visibleResults.map((result) => {
+            const traceId = result.trace_id ?? null;
+            const isLinkedTraceMissing = traceId !== null && missingLinkedTraceId === traceId && !isTraceLoading;
+
+            return (
+              <ExperimentResultRow
+                hasLinkedTrace={traceId !== null}
+                isLinkedTraceMissing={isLinkedTraceMissing}
+                onOpenTrace={onOpenTrace}
+                result={result}
+                key={result.id}
+              />
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }
 
