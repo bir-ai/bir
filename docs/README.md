@@ -425,3 +425,21 @@ debuggable = custom_evaluator(
 
 Custom evaluators may return `bool`, `int`, `float`, or `EvalResult`. Exceptions
 from custom evaluator functions surface normally during development.
+
+Use `retrieved_context_contains()` to check retrieval quality without an LLM
+judge:
+
+```python
+from bir.evals import retrieved_context_contains
+
+evaluators = [
+    retrieved_context_contains("observability"),
+]
+```
+
+`retrieved_context_contains()` reads the `contexts` list from a structured RAG
+output such as `{"answer": "...", "contexts": ["doc text", ...]}` and scores
+`1.0` when `expected` appears in one of the retrieved strings. Missing or empty
+`contexts` produce a `0.0` score with failure metadata instead of failing the
+experiment. Pass `case_sensitive=False` for case-insensitive matching. This is a
+deterministic retrieval check, not proof that the answer used the context.
