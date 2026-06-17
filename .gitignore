@@ -31,3 +31,6 @@ pnpm-debug.log*
 .env
 .env.*
 .DS_Store
+
+# Local agent guidance (kept out of the repo)
+AGENTS.md

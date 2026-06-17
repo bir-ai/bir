@@ -8,93 +8,37 @@
 
 LLM Evaluation, Tracing & Observability Platform
 
-Bir is an early-stage toolkit for tracing and evaluating LLM applications.
+This repository is the **Bir product**: a FastAPI ingestion server and a Next.js
+dashboard for inspecting traces, experiments, and Playground runs.
 
-Current focus:
+> **The Python SDK lives in its own repository** and is published to PyPI as
+> [`bir-sdk`](https://pypi.org/project/bir-sdk/) (the import name stays `bir`).
+> Instrument your app with the SDK, then point it at the server in this repo to
+> explore the results in the dashboard.
 
-- Python SDK
-- Local trace storage
-- Trace, span, generation, retrieval, tool call, and score recording
-- Safe opt-in input/output capture
-- Local datasets and deterministic experiment runs
-- FastAPI ingestion and a minimal local dashboard for traces, experiments, and
-  observed prompt playground runs
-- Dependency-free LangChain callback tracing
+## What's in this repo
 
-## Python SDK
-
-```python
-from bir import observe, retrieval, score, span
-
-@observe()
-def answer_question(question: str) -> str:
-    with span("retrieve_context"):
-        with retrieval("search_docs", query=question) as result:
-            result.add_document(id="doc-1", text="local context")
-            context = "local context"
-
-    score("helpfulness", 0.82)
-    return f"{context}: {question}"
+```text
+apps/
+  server/   # FastAPI ingestion API + Playground proxy — see apps/server/README.md
+  web/      # Next.js dashboard — see apps/web/README.md
+docs/       # Design notes and implementation roadmap
 ```
 
-Traces are written locally to `.bir/traces.jsonl`. Run the FastAPI server and
-send local events when you want to inspect them through the ingestion API:
+The SDK surface — `@observe`, spans, generations, scores, datasets, experiments,
+and the LangChain / LlamaIndex / OpenAI / Anthropic / Gemini / LiteLLM
+integrations — is **not** in this repo. See the separate
+[`bir-sdk`](https://pypi.org/project/bir-sdk/) package.
 
-```python
-from bir import send_events
+## Requirements
 
-send_events("http://127.0.0.1:8000")
-```
+- Python 3.10+
+- Node.js 22+
 
-Alternatively, browse `.bir/traces.jsonl` in the dashboard without uploading
-anything — see [Browse traces locally](#browse-traces-locally) below.
+## Run the server and dashboard locally
 
-## Browse traces locally
-
-Record traces with the SDK, then read them back in the dashboard from one server
-process — no uploading. The server reads the SDK's trace file directly and serves
-the dashboard on the same origin.
-
-1. Record traces. The SDK writes them to `.bir/traces.jsonl` in your working
-   directory by default (override with `configure(trace_path="...")`). To
-   generate a trace without writing any code, run the bundled demo from the
-   repository root — it writes to `examples/openai-demo/.bir/traces.jsonl`:
-
-   ```bash
-   cd examples/openai-demo
-   PYTHONPATH=../../packages/python-sdk/src python3 demo.py
-   ```
-
-2. Build the dashboard's static export once. This emits a static site to
-   `apps/web/out/`:
-
-   ```bash
-   cd apps/web
-   npm run build
-   ```
-
-3. Start the server pointed at the `.bir` directory that holds `traces.jsonl`,
-   serving the dashboard from the same origin. Use your project's `.bir`
-   directory, or the demo's for the trace recorded above:
-
-   ```bash
-   cd apps/server
-   BIR_DATA_DIR=../../examples/openai-demo/.bir \
-   BIR_DASHBOARD_DIR=../web/out \
-   ../../.venv/bin/uvicorn app.main:app --reload
-   ```
-
-4. Open `http://127.0.0.1:8000/` in a browser. The dashboard and the API
-   (`/health`, `/v1/*`) share one origin, so no CORS setup is needed.
-
-The server re-reads `traces.jsonl` as the SDK appends to it, and `run_experiment()`
-results under `.bir/experiments/` show up without a `send_experiment()` upload.
-Because this is read-only local data mode, ingestion and Playground endpoints
-return `403`. See `apps/server/README.md` for the full reference.
-
-## Local MVP Loop
-
-Install server and web dependencies once if they are not already available:
+Install dependencies once. The repo uses a single root virtualenv, and the
+server's `[dev]` extra pulls the published `bir-sdk` for its contract test:
 
 ```bash
 python3 -m venv .venv
@@ -106,297 +50,125 @@ cd ../web
 npm install
 ```
 
-From the repository root, start the local ingestion server and dashboard
-together:
-
-```bash
-scripts/dev-local
-```
-
-The runner prints the local URLs, checks for the repo `.venv`, server
-dependencies, and web dependencies, then starts:
-
-- API: `http://127.0.0.1:8000`
-- Dashboard: `http://localhost:3000`
-
-It does not install dependencies. Use `scripts/dev-local --check` for a
-non-mutating prerequisite check.
-
-### Playground
-
-The dashboard includes a Playground for quick observed prompt experiments
-against a local OpenAI-compatible model server. With Ollama running locally,
-open `http://localhost:3000`, choose Playground, select `llama3.2:1b` or another
-available model, and send a message. Bir proxies the model call through the
-FastAPI server, records the exchange as a normal trace, and links the reply back
-to the trace detail view with token usage and latency.
-
-The Playground setup panel also has optional observed-workflow controls. Paste
-context to inject it into the model call as system context (recorded as a
-`playground.prepare_context` span), enable "Use context as retrieval" to record
-the context as a retrieval tool call with one document, and enable "Run basic
-evaluators" to record deterministic `answered`, `length_ok`, and — when an
-expected answer is provided — `contains_expected` scores on the trace. The
-trace detail view shows the full workflow: span, retrieval, generation, and
-scores.
-
-A Playground session can also be exported as an evals dataset: the "Export
-dataset" button downloads the session's turns as JSONL that loads directly
-with `bir.evals.Dataset.from_jsonl`, so a conversation you liked can be
-re-run as an experiment against another model or prompt and compared in the
-Experiments tab.
-
-The model server defaults to `http://127.0.0.1:11434`, which works with Ollama.
-Set `BIR_PLAYGROUND_BASE_URL` before starting the server to use LM Studio,
-vLLM, or another OpenAI-compatible server:
-
-```bash
-BIR_PLAYGROUND_BASE_URL=http://127.0.0.1:1234 scripts/dev-local
-```
-
-Playground prompts and responses are captured intentionally because each chat
-turn is an explicit user action for trace inspection. Do not paste secrets into
-the Playground. When the server runs with `BIR_DATA_DIR` read-only local data
-mode, Playground endpoints are disabled because that mode does not write server
-events.
-
-From the repository root, run the dependency-free OpenAI-style demo:
-
-```bash
-cd examples/openai-demo
-PYTHONPATH=../../packages/python-sdk/src python3 demo.py
-```
-
-Start the ingestion server in another terminal from the repository root:
+Start the API server (terminal 1):
 
 ```bash
 cd apps/server
-../../.venv/bin/python -m uvicorn app.main:app --reload
+../../.venv/bin/uvicorn app.main:app --reload
+# API: http://127.0.0.1:8000
 ```
 
-Send the demo trace to the server from the repository root:
-
-```bash
-cd examples/openai-demo
-PYTHONPATH=../../packages/python-sdk/src python3 demo.py --send
-```
-
-Start the dashboard in another terminal from the repository root:
+Start the dashboard (terminal 2):
 
 ```bash
 cd apps/web
 npm run dev
+# Dashboard: http://localhost:3000
 ```
 
-Open `http://localhost:3000` to inspect traces.
-Use the dashboard filters to narrow traces by status, trace name, or event type.
+The dashboard calls the API directly from the browser. `npm run dev` points it
+at `http://127.0.0.1:8000`, and the server allows that origin through CORS by
+default. Open `http://localhost:3000` and use the filters to narrow traces by
+status, name, or event type.
 
-For local evaluation runs, `bir.evals.run_experiment()` writes JSONL results and
-a sibling summary under `.bir/experiments/`. Send one completed experiment to the
-server so it appears in the dashboard's Experiments view:
+By default the server stores ingested events in `.bir/server-events.jsonl` and
+uploaded experiments under `.bir/experiments/`. See
+[apps/server/README.md](apps/server/README.md) for every endpoint and
+environment variable.
+
+## Connect the SDK
+
+Install the SDK from PyPI in your application's environment:
+
+```bash
+pip install bir-sdk    # import name is `bir`
+```
+
+Instrument your code with the SDK (it writes traces to `.bir/traces.jsonl`
+locally), then send the recorded events to this server:
 
 ```python
-from bir.evals import send_experiment
+from bir import send_events
 
-send_experiment(".bir/experiments/prompt-v1-<experiment-id>.jsonl")
+send_events("http://127.0.0.1:8000")
 ```
 
-When you want each dataset example to produce an inspectable trace, run the
-experiment with `record_traces=True`. Bir runs each example inside its linked
-trace, so task-level spans, generations, retrievals, tool calls, and evaluator
-scores appear together in the dashboard:
+The uploaded traces, spans, generations, and scores then show up in the
+dashboard. See the [`bir-sdk`](https://pypi.org/project/bir-sdk/) repository for
+the full SDK API and framework integrations.
 
-```python
-from bir import generation, span
-from bir.evals import contains, run_experiment
+## Browse traces locally (no upload)
 
+The SDK writes traces to `.bir/traces.jsonl` in your project. The server can read
+that file directly in read-only mode, so you can browse SDK output without
+running any ingestion:
 
-def answer_question(question: str) -> str:
-    with span("draft_answer"):
-        with generation("local.llm", model="demo") as gen:
-            answer = f"Bir helps inspect: {question}"
-            gen.set_output(answer)
-            return answer
-
-
-result = run_experiment(
-    "prompt-v1",
-    dataset=dataset,
-    task=answer_question,
-    evaluators=[contains()],
-    record_traces=True,
-)
+```bash
+cd apps/server
+BIR_DATA_DIR=/path/to/your/project/.bir \
+  ../../.venv/bin/uvicorn app.main:app --reload
 ```
 
-Send the local trace events with `send_events()`, and upload the experiment
-result with `send_experiment()`. Experiment rows with uploaded trace events
-include an Open trace action in the dashboard.
+The server re-reads `traces.jsonl` as the SDK appends to it, and the SDK's
+`run_experiment()` results under `.bir/experiments/` appear without a separate
+upload. Because this mode does not own the data files, ingestion and Playground
+endpoints return `403`.
 
-## LangChain
+## Serve the dashboard from the server (single origin)
 
-Use the optional callback handler in apps that already use LangChain:
+Build the dashboard's static export once, then have the server serve both the API
+and the UI from one origin — no CORS setup needed:
 
-```python
-from bir.integrations.langchain import BirCallbackHandler
+```bash
+cd apps/web
+npm run build          # emits a static site to apps/web/out/
 
-result = chain.invoke(
-    {"question": "What is Bir?"},
-    config={"callbacks": [BirCallbackHandler()]},
-)
+cd ../server
+BIR_DASHBOARD_DIR=../web/out \
+  ../../.venv/bin/uvicorn app.main:app --reload
 ```
 
-The handler records root chains as traces, LLM calls as generations, retrievers
-as retrieval tool calls, and tools as tool calls without adding LangChain as an
-SDK dependency.
+Open `http://127.0.0.1:8000/`. The dashboard and the API (`/health`, `/v1/*`)
+share one origin. This composes with `BIR_DATA_DIR`, so a single process can both
+serve the UI and browse SDK-written traces.
 
-## LlamaIndex
+## Playground
 
-Use the optional callback handler in apps that already use LlamaIndex:
+The dashboard includes a Playground tab for quick prompt experiments against a
+local OpenAI-compatible model server. With Ollama running, open the dashboard,
+choose Playground, pick a model, and send a message. The server proxies the call,
+records the exchange as a normal trace, and links the reply to its trace detail
+with token usage and latency. Optional controls inject context, record it as a
+retrieval, run basic evaluators, and export a session as a `bir-sdk` evals
+dataset (JSONL).
 
-```python
-from bir.integrations.llamaindex import BirLlamaIndexHandler
+The model server defaults to Ollama at `http://127.0.0.1:11434`. Point it at LM
+Studio, vLLM, or another OpenAI-compatible server before starting:
 
-# Pass the handler to your LlamaIndex callback manager.
-handler = BirLlamaIndexHandler()
+```bash
+cd apps/server
+BIR_PLAYGROUND_BASE_URL=http://127.0.0.1:1234 \
+  ../../.venv/bin/uvicorn app.main:app --reload
 ```
 
-The handler records LLM/chat callbacks as generation events and retrieve
-callbacks as retrieval tool calls without adding LlamaIndex as an SDK
-dependency. Other LlamaIndex event types are ignored for now.
+Do not paste secrets into the Playground; chat turns are captured intentionally.
+Playground is disabled in read-only `BIR_DATA_DIR` mode. See
+[apps/server/README.md](apps/server/README.md) and
+[apps/web/README.md](apps/web/README.md) for the full reference.
 
-## OpenAI
+## Tests
 
-Wrap an OpenAI chat completion call to record it as a generation, without adding
-`openai` as an SDK dependency:
+```bash
+# Server
+cd apps/server
+../../.venv/bin/python -m pytest
 
-```python
-from openai import OpenAI
-
-from bir import observe
-from bir.integrations.openai import trace_chat_completion
-
-
-@observe()
-def answer_question(question: str) -> str:
-    client = OpenAI()
-    response = trace_chat_completion(
-        client.chat.completions.create,
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": question}],
-    )
-    return response.choices[0].message.content
+# Dashboard
+cd apps/web
+npm run lint
+npm run typecheck
+npm run test
 ```
-
-Streaming calls keep the generation open until the stream is consumed:
-
-```python
-from bir import trace
-
-with trace("chat"):
-    stream = trace_chat_completion(
-        client.chat.completions.create,
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": "Stream an answer"}],
-        stream=True,
-        stream_options={"include_usage": True},
-    )
-    for chunk in stream:
-        print(chunk.choices[0].delta.content or "", end="")
-```
-
-The streaming output is the concatenated assistant text deltas. Usage is recorded
-when OpenAI includes it on the final chunk.
-
-## Anthropic
-
-Wrap an Anthropic Messages call to record it as a generation, without adding
-`anthropic` as an SDK dependency:
-
-```python
-import anthropic
-
-from bir import observe
-from bir.integrations.anthropic import trace_messages
-
-
-@observe()
-def answer_question(question: str) -> str:
-    client = anthropic.Anthropic()
-    response = trace_messages(
-        client.messages.create,
-        model="claude-opus-4-8",
-        max_tokens=1024,
-        messages=[{"role": "user", "content": question}],
-    )
-    return response.content[0].text
-```
-
-`trace_messages` forwards the call to `client.messages.create` unchanged and
-returns its response, recording one generation with the request as input and the
-model and token usage read from the response. Its own options are prefixed
-`bir_` (for example `bir_name` or `bir_metadata`) so they never collide with
-Anthropic `create` arguments such as `metadata`.
-
-## Google Gemini
-
-Wrap a Gemini `generate_content` call to record it as a generation, without
-adding `google-genai` as an SDK dependency:
-
-```python
-from google import genai
-
-from bir import observe
-from bir.integrations.google import trace_generate_content
-
-
-@observe()
-def answer_question(question: str) -> str:
-    client = genai.Client()
-    response = trace_generate_content(
-        client.models.generate_content,
-        model="gemini-2.5-flash",
-        contents=question,
-    )
-    return response.text
-```
-
-`trace_generate_content` forwards the call to `client.models.generate_content`
-unchanged and returns its response, recording one generation with the request as
-input, the model read from the request `model` argument, and token usage read
-from the response `usage_metadata`. Its own options are prefixed `bir_` (for
-example `bir_name` or `bir_metadata`) so they never collide with Gemini
-`generate_content` arguments such as `config`.
-
-## LiteLLM
-
-Wrap a LiteLLM `completion` call to record it as a generation, without adding
-`litellm` as an SDK dependency. One wrapper covers the many providers LiteLLM
-routes to:
-
-```python
-import litellm
-
-from bir import observe
-from bir.integrations.litellm import trace_completion
-
-
-@observe()
-def answer_question(question: str) -> str:
-    response = trace_completion(
-        litellm.completion,
-        model="anthropic/claude-3-5-sonnet",
-        messages=[{"role": "user", "content": question}],
-    )
-    return response.choices[0].message.content
-```
-
-`trace_completion` forwards the call to `litellm.completion` unchanged and
-returns its OpenAI-shaped response, recording one generation with the request as
-input and the model and token usage read from the response. The provider is
-derived from the request `model` id (the prefix before the first `/`, for
-example `anthropic`) and recorded as `metadata["provider"]`. Its own options are
-prefixed `bir_` (for example `bir_name` or `bir_metadata`) so they never collide
-with LiteLLM `completion` arguments such as `metadata`.
 
 ## License
 
