@@ -249,6 +249,36 @@ The handler records root chains as traces, LLM calls as generations, retrievers
 as retrieval tool calls, and tools as tool calls without adding LangChain as an
 SDK dependency.
 
+## Anthropic
+
+Wrap an Anthropic Messages call to record it as a generation, without adding
+`anthropic` as an SDK dependency:
+
+```python
+import anthropic
+
+from bir import observe
+from bir.integrations.anthropic import trace_messages
+
+
+@observe()
+def answer_question(question: str) -> str:
+    client = anthropic.Anthropic()
+    response = trace_messages(
+        client.messages.create,
+        model="claude-opus-4-8",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": question}],
+    )
+    return response.content[0].text
+```
+
+`trace_messages` forwards the call to `client.messages.create` unchanged and
+returns its response, recording one generation with the request as input and the
+model and token usage read from the response. Its own options are prefixed
+`bir_` (for example `bir_name` or `bir_metadata`) so they never collide with
+Anthropic `create` arguments such as `metadata`.
+
 ## License
 
 Bir is source-available under the Functional Source License 1.1 with Apache 2.0
