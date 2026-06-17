@@ -469,3 +469,23 @@ contexts. It is a deterministic faithfulness heuristic, not proof of
 faithfulness: paraphrased but faithful answers can score low, and unfaithful
 answers that reuse context words can score high. Missing answers or contexts
 produce a `0.0` score with failure metadata instead of failing the experiment.
+
+Use `answer_contains_citation()` to check that an answer cites a source, also
+without an LLM judge:
+
+```python
+from bir.evals import answer_contains_citation
+
+evaluators = [
+    answer_contains_citation(),
+]
+```
+
+`answer_contains_citation()` reads a plain answer string or the `answer` field
+of a structured RAG output (`{"answer": "...", "contexts": [...]}`) and scores
+`1.0` when the answer contains a citation marker. By default any bracketed
+marker such as `[1]` or `[doc-1]` counts; pass `pattern` to require a custom
+citation format such as `pattern=r"\(\d+\)"` for markers like `(1)`. This is a
+deterministic format check, not proof that the citation is correct or that the
+cited source supports the answer. Non-text output or a missing `answer` produces
+a `0.0` score with failure metadata instead of failing the experiment.
