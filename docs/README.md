@@ -443,3 +443,22 @@ output such as `{"answer": "...", "contexts": ["doc text", ...]}` and scores
 `contexts` produce a `0.0` score with failure metadata instead of failing the
 experiment. Pass `case_sensitive=False` for case-insensitive matching. This is a
 deterministic retrieval check, not proof that the answer used the context.
+
+Use `answer_context_overlap()` to flag answers that may not be grounded in the
+retrieved context, also without an LLM judge:
+
+```python
+from bir.evals import answer_context_overlap
+
+evaluators = [
+    answer_context_overlap(0.5),
+]
+```
+
+`answer_context_overlap()` reads the same structured RAG output
+(`{"answer": "...", "contexts": ["doc text", ...]}`) and scores `1.0` when at
+least `min_ratio` of the answer's word tokens also appear in the retrieved
+contexts. It is a deterministic faithfulness heuristic, not proof of
+faithfulness: paraphrased but faithful answers can score low, and unfaithful
+answers that reuse context words can score high. Missing answers or contexts
+produce a `0.0` score with failure metadata instead of failing the experiment.
