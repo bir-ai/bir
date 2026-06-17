@@ -309,6 +309,37 @@ from the response `usage_metadata`. Its own options are prefixed `bir_` (for
 example `bir_name` or `bir_metadata`) so they never collide with Gemini
 `generate_content` arguments such as `config`.
 
+## LiteLLM
+
+Wrap a LiteLLM `completion` call to record it as a generation, without adding
+`litellm` as an SDK dependency. One wrapper covers the many providers LiteLLM
+routes to:
+
+```python
+import litellm
+
+from bir import observe
+from bir.integrations.litellm import trace_completion
+
+
+@observe()
+def answer_question(question: str) -> str:
+    response = trace_completion(
+        litellm.completion,
+        model="anthropic/claude-3-5-sonnet",
+        messages=[{"role": "user", "content": question}],
+    )
+    return response.choices[0].message.content
+```
+
+`trace_completion` forwards the call to `litellm.completion` unchanged and
+returns its OpenAI-shaped response, recording one generation with the request as
+input and the model and token usage read from the response. The provider is
+derived from the request `model` id (the prefix before the first `/`, for
+example `anthropic`) and recorded as `metadata["provider"]`. Its own options are
+prefixed `bir_` (for example `bir_name` or `bir_metadata`) so they never collide
+with LiteLLM `completion` arguments such as `metadata`.
+
 ## License
 
 Bir is source-available under the Functional Source License 1.1 with Apache 2.0
