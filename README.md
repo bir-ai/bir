@@ -279,6 +279,36 @@ model and token usage read from the response. Its own options are prefixed
 `bir_` (for example `bir_name` or `bir_metadata`) so they never collide with
 Anthropic `create` arguments such as `metadata`.
 
+## Google Gemini
+
+Wrap a Gemini `generate_content` call to record it as a generation, without
+adding `google-genai` as an SDK dependency:
+
+```python
+from google import genai
+
+from bir import observe
+from bir.integrations.google import trace_generate_content
+
+
+@observe()
+def answer_question(question: str) -> str:
+    client = genai.Client()
+    response = trace_generate_content(
+        client.models.generate_content,
+        model="gemini-2.5-flash",
+        contents=question,
+    )
+    return response.text
+```
+
+`trace_generate_content` forwards the call to `client.models.generate_content`
+unchanged and returns its response, recording one generation with the request as
+input, the model read from the request `model` argument, and token usage read
+from the response `usage_metadata`. Its own options are prefixed `bir_` (for
+example `bir_name` or `bir_metadata`) so they never collide with Gemini
+`generate_content` arguments such as `config`.
+
 ## License
 
 Bir is source-available under the Functional Source License 1.1 with Apache 2.0
