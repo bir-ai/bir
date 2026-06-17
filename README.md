@@ -249,6 +249,21 @@ The handler records root chains as traces, LLM calls as generations, retrievers
 as retrieval tool calls, and tools as tool calls without adding LangChain as an
 SDK dependency.
 
+## LlamaIndex
+
+Use the optional callback handler in apps that already use LlamaIndex:
+
+```python
+from bir.integrations.llamaindex import BirLlamaIndexHandler
+
+# Pass the handler to your LlamaIndex callback manager.
+handler = BirLlamaIndexHandler()
+```
+
+The handler records LLM/chat callbacks as generation events and retrieve
+callbacks as retrieval tool calls without adding LlamaIndex as an SDK
+dependency. Other LlamaIndex event types are ignored for now.
+
 ## Anthropic
 
 Wrap an Anthropic Messages call to record it as a generation, without adding
