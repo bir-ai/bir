@@ -36,6 +36,7 @@ class TraceEventReader:
         event_type: EventType | None = None,
         service: str | None = None,
         environment: str | None = None,
+        min_duration_ms: float | None = None,
         sort: TraceSort = "recent",
         limit: int | None = None,
     ) -> list[LoadedTrace]:
@@ -44,6 +45,11 @@ class TraceEventReader:
         ``service`` and ``environment`` match the ``metadata.service`` block the
         SDK records on trace roots from ``configure(service_name=, environment=)``,
         using the same case-insensitive substring matching as ``name``.
+
+        ``min_duration_ms`` keeps only traces whose root duration
+        (``end_time - start_time``) is at least that many milliseconds, so slow
+        traces can be isolated; like the other filters it is applied before
+        ordering and ``limit`` and combines with them using AND.
 
         ``sort`` chooses the ordering. ``"recent"`` (the default) sorts ascending
         by ``start_time`` then ``id``, so with ``limit`` the most recent N are the
@@ -72,6 +78,7 @@ class TraceEventReader:
                 event_type=event_type,
                 service_filter=service_filter,
                 environment_filter=environment_filter,
+                min_duration_ms=min_duration_ms,
             ):
                 traces.append(trace)
         if sort == "slowest":
@@ -291,6 +298,7 @@ def _matches_filters(
     event_type: EventType | None,
     service_filter: str | None,
     environment_filter: str | None,
+    min_duration_ms: float | None,
 ) -> bool:
     if status is not None and trace.status != status:
         return False
@@ -303,6 +311,10 @@ def _matches_filters(
         if service_filter and (service_name is None or service_filter not in service_name.lower()):
             return False
         if environment_filter and (service_environment is None or environment_filter not in service_environment.lower()):
+            return False
+    if min_duration_ms is not None:
+        duration_ms = (trace.end_time - trace.start_time).total_seconds() * 1000
+        if duration_ms < min_duration_ms:
             return False
     return True
 

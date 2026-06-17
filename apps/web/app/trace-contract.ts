@@ -45,6 +45,7 @@ export type TraceFilterValues = {
   event_type?: string | null;
   service?: string | null;
   environment?: string | null;
+  min_duration_ms?: number;
   sort?: TraceSort;
   limit?: number;
 };
@@ -173,6 +174,7 @@ export function buildTraceFilterQuery(filters: TraceFilterValues): string {
   const eventType = filters.event_type?.trim();
   const service = filters.service?.trim();
   const environment = filters.environment?.trim();
+  const minDurationMs = filters.min_duration_ms;
   const sort = filters.sort;
   const limit = filters.limit;
 
@@ -190,6 +192,12 @@ export function buildTraceFilterQuery(filters: TraceFilterValues): string {
   }
   if (environment) {
     params.set("environment", environment);
+  }
+  // Only forward a positive, finite duration threshold. Unlike limit this allows
+  // fractional milliseconds, matching the server's Query(gt=0) float bound, so a
+  // stray NaN/Infinity or non-positive value is dropped but 12.5 is kept.
+  if (typeof minDurationMs === "number" && Number.isFinite(minDurationMs) && minDurationMs > 0) {
+    params.set("min_duration_ms", String(minDurationMs));
   }
   // Only forward a non-default sort so default browse URLs stay clean.
   if (sort === "slowest") {

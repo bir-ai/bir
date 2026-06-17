@@ -142,6 +142,7 @@ def create_app(
         event_type: EventType | None = Query(default=None),
         service: str | None = Query(default=None),
         environment: str | None = Query(default=None),
+        min_duration_ms: float | None = Query(default=None, gt=0),
         sort: TraceSort = Query(default="recent"),
         limit: int | None = Query(default=None, gt=0),
     ) -> list[LoadedTrace]:
@@ -152,6 +153,7 @@ def create_app(
             event_type=event_type,
             service=service,
             environment=environment,
+            min_duration_ms=min_duration_ms,
             sort=sort,
             limit=limit,
         )

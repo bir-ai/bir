@@ -154,17 +154,24 @@ curl "http://127.0.0.1:8000/v1/traces?service=rag-api"
 curl "http://127.0.0.1:8000/v1/traces?environment=production"
 ```
 
-Filters match root trace status, root trace name, contained event type, and the
-service and environment from `metadata.service`. They do not search arbitrary
-captured input, output, other metadata, or error payloads.
+Filters match root trace status, root trace name, contained event type, the
+service and environment from `metadata.service`, and a minimum root-trace
+duration. They do not search arbitrary captured input, output, other metadata,
+or error payloads.
 
 To triage slow traces, order results by root-trace duration (longest first) with
 `sort=slowest`; the default `sort=recent` preserves the most-recent-first order.
-The dashboard exposes the same choice as a Recent/Slowest toggle.
+The dashboard exposes the same choice as a Recent/Slowest toggle. To isolate slow
+traces, drop everything under a threshold with `min_duration_ms`, a positive
+number that keeps only traces whose root duration (`end_time - start_time`) is at
+least that many milliseconds. The dashboard exposes it as a "Min Duration (ms)"
+input, and it combines with the other filters and the sort.
 
 ```bash
 curl "http://127.0.0.1:8000/v1/traces?sort=slowest"
 curl "http://127.0.0.1:8000/v1/traces?sort=slowest&status=error&limit=20"
+curl "http://127.0.0.1:8000/v1/traces?min_duration_ms=250"
+curl "http://127.0.0.1:8000/v1/traces?min_duration_ms=250&sort=slowest"
 ```
 
 ## Trace Sampling

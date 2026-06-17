@@ -20,9 +20,11 @@ Minimal FastAPI ingestion server for Bir trace events.
 `GET /v1/traces` accepts optional query parameters to filter the returned
 traces: `status` (`success`/`error`), `name` (case-insensitive substring of the
 root trace name), `event_type` (keeps traces containing at least one event of
-that type), and `service`/`environment` (case-insensitive substring of the
+that type), `service`/`environment` (case-insensitive substring of the
 `metadata.service` block the SDK records from `configure(service_name=,
-environment=)`). Filters combine with AND.
+environment=)`), and `min_duration_ms` (a positive number; keeps only traces
+whose root duration `end_time - start_time` is at least that many milliseconds,
+to isolate slow traces). Filters combine with AND.
 
 `limit` returns only the most recent N traces (ordered by start time, then id)
 after the filters are applied, so large local stores stay browsable. It must be
@@ -30,6 +32,7 @@ a positive integer, and the returned traces stay sorted oldest-first:
 
 ```bash
 curl 'http://127.0.0.1:8000/v1/traces?status=error&limit=20'
+curl 'http://127.0.0.1:8000/v1/traces?min_duration_ms=250&sort=slowest'
 ```
 
 `GET /v1/traces/{trace_id}` returns a single trace by id, with its events ordered

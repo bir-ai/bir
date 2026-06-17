@@ -87,6 +87,7 @@ function TraceFilterControls({
   const name = filters.name ?? "";
   const service = filters.service ?? "";
   const environment = filters.environment ?? "";
+  const minDuration = filters.min_duration_ms ?? "";
   const hasActiveFilters = buildTraceFilterQuery(filters).length > 0;
 
   return (
@@ -150,6 +151,21 @@ function TraceFilterControls({
         </select>
       </label>
 
+      <label className="filter-group">
+        <span>Min Duration (ms)</span>
+        <input
+          type="number"
+          min={0}
+          step={1}
+          inputMode="numeric"
+          placeholder="Any"
+          value={minDuration}
+          onChange={(event) =>
+            setTraceFilters({ ...filters, min_duration_ms: parseMinDuration(event.target.value) })
+          }
+        />
+      </label>
+
       {hasActiveFilters ? (
         <button className="filter-clear" type="button" onClick={() => setTraceFilters(DEFAULT_TRACE_FILTERS)}>
           Clear
@@ -157,6 +173,18 @@ function TraceFilterControls({
       ) : null}
     </div>
   );
+}
+
+// Keep only a positive, finite threshold in the shared filter state; an empty or
+// invalid entry clears the filter (undefined) so buildTraceFilterQuery omits it
+// and the server is never asked for a non-positive min_duration_ms.
+function parseMinDuration(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (trimmed === "") {
+    return undefined;
+  }
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function formatTraceService(service: TraceService): string {

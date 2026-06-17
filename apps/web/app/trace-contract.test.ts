@@ -92,6 +92,32 @@ test("composes the limit with existing trace filters", () => {
   );
 });
 
+test("forwards a positive, finite min_duration_ms in the trace filter query", () => {
+  assert.equal(buildTraceFilterQuery({ min_duration_ms: 250 }), "min_duration_ms=250");
+  // Durations are floats on the server (Query(gt=0) has no integer bound), so a
+  // fractional threshold forwards unchanged rather than being rejected like limit.
+  assert.equal(buildTraceFilterQuery({ min_duration_ms: 12.5 }), "min_duration_ms=12.5");
+});
+
+test("omits the min_duration_ms when unset, NaN, infinite, or non-positive", () => {
+  assert.equal(buildTraceFilterQuery({ status: "all", name: "", event_type: "all" }), "");
+  assert.equal(buildTraceFilterQuery({ min_duration_ms: 0 }), "");
+  assert.equal(buildTraceFilterQuery({ min_duration_ms: -5 }), "");
+  assert.equal(buildTraceFilterQuery({ min_duration_ms: Number.NaN }), "");
+  assert.equal(buildTraceFilterQuery({ min_duration_ms: Number.POSITIVE_INFINITY }), "");
+});
+
+test("composes the min_duration_ms with existing trace filters", () => {
+  const query = buildTraceFilterQuery({
+    status: "error",
+    min_duration_ms: 250,
+    sort: "slowest",
+    limit: 50,
+  });
+
+  assert.equal(query, "status=error&min_duration_ms=250&sort=slowest&limit=50");
+});
+
 test("forwards the slowest sort and omits the default recent sort", () => {
   assert.equal(buildTraceFilterQuery({ sort: "slowest" }), "sort=slowest");
   assert.equal(buildTraceFilterQuery({ sort: "recent" }), "");
