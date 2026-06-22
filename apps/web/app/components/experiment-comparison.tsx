@@ -85,6 +85,10 @@ export function ExperimentComparisonPanel({ comparison }: { comparison: Experime
         ))}
       </div>
 
+      <p className="subtle">
+        Improved and regressed reflect execution recovery or failure. Score deltas are shown as direction-neutral changes.
+      </p>
+
       <section className="score-grid comparison-score-grid" aria-label="Aggregate score deltas">
         {comparison.aggregate_scores.length > 0 ? (
           comparison.aggregate_scores.map((score) => (

@@ -962,7 +962,7 @@ test("rejects malformed experiment responses without throwing", () => {
   assert.equal(normalizeExperiment(null), null);
 });
 
-test("compares experiments by aggregate and per-example score deltas", () => {
+test("compares experiments by aggregate and direction-neutral per-example score deltas", () => {
   const baseline = makeLoadedExperiment({
     summary: makeExperimentSummary({
       experiment_id: "baseline",
@@ -1032,20 +1032,87 @@ test("compares experiments by aggregate and per-example score deltas", () => {
   assert.deepEqual(
     comparison.rows.map((row) => [row.example_id, row.status]),
     [
-      ["q1", "regressed"],
       ["q4", "missing_candidate"],
+      ["q1", "changed"],
+      ["q3", "changed"],
       ["q5", "new_candidate"],
-      ["q3", "improved"],
       ["q2", "unchanged"],
     ],
   );
   assert.deepEqual(comparison.counts, {
-    regressed: 1,
-    improved: 1,
-    unchanged: 1,
+    regressed: 0,
     missing_candidate: 1,
+    changed: 2,
     new_candidate: 1,
+    improved: 0,
+    unchanged: 1,
   });
+});
+
+test("classifies execution failures as regressions and recoveries as improvements before score changes", () => {
+  const baseline = makeLoadedExperiment({
+    results: [
+      makeExperimentResult({ example_id: "fails", scores: [{ name: "score", value: 0, metadata: {} }] }),
+      makeExperimentResult({
+        id: "baseline-recovers",
+        example_id: "recovers",
+        status: "error",
+        error: "provider unavailable",
+        scores: [{ name: "score", value: 1, metadata: {} }],
+      }),
+    ],
+  });
+  const candidate = makeLoadedExperiment({
+    summary: makeExperimentSummary({ experiment_id: "candidate" }),
+    results: [
+      makeExperimentResult({
+        id: "candidate-fails",
+        example_id: "fails",
+        status: "error",
+        error: "provider unavailable",
+        scores: [{ name: "score", value: 1, metadata: {} }],
+      }),
+      makeExperimentResult({
+        id: "candidate-recovers",
+        example_id: "recovers",
+        scores: [{ name: "score", value: 0, metadata: {} }],
+      }),
+    ],
+  });
+
+  const comparison = compareExperiments(baseline, candidate);
+
+  assert.deepEqual(
+    comparison.rows.map((row) => [row.example_id, row.status]),
+    [
+      ["fails", "regressed"],
+      ["recovers", "improved"],
+    ],
+  );
+});
+
+test("classifies both positive and negative undirected score changes neutrally", () => {
+  const baseline = makeLoadedExperiment({
+    results: [
+      makeExperimentResult({ example_id: "negative", scores: [{ name: "score", value: 1, metadata: {} }] }),
+      makeExperimentResult({ id: "baseline-positive", example_id: "positive", scores: [{ name: "score", value: 0, metadata: {} }] }),
+    ],
+  });
+  const candidate = makeLoadedExperiment({
+    summary: makeExperimentSummary({ experiment_id: "candidate" }),
+    results: [
+      makeExperimentResult({ id: "candidate-negative", example_id: "negative", scores: [{ name: "score", value: 0, metadata: {} }] }),
+      makeExperimentResult({ id: "candidate-positive", example_id: "positive", scores: [{ name: "score", value: 1, metadata: {} }] }),
+    ],
+  });
+
+  const comparison = compareExperiments(baseline, candidate);
+
+  assert.deepEqual(comparison.rows.map((row) => [row.example_id, row.status]), [
+    ["negative", "changed"],
+    ["positive", "changed"],
+  ]);
+  assert.deepEqual(comparison.rows.map((row) => row.scores[0].delta), [-1, 1]);
 });
 
 test("compares experiments with missing score values without throwing", () => {

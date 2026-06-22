@@ -12,6 +12,7 @@ export const statusLabels: Record<EventStatus | ExperimentStatus, string> = {
 export const comparisonStatusLabels: Record<ExperimentComparisonStatus, string> = {
   regressed: "Regressed",
   improved: "Improved",
+  changed: "Changed",
   unchanged: "Unchanged",
   missing_candidate: "Missing candidate",
   new_candidate: "New candidate",

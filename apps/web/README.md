@@ -18,8 +18,9 @@ Current views:
 - experiment list with aggregate scores and error counts
 - experiment detail with per-example input, expected output, actual output,
   scores, linked trace IDs, latency, and errors
-- experiment comparison for two uploaded runs with aggregate score deltas and
-  per-example regression status
+- experiment comparison for two uploaded runs with signed aggregate and
+  per-example score deltas; regressions/improvements represent execution
+  failures/recoveries, while undirected score-only differences are `changed`
 - Playground for observed local prompt experiments through the Bir server, with
   model selection, token/latency badges, and trace links
 - Playground workflow controls: optional context (recorded as a

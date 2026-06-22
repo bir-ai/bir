@@ -63,6 +63,10 @@ truth.
 
 - Experiment upload, list, detail, validation, comparison, and linked traces are
   implemented for JSONL artifacts produced by the external SDK.
+- Experiment comparison classifies success-to-error transitions as regressions
+  and error-to-success transitions as improvements. Because the stored contract
+  has no score-direction field, nonzero score-only deltas remain visible but are
+  classified neutrally as changed.
 - Playground turns are recorded as normal trace events and can include context,
   a retrieval record, and deterministic scores.
 - The server can read SDK-owned `.bir` output in read-only mode and can serve a

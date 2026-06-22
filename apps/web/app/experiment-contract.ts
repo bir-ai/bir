@@ -41,6 +41,7 @@ export type LoadedExperiment = ExperimentSummary & {
 export type ExperimentComparisonStatus =
   | "regressed"
   | "improved"
+  | "changed"
   | "unchanged"
   | "missing_candidate"
   | "new_candidate";
@@ -161,18 +162,23 @@ function comparisonStatus(
   candidateResult: ExperimentExampleResult | null,
   scores: ExperimentScoreDelta[],
 ): ExperimentComparisonStatus {
+  // Classification precedence: row presence, execution transition, comparable
+  // score change, then unchanged. Score signs carry no quality direction.
   if (baselineResult === null) {
     return "new_candidate";
   }
   if (candidateResult === null) {
     return "missing_candidate";
   }
-  const deltas = scores.map((score) => score.delta).filter((delta): delta is number => delta !== null);
-  if (deltas.some((delta) => delta < 0)) {
+  if (baselineResult.status === "success" && candidateResult.status === "error") {
     return "regressed";
   }
-  if (deltas.some((delta) => delta > 0)) {
+  if (baselineResult.status === "error" && candidateResult.status === "success") {
     return "improved";
+  }
+  const deltas = scores.map((score) => score.delta).filter((delta): delta is number => delta !== null);
+  if (deltas.some((delta) => delta !== 0)) {
+    return "changed";
   }
   return "unchanged";
 }
@@ -181,9 +187,10 @@ function compareRows(left: ExperimentComparisonRow, right: ExperimentComparisonR
   const statusOrder: Record<ExperimentComparisonStatus, number> = {
     regressed: 0,
     missing_candidate: 1,
-    new_candidate: 2,
-    improved: 3,
-    unchanged: 4,
+    changed: 2,
+    new_candidate: 3,
+    improved: 4,
+    unchanged: 5,
   };
   return statusOrder[left.status] - statusOrder[right.status] || left.example_id.localeCompare(right.example_id);
 }
@@ -191,10 +198,11 @@ function compareRows(left: ExperimentComparisonRow, right: ExperimentComparisonR
 function emptyComparisonCounts(): Record<ExperimentComparisonStatus, number> {
   return {
     regressed: 0,
+    missing_candidate: 0,
+    changed: 0,
+    new_candidate: 0,
     improved: 0,
     unchanged: 0,
-    missing_candidate: 0,
-    new_candidate: 0,
   };
 }
 

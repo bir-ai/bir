@@ -712,6 +712,10 @@ h3 {
   border-left-color: var(--quiet);
 }
 
+.comparison-row.changed {
+  border-left-color: var(--yellow);
+}
+
 .comparison-pill {
   display: inline-flex;
   align-items: center;
@@ -736,6 +740,11 @@ h3 {
 .comparison-pill.new_candidate {
   border-color: rgba(81, 189, 86, 0.36);
   color: var(--green);
+}
+
+.comparison-pill.changed {
+  border-color: rgba(242, 181, 55, 0.4);
+  color: var(--yellow);
 }
 
 .experiment-results {
