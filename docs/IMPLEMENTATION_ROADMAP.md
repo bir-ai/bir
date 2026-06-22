@@ -222,8 +222,11 @@ spells those optional fields as explicit JSON nulls, and a `score` line also
 carries its numeric `value`. Both the key-omitted and explicit-null forms are
 accepted on ingest and load on both the SDK and server readers, but the
 explicit-null form is the canonical persisted shape. Keep `JsonlEventStore.append`
-writing explicit nulls; do not switch it to `exclude_none=True`. SDK and server
-tests pin this so the persisted shape cannot drift silently.
+writing explicit nulls; do not switch it to `exclude_none=True`. The shared JSON
+Schema declares all five optional fields nullable while leaving them out of its
+required list, so it describes both forms without weakening the numeric `value`
+requirement for score events. Server and dashboard tests pin this so the
+persisted shape cannot drift silently.
 
 Recommended event fields:
 

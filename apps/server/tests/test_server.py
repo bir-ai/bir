@@ -116,6 +116,42 @@ def load_contract_schema() -> dict[str, object]:
     return payload
 
 
+def assert_event_matches_contract_schema(event: dict[str, object], schema: dict[str, object]) -> None:
+    """Check the schema rules exercised by canonical server-written events."""
+
+    required = schema["required"]
+    properties = schema["properties"]
+    if not isinstance(required, list) or not isinstance(properties, dict):
+        raise TypeError("expected schema required/properties definitions")
+    assert set(required).issubset(event)
+
+    json_types = {
+        "null": lambda value: value is None,
+        "number": lambda value: isinstance(value, (int, float)) and not isinstance(value, bool),
+        "object": lambda value: isinstance(value, dict),
+        "string": lambda value: isinstance(value, str),
+    }
+    for key, value in event.items():
+        definition = properties.get(key)
+        if not isinstance(definition, dict) or "type" not in definition:
+            continue
+        declared_types = definition["type"]
+        if isinstance(declared_types, str):
+            declared_types = [declared_types]
+        if not isinstance(declared_types, list):
+            raise TypeError(f"expected schema type declaration for {key}")
+        assert any(json_types[str(json_type)](value) for json_type in declared_types), (
+            f"{key}={value!r} does not match shared schema types {declared_types}"
+        )
+
+    if event["type"] == "trace":
+        assert event["parent_id"] is None
+    else:
+        assert isinstance(event["parent_id"], str) and event["parent_id"]
+    if event["type"] == "score":
+        assert isinstance(event.get("value"), (int, float)) and not isinstance(event["value"], bool)
+
+
 def post_filter_fixture_events(client: TestClient) -> None:
     events = [
         make_event(
@@ -691,6 +727,23 @@ def test_server_event_contract_matches_schema_artifact() -> None:
     assert schema_version["const"] == "1.0"
     assert event_type["enum"] == ["trace", "span", "generation", "tool_call", "score"]
     assert event_status["enum"] == ["success", "error"]
+    for nullable_field, value_type in {
+        "value": "number",
+        "model": "string",
+        "usage": "object",
+        "cost": "object",
+        "currency": "string",
+    }.items():
+        definition = properties[nullable_field]
+        assert isinstance(definition, dict)
+        assert definition["type"] == [value_type, "null"]
+
+    score_rule = schema["allOf"][-1]
+    assert isinstance(score_rule, dict)
+    assert score_rule["then"] == {
+        "required": ["value"],
+        "properties": {"value": {"type": "number"}},
+    }
 
 
 def test_duplicate_event_id_is_idempotent(tmp_path: Path) -> None:
@@ -973,6 +1026,13 @@ def test_persists_optional_fields_as_explicit_nulls(tmp_path: Path) -> None:
     assert stored_generation["cost"] == {"input_cost": 0.000005, "output_cost": 0.000014, "total_cost": 0.000019}
     # Cost without an explicit currency persists with the default USD.
     assert stored_generation["currency"] == "USD"
+
+    # Exercise the shared schema against real output from JsonlEventStore, not a
+    # hand-built object or a property-name comparison. Both canonical lines must
+    # satisfy the contract, including all five nullable optional fields.
+    contract_schema = load_contract_schema()
+    assert_event_matches_contract_schema(stored_score, contract_schema)
+    assert_event_matches_contract_schema(stored_generation, contract_schema)
 
     # Reading back through the API re-validates the persisted payload and keeps the
     # explicit null keys for every optional field.

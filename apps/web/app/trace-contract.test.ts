@@ -227,6 +227,46 @@ test("normalizes valid trace responses from the shared contract fixture", () => 
   assert.equal(generationEvent?.currency, "USD");
 });
 
+test("accepts omitted optional fields and canonical explicit nulls", () => {
+  const sdkStyle = summarizableTrace({ id: "trace-sdk-style" });
+  const canonical = summarizableTrace({ id: "trace-canonical" });
+  canonical.events[0] = {
+    ...canonical.events[0],
+    value: null,
+    model: null,
+    usage: null,
+    cost: null,
+    currency: null,
+  };
+
+  assert.equal(normalizeTraces([sdkStyle]).length, 1);
+  const normalizedCanonical = normalizeTraces([canonical]);
+  assert.equal(normalizedCanonical.length, 1);
+  assert.deepEqual(
+    ["value", "model", "usage", "cost", "currency"].map(
+      (field) => normalizedCanonical[0].events[0][field as keyof TraceEvent],
+    ),
+    [null, null, null, null, null],
+  );
+});
+
+test("requires a numeric value for score events", () => {
+  const trace = summarizableTrace({ id: "trace-score-contract" });
+  const root = trace.events[0];
+  trace.events.push({
+    ...root,
+    id: "score-contract",
+    parent_id: root.id,
+    type: "score",
+    name: "helpfulness",
+    value: null,
+  });
+
+  assert.deepEqual(normalizeTraces([trace]), []);
+  trace.events[1].value = 0.82;
+  assert.equal(normalizeTraces([trace]).length, 1);
+});
+
 test("extracts retrieval query and documents from the shared contract fixture", () => {
   const retrievalEvent = contractTrace.events.find(
     (event) => event.type === "tool_call" && event.metadata.kind === "retrieval",

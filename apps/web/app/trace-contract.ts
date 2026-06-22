@@ -652,6 +652,12 @@ function isTraceEvent(value: unknown): value is TraceEvent {
     return false;
   }
   const candidate = value as Partial<TraceEvent>;
+  const hasValidOptionalFields =
+    isOptionalNullableNumber(candidate.value) &&
+    isOptionalNullableString(candidate.model) &&
+    isOptionalNullableNumberRecord(candidate.usage) &&
+    isOptionalNullableNumberRecord(candidate.cost) &&
+    isOptionalNullableString(candidate.currency);
   return (
     candidate.schema_version === "1.0" &&
     typeof candidate.id === "string" &&
@@ -663,7 +669,25 @@ function isTraceEvent(value: unknown): value is TraceEvent {
     typeof candidate.end_time === "string" &&
     isStatus(candidate.status) &&
     isRecord(candidate.metadata) &&
-    (typeof candidate.error === "string" || candidate.error === null)
+    (typeof candidate.error === "string" || candidate.error === null) &&
+    hasValidOptionalFields &&
+    (candidate.type !== "score" || typeof candidate.value === "number")
+  );
+}
+
+function isOptionalNullableNumber(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === "number";
+}
+
+function isOptionalNullableString(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === "string";
+}
+
+function isOptionalNullableNumberRecord(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    (isRecord(value) && Object.values(value).every((item) => typeof item === "number"))
   );
 }
 

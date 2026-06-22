@@ -37,6 +37,19 @@ integrations — is **not** in this repo. See the separate
 
 ## Run the server and dashboard locally
 
+The helper scripts provide the shortest setup and development flow:
+
+```bash
+./scripts/setup.sh   # first run only; runtime dependencies
+./scripts/dev.sh     # API and dashboard
+```
+
+To run only the API server:
+
+```bash
+./scripts/server.sh
+```
+
 Install dependencies once. The repo uses a single root virtualenv, and the
 server's `[dev]` extra pulls the published `bir-sdk` for its contract test:
 
