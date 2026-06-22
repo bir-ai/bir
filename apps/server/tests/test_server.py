@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 # dependencies); the SDK source lives in the separate bir repository.
 CONTRACT_EVENTS_PATH = ROOT / "tests" / "fixtures" / "valid-events.jsonl"
 CONTRACT_SCHEMA_PATH = ROOT / "tests" / "fixtures" / "event-schema-v1.json"
+CONTRACT_EXPERIMENT_PATH = ROOT / "tests" / "fixtures" / "valid-experiment.json"
 
 from bir import configure, generation, load_traces, observe, retrieval, score, span
 from bir._sdk import _reset_config_for_tests, _safe_capture, _safe_error
@@ -113,6 +114,13 @@ def load_contract_schema() -> dict[str, object]:
     payload = json.loads(CONTRACT_SCHEMA_PATH.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise TypeError("expected event schema to be a JSON object")
+    return payload
+
+
+def load_contract_experiment() -> dict[str, object]:
+    payload = json.loads(CONTRACT_EXPERIMENT_PATH.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise TypeError("expected experiment fixture to be a JSON object")
     return payload
 
 
@@ -355,31 +363,30 @@ def test_gets_experiment_detail_with_result_rows(tmp_path: Path) -> None:
 
 def test_ingests_experiment_and_exposes_it_through_get_endpoints(tmp_path: Path) -> None:
     client, experiment_store_path = make_client_with_experiments(tmp_path)
-    summary = make_experiment_summary(result_path="/tmp/client-controlled.jsonl")
-    result = make_experiment_result(trace_id="trace-1")
+    payload = load_contract_experiment()
 
-    response = client.post("/v1/experiments", json={"summary": summary, "results": [result]})
+    response = client.post("/v1/experiments", json=payload)
 
     assert response.status_code == 201
-    assert response.json() == {"accepted": 1, "id": "experiment-1"}
-    result_path = experiment_store_path / "prompt-v1-experiment-1.jsonl"
-    summary_path = experiment_store_path / "prompt-v1-experiment-1.summary.json"
+    assert response.json() == {"accepted": 1, "id": "experiment-contract-1"}
+    result_path = experiment_store_path / "contract-prompt-experiment-contract-1.jsonl"
+    summary_path = experiment_store_path / "contract-prompt-experiment-contract-1.summary.json"
     assert result_path.exists()
     assert summary_path.exists()
     stored_summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    assert stored_summary["result_path"] == "prompt-v1-experiment-1.jsonl"
+    assert stored_summary["result_path"] == "contract-prompt-experiment-contract-1.jsonl"
 
     list_response = client.get("/v1/experiments")
-    detail_response = client.get("/v1/experiments/experiment-1")
+    detail_response = client.get("/v1/experiments/experiment-contract-1")
 
     assert list_response.status_code == 200
-    assert list_response.json()[0]["experiment_id"] == "experiment-1"
-    assert list_response.json()[0]["result_path"] == "prompt-v1-experiment-1.jsonl"
+    assert list_response.json()[0]["experiment_id"] == "experiment-contract-1"
+    assert list_response.json()[0]["result_path"] == "contract-prompt-experiment-contract-1.jsonl"
     assert detail_response.status_code == 200
     experiment = detail_response.json()
-    assert experiment["experiment_id"] == "experiment-1"
-    assert experiment["results"][0]["example_id"] == "q1"
-    assert experiment["results"][0]["trace_id"] == "trace-1"
+    assert experiment["experiment_id"] == "experiment-contract-1"
+    assert [result["example_id"] for result in experiment["results"]] == ["question-1", "question-2"]
+    assert experiment["error_count"] == 1
 
 
 def test_duplicate_experiment_upload_is_idempotent(tmp_path: Path) -> None:
@@ -413,6 +420,32 @@ def test_rejects_malformed_experiment_upload(tmp_path: Path) -> None:
     response = client.post("/v1/experiments", json=payload)
 
     assert response.status_code == 422
+    assert not experiment_store_path.exists()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        pytest.param(lambda payload: payload["summary"].update(example_count=1), id="mismatched-example-count"),
+        pytest.param(lambda payload: payload["summary"].update(error_count=0), id="mismatched-error-count"),
+        pytest.param(lambda payload: payload["results"][1].update(id="result-contract-1"), id="duplicate-result-id"),
+        pytest.param(lambda payload: payload["results"][1].update(example_id="question-1"), id="duplicate-example-id"),
+        pytest.param(lambda payload: payload["results"][0].update(duration_ms=-1), id="negative-duration"),
+    ],
+)
+def test_rejects_inconsistent_experiment_upload_before_creating_artifacts(
+    tmp_path: Path,
+    mutation: object,
+) -> None:
+    client, experiment_store_path = make_client_with_experiments(tmp_path)
+    payload = load_contract_experiment()
+    assert callable(mutation)
+    mutation(payload)
+
+    response = client.post("/v1/experiments", json=payload)
+
+    assert response.status_code == 422
+    assert isinstance(response.json().get("detail"), list)
     assert not experiment_store_path.exists()
 
 

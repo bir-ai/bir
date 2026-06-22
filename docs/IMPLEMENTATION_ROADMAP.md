@@ -114,6 +114,9 @@ The current implementation has moved beyond the first foundation commits:
   summaries, and optional experiment trace recording are implemented in
   `bir.evals`
 - the server accepts, stores, lists, and returns experiment detail artifacts
+- experiment uploads validate summary/result counts, unique result and example
+  identifiers, and non-negative durations before storage; server and dashboard
+  contract tests share one representative experiment fixture
 - the dashboard includes Traces and Experiments views with experiment
   list/detail inspection
 - the dashboard renders a focused prompt panel with prompt name, version,
@@ -562,6 +565,8 @@ dataset JSONL files and run sync tasks over examples with deterministic
 evaluators, writing one JSONL result row per example plus a sibling summary. The
 server can ingest experiment artifacts, and the dashboard can list experiments,
 show per-example detail, and compare a baseline run against a candidate run.
+Uploads reject internally inconsistent summary counts, duplicate result or
+example identifiers, and negative durations before creating artifacts.
 
 Goal: let users run a task over examples and compare results.
 

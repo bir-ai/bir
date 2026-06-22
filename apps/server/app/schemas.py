@@ -232,7 +232,7 @@ class ExperimentExampleResultPayload(BaseModel):
     def validate_duration(cls, value: Any) -> int | float | None:
         if value is None:
             return None
-        return _validate_number(value, "duration_ms")
+        return _validate_non_negative_number(value, "duration_ms")
 
     @model_validator(mode="after")
     def validate_result_shape(self) -> ExperimentExampleResultPayload:
@@ -288,6 +288,24 @@ class ExperimentIngestPayload(BaseModel):
 
     summary: ExperimentSummaryPayload
     results: list[ExperimentExampleResultPayload]
+
+    @model_validator(mode="after")
+    def validate_experiment_consistency(self) -> ExperimentIngestPayload:
+        if self.summary.example_count != len(self.results):
+            raise ValueError("summary.example_count must equal the number of result rows")
+
+        error_count = sum(result.status == "error" for result in self.results)
+        if self.summary.error_count != error_count:
+            raise ValueError("summary.error_count must equal the number of error result rows")
+
+        result_ids = [result.id for result in self.results]
+        if len(result_ids) != len(set(result_ids)):
+            raise ValueError("result id values must be unique")
+
+        example_ids = [result.example_id for result in self.results]
+        if len(example_ids) != len(set(example_ids)):
+            raise ValueError("result example_id values must be unique")
+        return self
 
 
 def _validate_number(value: Any, field: str) -> int | float:

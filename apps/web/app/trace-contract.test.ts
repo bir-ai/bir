@@ -1145,7 +1145,12 @@ function makeLoadedExperiment({
   summary?: Record<string, unknown>;
   results?: Record<string, unknown>[];
 } = {}) {
-  const experiment = normalizeExperiment({ ...summary, results });
+  const experiment = normalizeExperiment({
+    ...summary,
+    example_count: results.length,
+    error_count: results.filter((result) => result.status === "error").length,
+    results,
+  });
   assert.ok(experiment);
   return experiment;
 }

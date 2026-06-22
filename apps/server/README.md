@@ -94,6 +94,18 @@ as summary plus per-example result rows through
 `/v1/experiments/{experiment_id}`. Duplicate experiment uploads are idempotent
 and do not overwrite the existing stored artifact.
 
+Before an uploaded experiment is written, the request contract requires:
+
+- `summary.example_count` to equal the number of result rows;
+- `summary.error_count` to equal the number of rows with `status: "error"`;
+- unique result `id` and `example_id` values within the experiment; and
+- non-negative finite `duration_ms` values when duration is present.
+
+Violations return the standard controlled `422` validation response and create
+neither the result JSONL file nor the summary file. Aggregate scores are
+accepted as reported by the SDK; the server does not infer score direction or
+recompute aggregation semantics.
+
 ## Playground
 
 The Playground endpoints proxy one non-streaming chat turn to a local
@@ -213,6 +225,10 @@ without a `send_experiment()` upload. SDK summaries record `result_path`
 relative to the project root, so the server locates result rows through the
 sibling file that shares the summary's stem
 (`<stem>.summary.json` / `<stem>.jsonl`), matching how the SDK pairs them.
+Read-only inspection validates each summary and result row but does not apply
+the upload-only cross-row count and uniqueness checks or rewrite SDK-owned
+files. The dashboard accepts experiment detail for comparison only when its
+counts and result/example identifiers are coherent.
 
 When `BIR_DATA_DIR` is unset, the server runs exactly as before with its own
 ingestion store. Passing an explicit `event_store_path` or

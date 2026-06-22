@@ -203,7 +203,16 @@ function isLoadedExperiment(value: unknown): value is LoadedExperiment {
     return false;
   }
   const candidate = value as ExperimentSummary & { results?: unknown };
-  return Array.isArray(candidate.results) && candidate.results.every(isExperimentExampleResult);
+  if (!Array.isArray(candidate.results) || !candidate.results.every(isExperimentExampleResult)) {
+    return false;
+  }
+  const results = candidate.results as ExperimentExampleResult[];
+  return (
+    candidate.example_count === results.length &&
+    candidate.error_count === results.filter((result) => result.status === "error").length &&
+    hasUniqueValues(results.map((result) => result.id)) &&
+    hasUniqueValues(results.map((result) => result.example_id))
+  );
 }
 
 function isExperimentSummary(value: unknown): value is ExperimentSummary {
@@ -236,7 +245,7 @@ function isExperimentExampleResult(value: unknown): value is ExperimentExampleRe
     value.scores.every(isEvalScore) &&
     typeof value.start_time === "string" &&
     typeof value.end_time === "string" &&
-    (typeof value.duration_ms === "number" || value.duration_ms === null || value.duration_ms === undefined) &&
+    (value.duration_ms === null || value.duration_ms === undefined || isNonNegativeFiniteNumber(value.duration_ms)) &&
     isStatus(value.status) &&
     (typeof value.error === "string" || value.error === null)
   );
@@ -255,6 +264,14 @@ function isStatus(value: unknown): value is ExperimentStatus {
 
 function isNonNegativeInteger(value: unknown): value is number {
   return Number.isInteger(value) && typeof value === "number" && value >= 0;
+}
+
+function isNonNegativeFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function hasUniqueValues(values: string[]): boolean {
+  return new Set(values).size === values.length;
 }
 
 function isNumberRecord(value: unknown): value is Record<string, number> {
