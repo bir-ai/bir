@@ -190,6 +190,12 @@ h3 {
   margin: 2px 0 12px;
 }
 
+.metric-scope {
+  margin: 2px 0 6px;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
 .metric,
 .trace-list,
 .detail-panel {

@@ -32,6 +32,7 @@ from .schemas import (
     PlaygroundModelsResponse,
     PlaygroundStatusResponse,
     TraceEventPayload,
+    TraceSummaryPayload,
 )
 from .storage import JsonlEventStore, LocalJsonlEventReader, TraceEventReader
 
@@ -156,6 +157,26 @@ def create_app(
             min_duration_ms=min_duration_ms,
             sort=sort,
             limit=limit,
+        )
+
+    @app.get("/v1/traces/summary", response_model=TraceSummaryPayload)
+    def summarize_traces(
+        request: Request,
+        status: EventStatus | None = Query(default=None),
+        name: str | None = Query(default=None),
+        event_type: EventType | None = Query(default=None),
+        service: str | None = Query(default=None),
+        environment: str | None = Query(default=None),
+        min_duration_ms: float | None = Query(default=None, gt=0),
+    ) -> TraceSummaryPayload:
+        store = _get_event_store(request)
+        return store.summarize_traces(
+            status=status,
+            name=name,
+            event_type=event_type,
+            service=service,
+            environment=environment,
+            min_duration_ms=min_duration_ms,
         )
 
     @app.get("/v1/traces/{trace_id}", response_model=LoadedTrace)

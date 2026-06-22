@@ -13,6 +13,7 @@ there is no editable SDK source tree here.
 - `POST /v1/events/batch`
 - `GET /v1/events`
 - `GET /v1/traces`
+- `GET /v1/traces/summary`
 - `GET /v1/traces/{trace_id}`
 - `GET /v1/playground/status`
 - `GET /v1/playground/models`
@@ -29,6 +30,18 @@ that type), `service`/`environment` (case-insensitive substring of the
 environment=)`), and `min_duration_ms` (a positive number; keeps only traces
 whose root duration `end_time - start_time` is at least that many milliseconds,
 to isolate slow traces). Filters combine with AND.
+
+`GET /v1/traces/summary` accepts the same `status`, `name`, `event_type`,
+`service`, `environment`, and `min_duration_ms` filters. It returns exact
+counts, nearest-rank p50/p95 root latency, generation token/cost totals, and
+model/provider breakdowns over every matching trace. Browse `limit`, ordering,
+and future cursors do not constrain this metric scope. `currency` is the single
+currency used by cost-bearing generations, or `null` for no cost or mixed
+currencies.
+
+```bash
+curl 'http://127.0.0.1:8000/v1/traces/summary?status=error&min_duration_ms=250'
+```
 
 `limit` returns only the most recent N traces (ordered by start time, then id)
 after the filters are applied, so large local stores stay browsable. It must be

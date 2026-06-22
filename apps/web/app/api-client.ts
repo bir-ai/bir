@@ -17,6 +17,10 @@ export function fetchTraces(query: string): Promise<unknown> {
   return requestJson(`/v1/traces${query ? `?${query}` : ""}`);
 }
 
+export function fetchTraceSummary(query: string): Promise<unknown> {
+  return requestJson(`/v1/traces/summary${query ? `?${query}` : ""}`);
+}
+
 export function fetchTraceDetail(traceId: string): Promise<unknown> {
   return requestJson(`/v1/traces/${encodeURIComponent(traceId)}`);
 }

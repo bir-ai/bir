@@ -211,6 +211,13 @@ export function buildTraceFilterQuery(filters: TraceFilterValues): string {
   return params.toString();
 }
 
+export function buildTraceSummaryFilterQuery(filters: TraceFilterValues): string {
+  const params = new URLSearchParams(buildTraceFilterQuery(filters));
+  params.delete("limit");
+  params.delete("sort");
+  return params.toString();
+}
+
 // One-click triage helpers: keep the "errors only" status shortcut in one place
 // so the quick toggle and the failed-count chip stay in lockstep.
 export function isErrorsOnlyFilter(filters: TraceFilterValues): boolean {
@@ -471,6 +478,42 @@ export function summarizeTraces(traces: Trace[]): TraceSummary {
   };
 }
 
+export function normalizeTraceSummary(value: unknown): TraceSummary | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const countKeys = ["trace_count", "event_count", "generation_count", "error_count"] as const;
+  const totalKeys = ["total_tokens", "total_cost", "p50_latency_ms", "p95_latency_ms"] as const;
+  if (
+    !countKeys.every((key) => isNonNegativeInteger(value[key])) ||
+    !totalKeys.every((key) => isNonNegativeFiniteNumber(value[key])) ||
+    !(value.currency === null || (typeof value.currency === "string" && value.currency.length > 0)) ||
+    !Array.isArray(value.models) ||
+    !Array.isArray(value.providers)
+  ) {
+    return null;
+  }
+
+  const models = value.models.map(normalizeModelSummary);
+  const providers = value.providers.map(normalizeProviderSummary);
+  if (models.some((entry) => entry === null) || providers.some((entry) => entry === null)) {
+    return null;
+  }
+  return {
+    traceCount: value.trace_count as number,
+    eventCount: value.event_count as number,
+    generationCount: value.generation_count as number,
+    errorCount: value.error_count as number,
+    totalTokens: value.total_tokens as number,
+    totalCost: value.total_cost as number,
+    currency: value.currency as string | null,
+    p50LatencyMs: value.p50_latency_ms as number,
+    p95LatencyMs: value.p95_latency_ms as number,
+    models: models as TraceModelSummary[],
+    providers: providers as TraceProviderSummary[],
+  };
+}
+
 export function buildTraceTimelineRows(events: TraceEvent[]): TraceTimelineRow[] {
   const eventsById = new Map<string, TraceEvent>();
   const childrenByParentId = new Map<string, TraceEvent[]>();
@@ -593,6 +636,49 @@ function percentile(sortedAscending: number[], percentileRank: number): number {
   const rank = Math.ceil((percentileRank / 100) * sortedAscending.length);
   const index = Math.min(sortedAscending.length - 1, Math.max(0, rank - 1));
   return sortedAscending[index];
+}
+
+function normalizeModelSummary(value: unknown): TraceModelSummary | null {
+  if (!isRecord(value) || typeof value.model !== "string" || value.model.length === 0) {
+    return null;
+  }
+  const totals = normalizeBreakdownTotals(value);
+  return totals ? { model: value.model, ...totals } : null;
+}
+
+function normalizeProviderSummary(value: unknown): TraceProviderSummary | null {
+  if (!isRecord(value) || typeof value.provider !== "string" || value.provider.length === 0) {
+    return null;
+  }
+  const totals = normalizeBreakdownTotals(value);
+  return totals ? { provider: value.provider, ...totals } : null;
+}
+
+function normalizeBreakdownTotals(value: Record<string, unknown>): Omit<TraceModelSummary, "model"> | null {
+  if (
+    !isNonNegativeInteger(value.generation_count) ||
+    !isNonNegativeFiniteNumber(value.total_tokens) ||
+    !isNonNegativeFiniteNumber(value.input_tokens) ||
+    !isNonNegativeFiniteNumber(value.output_tokens) ||
+    !isNonNegativeFiniteNumber(value.total_cost)
+  ) {
+    return null;
+  }
+  return {
+    generationCount: value.generation_count,
+    totalTokens: value.total_tokens,
+    inputTokens: value.input_tokens,
+    outputTokens: value.output_tokens,
+    totalCost: value.total_cost,
+  };
+}
+
+function isNonNegativeFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return isNonNegativeFiniteNumber(value) && Number.isInteger(value);
 }
 
 function retrievalQuery(input: unknown): unknown {

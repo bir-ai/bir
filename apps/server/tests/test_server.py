@@ -20,7 +20,7 @@ from bir._sdk import _reset_config_for_tests, _safe_capture, _safe_error
 import app.storage as storage
 from app.main import create_app
 from app.redaction import redact_secret_text, redact_value
-from app.schemas import TraceEventPayload
+from app.schemas import TraceEventPayload, TraceSummaryPayload
 from app.storage import JsonlEventStore
 
 
@@ -1294,6 +1294,160 @@ def test_rejects_invalid_trace_filter_values(tmp_path: Path) -> None:
 
     assert status_response.status_code == 422
     assert event_type_response.status_code == 422
+
+
+def test_trace_summary_is_exact_and_independent_of_browse_limit(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    durations = [100, 200, 300, 400]
+    for index, duration_ms in enumerate(durations):
+        trace_id = f"trace-{index}"
+        root = make_event(
+            id=trace_id,
+            trace_id=trace_id,
+            name="answer" if index < 3 else "other",
+            status="error" if index == 2 else "success",
+            error="failed" if index == 2 else None,
+            start_time="2026-01-01T00:00:00+00:00",
+            end_time=f"2026-01-01T00:00:00.{duration_ms:03d}+00:00",
+            metadata={"service": {"name": "rag-api", "environment": "test"}},
+        )
+        generation_event = make_event(
+            id=f"generation-{index}",
+            trace_id=trace_id,
+            parent_id=trace_id,
+            name="openai.chat.completions" if index < 3 else "generate",
+            type="generation",
+            start_time="2026-01-01T00:00:00+00:00",
+            end_time=f"2026-01-01T00:00:00.{duration_ms:03d}+00:00",
+            metadata={"provider": "azure-openai"} if index == 0 else {},
+            model="gpt-4o-mini" if index < 3 else None,
+            usage={"total_tokens": 10 + index, "input_tokens": index, "output_tokens": index + 1},
+            cost={"total_cost": 0.001 * (index + 1)},
+            currency="EUR" if index == 3 else "USD",
+        )
+        assert client.post("/v1/events", json=root).status_code == 201
+        assert client.post("/v1/events", json=generation_event).status_code == 201
+
+    browse = client.get("/v1/traces", params={"limit": 1})
+    response = client.get("/v1/traces/summary")
+
+    assert browse.status_code == 200
+    assert len(browse.json()) == 1
+    assert response.status_code == 200
+    summary = response.json()
+    assert summary == {
+        "trace_count": 4,
+        "event_count": 8,
+        "generation_count": 4,
+        "error_count": 1,
+        "total_tokens": 46,
+        "total_cost": pytest.approx(0.01),
+        "currency": None,
+        "p50_latency_ms": 200,
+        "p95_latency_ms": 400,
+        "models": [
+            {
+                "model": "gpt-4o-mini",
+                "generation_count": 3,
+                "total_tokens": 33,
+                "input_tokens": 3,
+                "output_tokens": 6,
+                "total_cost": pytest.approx(0.006),
+            },
+            {
+                "model": "unknown",
+                "generation_count": 1,
+                "total_tokens": 13,
+                "input_tokens": 3,
+                "output_tokens": 4,
+                "total_cost": pytest.approx(0.004),
+            },
+        ],
+        "providers": [
+            {
+                "provider": "openai",
+                "generation_count": 2,
+                "total_tokens": 23,
+                "input_tokens": 3,
+                "output_tokens": 5,
+                "total_cost": pytest.approx(0.005),
+            },
+            {
+                "provider": "azure-openai",
+                "generation_count": 1,
+                "total_tokens": 10,
+                "input_tokens": 0,
+                "output_tokens": 1,
+                "total_cost": pytest.approx(0.001),
+            },
+            {
+                "provider": "unknown",
+                "generation_count": 1,
+                "total_tokens": 13,
+                "input_tokens": 3,
+                "output_tokens": 4,
+                "total_cost": pytest.approx(0.004),
+            },
+        ],
+    }
+
+
+def test_trace_summary_filters_match_trace_browsing(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    post_filter_fixture_events(client)
+    filter_cases = [
+        {"status": "error"},
+        {"name": "QUESTION"},
+        {"event_type": "tool_call"},
+        {"service": "RAG"},
+        {"environment": "staging"},
+        {"min_duration_ms": 1000},
+        {"status": "success", "event_type": "tool_call"},
+    ]
+    for params in filter_cases:
+        browse = client.get("/v1/traces", params=params)
+        summary = client.get("/v1/traces/summary", params=params)
+        assert browse.status_code == 200
+        assert summary.status_code == 200
+        assert summary.json()["trace_count"] == len(browse.json())
+
+
+def test_trace_summary_empty_store_is_zeroed(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+
+    response = client.get("/v1/traces/summary")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "trace_count": 0,
+        "event_count": 0,
+        "generation_count": 0,
+        "error_count": 0,
+        "total_tokens": 0,
+        "total_cost": 0,
+        "currency": None,
+        "p50_latency_ms": 0,
+        "p95_latency_ms": 0,
+        "models": [],
+        "providers": [],
+    }
+
+
+def test_trace_summary_schema_rejects_non_finite_aggregates() -> None:
+    with pytest.raises(ValueError, match="total_cost must be finite"):
+        TraceSummaryPayload(
+            trace_count=1,
+            event_count=1,
+            generation_count=1,
+            error_count=0,
+            total_tokens=1,
+            total_cost=float("inf"),
+            currency="USD",
+            p50_latency_ms=1,
+            p95_latency_ms=1,
+            models=[],
+            providers=[],
+        )
 
 
 def test_limits_traces_to_most_recent_n(tmp_path: Path) -> None:

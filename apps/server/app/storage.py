@@ -5,11 +5,21 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from threading import Lock
+from typing import TypedDict
 
 from pydantic import ValidationError
 
 from .jsonl import iter_jsonl_lines_tolerating_torn_tail
-from .schemas import EventStatus, EventType, LoadedTrace, TraceEventPayload, TraceSort
+from .schemas import (
+    EventStatus,
+    EventType,
+    LoadedTrace,
+    TraceEventPayload,
+    TraceModelSummaryPayload,
+    TraceProviderSummaryPayload,
+    TraceSort,
+    TraceSummaryPayload,
+)
 
 EVENT_SORT_PRIORITY = {
     "trace": 0,
@@ -18,6 +28,14 @@ EVENT_SORT_PRIORITY = {
     "tool_call": 1,
     "score": 2,
 }
+
+
+class _BreakdownTotals(TypedDict):
+    generation_count: int
+    total_tokens: int | float
+    input_tokens: int | float
+    output_tokens: int | float
+    total_cost: int | float
 
 
 class TraceEventReader:
@@ -61,6 +79,67 @@ class TraceEventReader:
         local experience stays usable as the store grows.
         """
 
+        traces = self._load_filtered_traces(
+            status=status,
+            name=name,
+            event_type=event_type,
+            service=service,
+            environment=environment,
+            min_duration_ms=min_duration_ms,
+        )
+        if sort == "slowest":
+            # Slowest first by root-trace duration; ties fall back to recency then
+            # id so the order stays deterministic. reverse=True flips every key, so
+            # the slowest N are the head slice under ``limit``.
+            ordered = sorted(
+                traces,
+                key=lambda trace: (trace.end_time - trace.start_time, trace.start_time, trace.id),
+                reverse=True,
+            )
+            if limit is not None:
+                return ordered[:limit]
+            return ordered
+        ordered = sorted(traces, key=lambda trace: (trace.start_time, trace.id))
+        # The newest traces sort last, so the most recent N are the tail slice.
+        if limit is not None:
+            return ordered[-limit:]
+        return ordered
+
+    def summarize_traces(
+        self,
+        *,
+        status: EventStatus | None = None,
+        name: str | None = None,
+        event_type: EventType | None = None,
+        service: str | None = None,
+        environment: str | None = None,
+        min_duration_ms: float | None = None,
+    ) -> TraceSummaryPayload:
+        """Summarize the complete filtered result set without browse limits."""
+
+        return _summarize_traces(
+            self._load_filtered_traces(
+                status=status,
+                name=name,
+                event_type=event_type,
+                service=service,
+                environment=environment,
+                min_duration_ms=min_duration_ms,
+            )
+        )
+
+    def _load_filtered_traces(
+        self,
+        *,
+        status: EventStatus | None,
+        name: str | None,
+        event_type: EventType | None,
+        service: str | None,
+        environment: str | None,
+        min_duration_ms: float | None,
+    ) -> list[LoadedTrace]:
+        """Reconstruct and filter traces for both browse and aggregate queries."""
+
         events_by_trace_id: dict[str, list[TraceEventPayload]] = {}
         for event in self.load_events():
             events_by_trace_id.setdefault(event.trace_id, []).append(event)
@@ -81,23 +160,7 @@ class TraceEventReader:
                 min_duration_ms=min_duration_ms,
             ):
                 traces.append(trace)
-        if sort == "slowest":
-            # Slowest first by root-trace duration; ties fall back to recency then
-            # id so the order stays deterministic. reverse=True flips every key, so
-            # the slowest N are the head slice under ``limit``.
-            ordered = sorted(
-                traces,
-                key=lambda trace: (trace.end_time - trace.start_time, trace.start_time, trace.id),
-                reverse=True,
-            )
-            if limit is not None:
-                return ordered[:limit]
-            return ordered
-        ordered = sorted(traces, key=lambda trace: (trace.start_time, trace.id))
-        # The newest traces sort last, so the most recent N are the tail slice.
-        if limit is not None:
-            return ordered[-limit:]
-        return ordered
+        return traces
 
     def load_trace(self, trace_id: str) -> LoadedTrace | None:
         """Load one complete trace by ID."""
@@ -332,6 +395,120 @@ def _trace_service(trace: LoadedTrace) -> tuple[str | None, str | None]:
         name if isinstance(name, str) else None,
         environment if isinstance(environment, str) else None,
     )
+
+
+def _summarize_traces(traces: list[LoadedTrace]) -> TraceSummaryPayload:
+    event_count = 0
+    generation_count = 0
+    error_count = 0
+    total_tokens: int | float = 0
+    total_cost: int | float = 0
+    currencies: set[str] = set()
+    durations_ms: list[float] = []
+    models: dict[str, _BreakdownTotals] = {}
+    providers: dict[str, _BreakdownTotals] = {}
+
+    for trace in traces:
+        event_count += len(trace.events)
+        error_count += trace.status == "error"
+        durations_ms.append((trace.end_time - trace.start_time).total_seconds() * 1000)
+        for event in trace.events:
+            if event.type != "generation":
+                continue
+            generation_count += 1
+            tokens = _generation_tokens(event)
+            input_tokens = _usage_value(event, "input_tokens")
+            output_tokens = _usage_value(event, "output_tokens")
+            cost = _generation_cost(event)
+            total_tokens += tokens
+            total_cost += cost
+            if event.cost is not None and "total_cost" in event.cost and event.currency:
+                currencies.add(event.currency)
+            _add_breakdown(models, event.model or "unknown", tokens, input_tokens, output_tokens, cost)
+            _add_breakdown(providers, _generation_provider(event), tokens, input_tokens, output_tokens, cost)
+
+    durations_ms.sort()
+    model_payloads = [
+        TraceModelSummaryPayload(model=key, **values)
+        for key, values in sorted(models.items(), key=lambda item: (-item[1]["generation_count"], item[0]))
+    ]
+    provider_payloads = [
+        TraceProviderSummaryPayload(provider=key, **values)
+        for key, values in sorted(providers.items(), key=lambda item: (-item[1]["generation_count"], item[0]))
+    ]
+    return TraceSummaryPayload(
+        trace_count=len(traces),
+        event_count=event_count,
+        generation_count=generation_count,
+        error_count=error_count,
+        total_tokens=total_tokens,
+        total_cost=total_cost,
+        currency=next(iter(currencies)) if len(currencies) == 1 else None,
+        p50_latency_ms=_percentile(durations_ms, 50),
+        p95_latency_ms=_percentile(durations_ms, 95),
+        models=model_payloads,
+        providers=provider_payloads,
+    )
+
+
+def _usage_value(event: TraceEventPayload, key: str) -> int | float:
+    if event.usage is None:
+        return 0
+    return event.usage.get(key, 0)
+
+
+def _generation_tokens(event: TraceEventPayload) -> int | float:
+    if event.usage is None:
+        return 0
+    if "total_tokens" in event.usage:
+        return event.usage["total_tokens"]
+    return _usage_value(event, "input_tokens") + _usage_value(event, "output_tokens")
+
+
+def _generation_cost(event: TraceEventPayload) -> int | float:
+    if event.cost is None:
+        return 0
+    return event.cost.get("total_cost", 0)
+
+
+def _generation_provider(event: TraceEventPayload) -> str:
+    provider = event.metadata.get("provider")
+    if isinstance(provider, str) and provider:
+        return provider
+    prefix, separator, _ = event.name.partition(".")
+    return prefix if separator and prefix else "unknown"
+
+
+def _add_breakdown(
+    buckets: dict[str, _BreakdownTotals],
+    key: str,
+    tokens: int | float,
+    input_tokens: int | float,
+    output_tokens: int | float,
+    cost: int | float,
+) -> None:
+    bucket = buckets.setdefault(
+        key,
+        {
+            "generation_count": 0,
+            "total_tokens": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_cost": 0,
+        },
+    )
+    bucket["generation_count"] += 1
+    bucket["total_tokens"] += tokens
+    bucket["input_tokens"] += input_tokens
+    bucket["output_tokens"] += output_tokens
+    bucket["total_cost"] += cost
+
+
+def _percentile(sorted_values: list[float], percentile_rank: int) -> float:
+    if not sorted_values:
+        return 0
+    rank = -(-percentile_rank * len(sorted_values) // 100)
+    return sorted_values[min(len(sorted_values) - 1, max(0, rank - 1))]
 
 
 def _event_sort_key(event: TraceEventPayload) -> tuple[str, int, str, str]:

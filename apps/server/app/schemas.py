@@ -192,6 +192,54 @@ class LoadedTrace(BaseModel):
     events: list[TraceEventPayload]
 
 
+class TraceBreakdownPayload(BaseModel):
+    """Aggregate generation metrics for one model or provider bucket."""
+
+    generation_count: int = Field(ge=0)
+    total_tokens: int | float
+    input_tokens: int | float
+    output_tokens: int | float
+    total_cost: int | float
+
+    @field_validator("total_tokens", "input_tokens", "output_tokens", "total_cost", mode="before")
+    @classmethod
+    def validate_finite_total(cls, value: Any, info: Any) -> int | float:
+        return _validate_non_negative_number(value, info.field_name)
+
+
+class TraceModelSummaryPayload(TraceBreakdownPayload):
+    """Aggregate generation metrics for one model."""
+
+    model: str = Field(min_length=1)
+
+
+class TraceProviderSummaryPayload(TraceBreakdownPayload):
+    """Aggregate generation metrics for one provider."""
+
+    provider: str = Field(min_length=1)
+
+
+class TraceSummaryPayload(BaseModel):
+    """Exact aggregate metrics over every trace matching a filter set."""
+
+    trace_count: int = Field(ge=0)
+    event_count: int = Field(ge=0)
+    generation_count: int = Field(ge=0)
+    error_count: int = Field(ge=0)
+    total_tokens: int | float
+    total_cost: int | float
+    currency: str | None
+    p50_latency_ms: int | float
+    p95_latency_ms: int | float
+    models: list[TraceModelSummaryPayload]
+    providers: list[TraceProviderSummaryPayload]
+
+    @field_validator("total_tokens", "total_cost", "p50_latency_ms", "p95_latency_ms", mode="before")
+    @classmethod
+    def validate_finite_aggregate(cls, value: Any, info: Any) -> int | float:
+        return _validate_non_negative_number(value, info.field_name)
+
+
 class EvalScorePayload(BaseModel):
     """Validated evaluator score payload."""
 

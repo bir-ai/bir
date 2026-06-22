@@ -63,6 +63,7 @@ export function TraceDashboard({
 
   return (
     <>
+      <p className="metric-scope">Metric scope: all matching traces</p>
       <section className="metric-strip" aria-label="Trace summary">
         <Metric label="Traces" value={stats.traceCount.toString()} />
         <Metric label="Events" value={stats.eventCount.toString()} />

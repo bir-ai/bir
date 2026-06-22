@@ -7,6 +7,7 @@ import {
   fetchPlaygroundModels,
   fetchPlaygroundStatus,
   fetchTraceDetail,
+  fetchTraceSummary,
   fetchTraces,
   getApiBaseUrl,
   postPlaygroundChat,
@@ -105,6 +106,19 @@ test("fetches traces without a question mark when the query is empty", async () 
     await fetchTraces("");
 
     assert.equal(calls[0]?.url, "http://127.0.0.1:8000/v1/traces");
+  } finally {
+    restore();
+  }
+});
+
+test("fetches the complete trace summary with the filter query appended", async () => {
+  const { calls, restore } = withStubbedFetch(async () => jsonResponse({ trace_count: 2 }));
+  try {
+    const summary = await fetchTraceSummary("status=error");
+
+    assert.deepEqual(summary, { trace_count: 2 });
+    assert.equal(calls[0]?.url, "http://127.0.0.1:8000/v1/traces/summary?status=error");
+    assert.equal(calls[0]?.init?.cache, "no-store");
   } finally {
     restore();
   }

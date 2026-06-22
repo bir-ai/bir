@@ -28,6 +28,9 @@ truth.
   environment, and positive minimum-duration filters. Filters combine with AND.
 - Trace results support recent and slowest-first ordering plus a positive
   result limit.
+- `GET /v1/traces/summary` applies the browse filters through the same matching
+  path and computes exact metrics over the complete filtered result set,
+  independent of browse limits or pagination windows.
 - `GET /v1/traces/{trace_id}` returns one ordered trace or `404`.
 - The dashboard fetches the selected trace through the detail endpoint and
   renders its nested timeline, captured values, errors, usage, cost, metadata,
@@ -42,8 +45,10 @@ truth.
 - Errors only, slowest-first, minimum duration, and the remaining filters can be
   combined. A separate slow/failed view would duplicate the current workflow
   and is not planned.
-- Summary metrics include error count, p50/p95 latency, token and cost totals,
-  and model/provider breakdowns.
+- Summary metrics include trace/event/generation/error counts, nearest-rank
+  p50/p95 latency, token and cost totals, mixed-currency handling, and
+  model/provider breakdowns. The dashboard labels their scope as all matching
+  traces and keeps selected-trace totals local to trace detail.
 
 ### Retrieval and evaluation display
 

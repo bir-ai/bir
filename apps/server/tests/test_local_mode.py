@@ -209,6 +209,17 @@ def test_local_mode_trace_filters(tmp_path: Path) -> None:
     assert [trace["id"] for trace in event_type_response.json()] == ["trace-tool"]
 
 
+def test_local_mode_trace_summary_uses_complete_filtered_store(tmp_path: Path) -> None:
+    client, data_dir = make_local_client(tmp_path)
+    write_filter_fixture_events(data_dir / "traces.jsonl")
+
+    response = client.get("/v1/traces/summary", params={"status": "success"})
+
+    assert response.status_code == 200
+    assert response.json()["trace_count"] == 2
+    assert response.json()["event_count"] == 4
+
+
 def test_local_mode_rejects_ingestion(tmp_path: Path) -> None:
     client, data_dir = make_local_client(tmp_path)
     traces_path = data_dir / "traces.jsonl"

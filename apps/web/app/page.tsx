@@ -7,6 +7,7 @@ import {
   fetchExperimentSummaries,
   fetchPlaygroundStatus,
   fetchTraceDetail,
+  fetchTraceSummary,
   fetchTraces,
   getApiBaseUrl,
 } from "./api-client";
@@ -26,9 +27,11 @@ import { normalizePlaygroundStatus, type PlaygroundStatus } from "./playground-c
 import { createLinkedTraceResolver, resolveSelectedTrace } from "./linked-trace-selection";
 import {
   buildTraceFilterQuery,
+  buildTraceSummaryFilterQuery,
   buildTraceTimelineRows,
   isTrace,
   normalizeTraces,
+  normalizeTraceSummary,
   summarizeTraces,
   type Trace,
   type TraceFilterValues,
@@ -51,6 +54,7 @@ export default function DashboardPage() {
   const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [activeView, setActiveView] = useState<ViewMode>("traces");
   const [traces, setTraces] = useState<Trace[]>([]);
+  const [traceStats, setTraceStats] = useState(() => summarizeTraces([]));
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [linkedTrace, setLinkedTrace] = useState<Trace | null>(null);
   const [selectedTraceDetail, setSelectedTraceDetail] = useState<Trace | null>(null);
@@ -91,16 +95,32 @@ export default function DashboardPage() {
   const [missingLinkedTraceId, setMissingLinkedTraceId] = useState<string | null>(null);
   const [linkedTraceError, setLinkedTraceError] = useState<string | null>(null);
   const linkedTraceRef = useRef<Trace | null>(null);
+  const traceRequestIdRef = useRef(0);
   const linkedTraceResolver = useMemo(() => createLinkedTraceResolver(fetchTraceDetail), []);
 
   const loadTraces = useCallback(async (filters: TraceFilterValues = traceFilters) => {
+    const requestId = traceRequestIdRef.current + 1;
+    traceRequestIdRef.current = requestId;
     setIsTraceLoading(true);
     setTraceError(null);
 
     try {
-      const query = buildTraceFilterQuery({ ...filters, limit: DEFAULT_TRACE_LIMIT });
-      const nextTraces = normalizeTraces(await fetchTraces(query), filters.sort);
+      const browseQuery = buildTraceFilterQuery({ ...filters, limit: DEFAULT_TRACE_LIMIT });
+      const summaryQuery = buildTraceSummaryFilterQuery(filters);
+      const [traceResponse, summaryResponse] = await Promise.all([
+        fetchTraces(browseQuery),
+        fetchTraceSummary(summaryQuery),
+      ]);
+      const nextTraces = normalizeTraces(traceResponse, filters.sort);
+      const nextSummary = normalizeTraceSummary(summaryResponse);
+      if (!nextSummary) {
+        throw new Error("Bir server returned an unexpected trace summary");
+      }
+      if (requestId !== traceRequestIdRef.current) {
+        return nextTraces;
+      }
       setTraces(nextTraces);
+      setTraceStats(nextSummary);
       setSelectedTraceId((current) => {
         if (
           current &&
@@ -112,12 +132,18 @@ export default function DashboardPage() {
       });
       return nextTraces;
     } catch (requestError) {
+      if (requestId !== traceRequestIdRef.current) {
+        return [];
+      }
       setTraceError(requestError instanceof Error ? requestError.message : "Trace request failed");
       setTraces([]);
+      setTraceStats(summarizeTraces([]));
       setSelectedTraceId(null);
       return [];
     } finally {
-      setIsTraceLoading(false);
+      if (requestId === traceRequestIdRef.current) {
+        setIsTraceLoading(false);
+      }
     }
   }, [traceFilters]);
 
@@ -363,8 +389,6 @@ export default function DashboardPage() {
     [detailTrace],
   );
   const hasActiveTraceFilters = buildTraceFilterQuery(traceFilters).length > 0;
-
-  const traceStats = useMemo(() => summarizeTraces(traces), [traces]);
 
   const experimentStats = useMemo(() => {
     const exampleCount = experiments.reduce((total, experiment) => total + experiment.example_count, 0);

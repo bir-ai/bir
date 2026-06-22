@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   buildTraceTimelineRows,
   buildTraceFilterQuery,
+  buildTraceSummaryFilterQuery,
   findTraceById,
   getGenerationChatDetails,
   getPromptDetails,
@@ -16,6 +17,7 @@ import {
   getTraceTotals,
   isErrorsOnlyFilter,
   normalizeTraces,
+  normalizeTraceSummary,
   summarizeTraces,
   toggleErrorsOnlyFilter,
   type EventStatus,
@@ -46,6 +48,13 @@ test("omits empty and default trace filters", () => {
   });
 
   assert.equal(query, "");
+});
+
+test("builds summary queries from filters without browse window or ordering", () => {
+  assert.equal(
+    buildTraceSummaryFilterQuery({ status: "error", min_duration_ms: 12.5, sort: "slowest", limit: 100 }),
+    "status=error&min_duration_ms=12.5",
+  );
 });
 
 test("includes service and environment trace filters in the query", () => {
@@ -633,6 +642,84 @@ test("returns a zeroed summary for an empty trace list", () => {
     models: [],
     providers: [],
   });
+});
+
+test("normalizes an explicit server trace summary", () => {
+  const summary = normalizeTraceSummary({
+    trace_count: 250,
+    event_count: 500,
+    generation_count: 100,
+    error_count: 2,
+    total_tokens: 1234,
+    total_cost: 0.25,
+    currency: "USD",
+    p50_latency_ms: 20,
+    p95_latency_ms: 80,
+    models: [
+      {
+        model: "gpt-4o-mini",
+        generation_count: 100,
+        total_tokens: 1234,
+        input_tokens: 1000,
+        output_tokens: 234,
+        total_cost: 0.25,
+      },
+    ],
+    providers: [
+      {
+        provider: "openai",
+        generation_count: 100,
+        total_tokens: 1234,
+        input_tokens: 1000,
+        output_tokens: 234,
+        total_cost: 0.25,
+      },
+    ],
+  });
+
+  assert.ok(summary);
+  assert.equal(summary.traceCount, 250);
+  assert.equal(summary.models[0]?.model, "gpt-4o-mini");
+  assert.equal(summary.providers[0]?.provider, "openai");
+});
+
+test("rejects malformed or non-finite server trace summaries", () => {
+  const valid = {
+    trace_count: 0,
+    event_count: 0,
+    generation_count: 0,
+    error_count: 0,
+    total_tokens: 0,
+    total_cost: 0,
+    currency: null,
+    p50_latency_ms: 0,
+    p95_latency_ms: 0,
+    models: [],
+    providers: [],
+  };
+  assert.equal(normalizeTraceSummary({ ...valid, total_cost: Number.POSITIVE_INFINITY }), null);
+  assert.equal(normalizeTraceSummary({ ...valid, trace_count: 1.5 }), null);
+  assert.equal(normalizeTraceSummary({ ...valid, currency: "" }), null);
+});
+
+test("server summary state remains independent of loaded page contents", () => {
+  const loadedPage = [summarizableTrace({ id: "loaded-only" })];
+  const serverSummary = normalizeTraceSummary({
+    trace_count: 250,
+    event_count: 500,
+    generation_count: 0,
+    error_count: 0,
+    total_tokens: 0,
+    total_cost: 0,
+    currency: null,
+    p50_latency_ms: 10,
+    p95_latency_ms: 50,
+    models: [],
+    providers: [],
+  });
+
+  assert.equal(summarizeTraces(loadedPage).traceCount, 1);
+  assert.equal(serverSummary?.traceCount, 250);
 });
 
 test("handles traces without generations or usage and counts errors", () => {

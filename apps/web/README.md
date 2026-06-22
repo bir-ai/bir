@@ -13,6 +13,9 @@ Current views:
   usage, cost, errors, metadata, input, and output when captured
 - trace triage with an errors-only shortcut, recent/slowest ordering, and a
   minimum-duration filter; these controls combine with the other trace filters
+- dashboard metrics fetched from `GET /v1/traces/summary`, scoped to all traces
+  matching the active filters rather than the currently loaded browse window;
+  mixed or absent cost currencies are displayed without a currency label
 - selected trace details fetched from `GET /v1/traces/{trace_id}`
 - faithfulness and RAG-quality scores grouped separately from other scores
 - experiment list with aggregate scores and error counts
