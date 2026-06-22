@@ -11,7 +11,8 @@ LLM Evaluation, Tracing & Observability Platform
 This repository is the **Bir product**: a FastAPI ingestion server and a Next.js
 dashboard for inspecting traces, experiments, and Playground runs.
 
-> **The Python SDK lives in its own repository** and is published to PyPI as
+> **The Python SDK is developed and published from a separate repository** and
+> is consumed here from PyPI as
 > [`bir-sdk`](https://pypi.org/project/bir-sdk/) (the import name stays `bir`).
 > Instrument your app with the SDK, then point it at the server in this repo to
 > explore the results in the dashboard.
@@ -107,8 +108,8 @@ send_events("http://127.0.0.1:8000")
 ```
 
 The uploaded traces, spans, generations, and scores then show up in the
-dashboard. See the [`bir-sdk`](https://pypi.org/project/bir-sdk/) repository for
-the full SDK API and framework integrations.
+dashboard. See the external [`bir-sdk`](https://pypi.org/project/bir-sdk/)
+package documentation for the full SDK API and framework integrations.
 
 ## Browse traces locally (no upload)
 

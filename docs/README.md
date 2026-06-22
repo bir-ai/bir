@@ -1,8 +1,10 @@
 # Bir Docs
 
-Bir is currently focused on the local MVP path: record traces with the Python
-SDK, persist them as JSONL, send them to the FastAPI server, and inspect them in
-the dashboard.
+This repository contains the standalone Bir product: the FastAPI server, Next.js
+dashboard, shared contract fixtures, and product documentation. The Python SDK
+is developed and published from a separate repository and is installed as
+`bir-sdk` (its import name is `bir`). SDK implementation and publishing changes
+must be made in that external repository, not here.
 
 ## Local Quickstart
 
@@ -18,46 +20,19 @@ cd ../web
 npm install
 ```
 
+Node.js 22 is the supported dashboard development version and is also used by
+CI.
+
 From the repository root, run the local dev loop:
 
 ```bash
-scripts/dev-local
+./scripts/dev.sh
 ```
 
-The runner starts the FastAPI ingestion server at `http://127.0.0.1:8000` and
-the dashboard at `http://localhost:3000`. It checks local prerequisites first,
-does not install dependencies, and shuts down both child processes on Ctrl+C.
-Use `scripts/dev-local --check` when you only want to validate the local setup.
-
-From the repository root, run the OpenAI-style local demo:
-
-```bash
-cd examples/openai-demo
-PYTHONPATH=../../packages/python-sdk/src python3 demo.py
-```
-
-Start the ingestion server in another terminal from the repository root:
-
-```bash
-cd apps/server
-../../.venv/bin/python -m uvicorn app.main:app --reload
-```
-
-Send demo events to the server from the repository root:
-
-```bash
-cd examples/openai-demo
-PYTHONPATH=../../packages/python-sdk/src python3 demo.py --send
-```
-
-Start the dashboard in another terminal from the repository root:
-
-```bash
-cd apps/web
-npm run dev
-```
-
-Open `http://localhost:3000`.
+The runner starts the API at `http://127.0.0.1:8000` and dashboard at
+`http://localhost:3000`. Open the dashboard after both processes are ready.
+Use `./scripts/server.sh` when only the API is needed. These scripts do not
+develop or publish the external SDK.
 
 The manual fallback is to run the server and dashboard separately:
 
@@ -88,7 +63,16 @@ setup). This also works in read-only local data mode (`BIR_DATA_DIR`). When
 `BIR_DASHBOARD_DIR` is unset or the export is not built yet, the server serves
 only the API, unchanged.
 
-## Core SDK Pattern
+## External SDK Pattern
+
+Install the published SDK in the application being instrumented:
+
+```bash
+pip install bir-sdk
+```
+
+The following is a consumer example. It describes the published package API;
+the implementation is not part of this repository.
 
 ```python
 from bir import generation, observe, retrieval, score, span
@@ -128,8 +112,9 @@ store request and response payloads locally.
 Generation token usage and cost are optional user-provided values. When provided,
 usage and cost calls require at least one field. Bir records the values you pass
 and does not calculate provider pricing automatically.
-The SDK and server both apply best-effort redaction for common secret-like keys
-and text patterns before events are written, but capture should still stay
+The server applies best-effort redaction for common secret-like keys and text
+patterns before events are written. Contract tests exercise the installed
+`bir-sdk` against the shared redaction cases, but capture should still stay
 opt-in for sensitive payloads.
 
 ## Event Contract
@@ -137,8 +122,9 @@ opt-in for sensitive payloads.
 Trace events use schema version `1.0`. The shared contract artifact lives at
 `tests/fixtures/event-schema-v1.json`, and `tests/fixtures/valid-events.jsonl`
 contains a representative trace with trace, span, tool call, generation, and
-score events. Keep the SDK, server, and dashboard aligned with those fixtures
-when changing event fields.
+score events. Keep the server and dashboard aligned with those fixtures when
+changing event fields, and coordinate corresponding SDK contract changes in the
+external SDK repository.
 
 ## Trace Filtering
 
@@ -284,8 +270,8 @@ already depend on LangChain.
 Use `bir.evals` for small deterministic checks before adding LLM-as-judge or
 external evaluation services.
 
-For the detailed evaluator implementation plan, see
-`docs/EVALUATOR_IMPLEMENTATION_GUIDE.md`.
+Evaluator implementation and publishing belong to the external SDK repository;
+the examples below show how this product consumes the published API.
 
 ```python
 from bir import generation, span

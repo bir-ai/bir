@@ -2,6 +2,10 @@
 
 Minimal FastAPI ingestion server for Bir trace events.
 
+The Python SDK is developed and published separately. This repository consumes
+the published `bir-sdk` package as a development dependency for contract tests;
+there is no editable SDK source tree here.
+
 ## API
 
 - `GET /health`
@@ -238,7 +242,12 @@ mode even when `BIR_DATA_DIR` is set.
 ## Development
 
 ```bash
-python3 -m pip install -e ".[dev]"
-pytest
-uvicorn app.main:app --reload
+# From the repository root, after creating .venv
+cd apps/server
+../../.venv/bin/python -m pip install -e ".[dev]"
+../../.venv/bin/python -m pytest
+../../.venv/bin/uvicorn app.main:app --reload
 ```
+
+CI also runs `pyright` from the repository root after installing it separately;
+it is not included in the server's `[dev]` extra.
