@@ -103,6 +103,44 @@ def make_chat_request(**overrides: object) -> dict[str, object]:
     return chat_request
 
 
+def assert_failed_chat_trace(
+    client: TestClient,
+    *,
+    model: str = "llama3.2:1b",
+    expected_message: str = "Say hello.",
+) -> dict[str, Any]:
+    filtered_response = client.get("/v1/traces", params={"status": "error"})
+
+    assert filtered_response.status_code == 200
+    filtered = filtered_response.json()
+    assert len(filtered) == 1
+    trace_id = filtered[0]["id"]
+    detail_response = client.get(f"/v1/traces/{trace_id}")
+    assert detail_response.status_code == 200
+
+    trace = detail_response.json()
+    assert trace["name"] == "playground.chat"
+    assert trace["status"] == "error"
+    assert [event["type"] for event in trace["events"]] == ["trace", "generation"]
+    root_event, generation_event = trace["events"]
+    assert root_event["id"] == trace_id
+    assert root_event["parent_id"] is None
+    assert root_event["status"] == "error"
+    assert root_event["error"]
+    assert generation_event["id"] == f"{trace_id}-generation"
+    assert generation_event["parent_id"] == trace_id
+    assert generation_event["name"] == "playground.llm"
+    assert generation_event["status"] == "error"
+    assert generation_event["error"] == root_event["error"]
+    assert generation_event["model"] == model
+    assert generation_event["input"] == {
+        "messages": [{"role": "user", "content": expected_message}]
+    }
+    assert generation_event["output"] is None
+    assert generation_event["metadata"]["latency_ms"] >= 0
+    return trace
+
+
 def test_chat_forwards_to_upstream_and_returns_reply_with_stats(tmp_path: Path) -> None:
     with stub_upstream({("POST", "/v1/chat/completions"): (200, CHAT_COMPLETION)}) as (base_url, requests):
         client, _ = make_playground_test_client(tmp_path, base_url)
@@ -364,38 +402,59 @@ def test_chat_redacts_secret_like_values_before_recording(tmp_path: Path) -> Non
 
 
 def test_chat_returns_502_when_upstream_is_unreachable(tmp_path: Path) -> None:
-    client, event_store_path = make_playground_test_client(tmp_path, unreachable_base_url())
+    client, _ = make_playground_test_client(tmp_path, unreachable_base_url())
 
     response = client.post("/v1/playground/chat", json=make_chat_request())
 
     assert response.status_code == 502
     assert "Could not reach a model server" in response.json()["detail"]
     assert "BIR_PLAYGROUND_BASE_URL" in response.json()["detail"]
-    assert not event_store_path.exists()
+    trace = assert_failed_chat_trace(client)
+    assert "Could not reach a model server" in trace["events"][0]["error"]
 
 
 def test_chat_returns_502_with_upstream_error_message(tmp_path: Path) -> None:
-    error_payload = {"error": {"message": 'model "missing-model" not found'}}
+    error_payload = {
+        "error": {
+            "message": 'model "missing-model" not found; authorization: Bearer upstream-secret'
+        }
+    }
     with stub_upstream({("POST", "/v1/chat/completions"): (404, error_payload)}) as (base_url, _):
         client, event_store_path = make_playground_test_client(tmp_path, base_url)
 
-        response = client.post("/v1/playground/chat", json=make_chat_request(model="missing-model"))
+        response = client.post(
+            "/v1/playground/chat",
+            json=make_chat_request(
+                model="missing-model",
+                messages=[{"role": "user", "content": "Use api_key=sk-inputsecret please."}],
+            ),
+        )
 
     assert response.status_code == 502
     assert "HTTP 404" in response.json()["detail"]
     assert 'model "missing-model" not found' in response.json()["detail"]
-    assert not event_store_path.exists()
+    assert "upstream-secret" not in response.json()["detail"]
+    trace = assert_failed_chat_trace(
+        client,
+        model="missing-model",
+        expected_message="Use api_key=[redacted] please.",
+    )
+    assert "upstream-secret" not in trace["events"][0]["error"]
+    raw_store = event_store_path.read_text(encoding="utf-8")
+    assert "sk-inputsecret" not in raw_store
+    assert "upstream-secret" not in raw_store
 
 
 def test_chat_returns_502_for_malformed_upstream_completion(tmp_path: Path) -> None:
     with stub_upstream({("POST", "/v1/chat/completions"): (200, {"choices": []})}) as (base_url, _):
-        client, event_store_path = make_playground_test_client(tmp_path, base_url)
+        client, _ = make_playground_test_client(tmp_path, base_url)
 
         response = client.post("/v1/playground/chat", json=make_chat_request())
 
     assert response.status_code == 502
     assert "unexpected chat completion payload" in response.json()["detail"]
-    assert not event_store_path.exists()
+    trace = assert_failed_chat_trace(client)
+    assert "unexpected chat completion payload" in trace["events"][0]["error"]
 
 
 def test_chat_rejects_invalid_request_shape(tmp_path: Path) -> None:

@@ -17,6 +17,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from .redaction import redact_secret_text
 from .schemas import (
     PlaygroundChatRequest,
     PlaygroundChatResponse,
@@ -36,6 +37,10 @@ CONTEXT_PROMPT_PREFIX = "Use the following context to answer the user's question
 
 class PlaygroundUpstreamError(Exception):
     """Raised when the upstream model server is unreachable or misbehaves."""
+
+    def __init__(self, message: str, *, events: list[TraceEventPayload] | None = None) -> None:
+        super().__init__(redact_secret_text(message))
+        self.events = events or []
 
 
 def playground_base_url_from_env() -> str:
@@ -156,11 +161,30 @@ def run_chat(
 
     model_start = datetime.now(timezone.utc)
     started_at = time.perf_counter()
-    completion = client.chat_completion(payload)
+    try:
+        completion = client.chat_completion(payload)
+        assistant_content = _assistant_content(client.base_url, completion)
+    except PlaygroundUpstreamError as exc:
+        latency_ms = (time.perf_counter() - started_at) * 1000
+        model_end = datetime.now(timezone.utc)
+        events = _build_chat_events(
+            trace_id=trace_id,
+            metadata=metadata,
+            messages=messages,
+            workflow_start=workflow_start,
+            trace_end=model_end,
+            model_start=model_start,
+            model_end=model_end,
+            model=chat.model,
+            latency_ms=latency_ms,
+            context_events=context_events,
+            status="error",
+            error=str(exc),
+        )
+        raise PlaygroundUpstreamError(str(exc), events=events) from exc
+
     latency_ms = (time.perf_counter() - started_at) * 1000
     model_end = datetime.now(timezone.utc)
-
-    assistant_content = _assistant_content(client.base_url, completion)
     upstream_model = completion.get("model")
     response_model = upstream_model if isinstance(upstream_model, str) else chat.model
     input_tokens = _usage_token_count(completion, "prompt_tokens")
@@ -187,42 +211,23 @@ def run_chat(
         )
 
     trace_end = datetime.now(timezone.utc) if score_events else model_end
-    base_event_fields: dict[str, Any] = {
-        "schema_version": "1.0",
-        "trace_id": trace_id,
-        "status": "success",
-        "error": None,
-    }
-    trace_event = {
-        **base_event_fields,
-        "id": trace_id,
-        "parent_id": None,
-        "name": "playground.chat",
-        "type": "trace",
-        "start_time": workflow_start.isoformat(),
-        "end_time": trace_end.isoformat(),
-        "metadata": metadata,
-        "input": None,
-        "output": None,
-    }
-    generation_event = {
-        **base_event_fields,
-        "id": f"{trace_id}-generation",
-        "parent_id": trace_id,
-        "name": "playground.llm",
-        "type": "generation",
-        "start_time": model_start.isoformat(),
-        "end_time": model_end.isoformat(),
-        "metadata": {**metadata, "latency_ms": latency_ms},
-        "input": {"messages": messages},
-        "output": assistant_content,
-        "model": response_model,
-        "usage": usage or None,
-    }
-    events = [
-        TraceEventPayload.model_validate({**base_event_fields, **event})
-        for event in (trace_event, *context_events, generation_event, *score_events)
-    ]
+    events = _build_chat_events(
+        trace_id=trace_id,
+        metadata=metadata,
+        messages=messages,
+        workflow_start=workflow_start,
+        trace_end=trace_end,
+        model_start=model_start,
+        model_end=model_end,
+        model=response_model,
+        latency_ms=latency_ms,
+        context_events=context_events,
+        status="success",
+        error=None,
+        output=assistant_content,
+        usage=usage or None,
+        trailing_events=score_events,
+    )
 
     response = PlaygroundChatResponse(
         trace_id=trace_id,
@@ -235,6 +240,62 @@ def run_chat(
         scores=[PlaygroundScore(name=event["name"], value=event["value"]) for event in score_events],
     )
     return response, events
+
+
+def _build_chat_events(
+    *,
+    trace_id: str,
+    metadata: dict[str, Any],
+    messages: list[dict[str, Any]],
+    workflow_start: datetime,
+    trace_end: datetime,
+    model_start: datetime,
+    model_end: datetime,
+    model: str,
+    latency_ms: float,
+    context_events: list[dict[str, Any]],
+    status: str,
+    error: str | None,
+    output: str | None = None,
+    usage: dict[str, int] | None = None,
+    trailing_events: list[dict[str, Any]] | None = None,
+) -> list[TraceEventPayload]:
+    """Build one complete Playground trace after the model-call outcome is known."""
+
+    shared_fields: dict[str, Any] = {
+        "schema_version": "1.0",
+        "trace_id": trace_id,
+        "status": status,
+        "error": error,
+    }
+    trace_event = {
+        **shared_fields,
+        "id": trace_id,
+        "parent_id": None,
+        "name": "playground.chat",
+        "type": "trace",
+        "start_time": workflow_start.isoformat(),
+        "end_time": trace_end.isoformat(),
+        "metadata": metadata,
+        "input": None,
+        "output": None,
+    }
+    generation_event = {
+        **shared_fields,
+        "id": f"{trace_id}-generation",
+        "parent_id": trace_id,
+        "name": "playground.llm",
+        "type": "generation",
+        "start_time": model_start.isoformat(),
+        "end_time": model_end.isoformat(),
+        "metadata": {**metadata, "latency_ms": latency_ms},
+        "input": {"messages": messages},
+        "output": output,
+        "model": model,
+        "usage": usage,
+    }
+    raw_events = (trace_event, *context_events, generation_event, *(trailing_events or []))
+    return [TraceEventPayload.model_validate({**shared_fields, **event}) for event in raw_events]
 
 
 def _prepare_context(

@@ -128,6 +128,11 @@ events in the same JSONL event store as uploaded SDK traces.
 
 All of these events pass the same `TraceEventPayload` validation, land in the
 same event store, and show up through `/v1/traces` and `/v1/traces/{id}`.
+If the model server is unreachable, returns an HTTP error, or returns a malformed
+completion, the endpoint still responds with HTTP 502 and also records the
+attempt as an error `playground.chat` trace with a failed `playground.llm`
+generation. These traces are available through `/v1/traces?status=error` for
+the same debugging workflow as other Bir errors.
 
 The upstream base URL defaults to local Ollama:
 
@@ -138,7 +143,8 @@ export BIR_PLAYGROUND_BASE_URL=http://127.0.0.1:11434
 Set that variable to point at LM Studio, vLLM, or another compatible server.
 Playground inputs and outputs are captured intentionally because every chat turn
 is an explicit user action for prompt inspection. The same best-effort redaction
-used for ingested events still applies before events are written.
+used for ingested events applies to successful and failed attempts before events
+are written, including captured inputs and upstream error text.
 
 ## CORS
 

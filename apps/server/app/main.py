@@ -206,6 +206,8 @@ def create_app(
         try:
             chat_response, events = run_chat(client, chat)
         except PlaygroundUpstreamError as exc:
+            for event in exc.events:
+                store.append(event)
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         for event in events:
             store.append(event)

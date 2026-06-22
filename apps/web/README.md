@@ -57,6 +57,9 @@ The Playground tab uses the same direct browser-to-server API calls. It is
 enabled when `/v1/playground/status` reports writable server mode and a reachable
 model server. In read-only `BIR_DATA_DIR` mode the tab shows the server's
 disabled state instead of sending chat requests.
+Failed Playground model calls still return HTTP 502 to the tab, and the server
+records them as ordinary error traces. They are available in the trace dashboard
+through the existing **Errors only** triage filter and trace detail timeline.
 
 Useful checks:
 
