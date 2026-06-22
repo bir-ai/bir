@@ -44,6 +44,7 @@ export function PlaygroundDashboard({
   historySessions,
   isHistoryLoading,
   isStatusLoading,
+  linkedTraceError,
   onOpenTrace,
   onRefreshHistory,
   onSelectHistorySession,
@@ -58,6 +59,7 @@ export function PlaygroundDashboard({
   historySessions: PlaygroundHistorySession[];
   isHistoryLoading: boolean;
   isStatusLoading: boolean;
+  linkedTraceError: string | null;
   onOpenTrace: (traceId: string) => void;
   onRefreshHistory: () => void;
   onSelectHistorySession: (sessionId: string | null) => void;
@@ -441,6 +443,7 @@ export function PlaygroundDashboard({
           </div>
 
           <div className="chat-log" ref={logRef}>
+            {linkedTraceError ? <div className="error-block">{linkedTraceError} Try refreshing history and opening it again.</div> : null}
             {visibleEntries.length === 0 ? (
               <div className="empty-detail">Send a message to start an observed chat.</div>
             ) : (

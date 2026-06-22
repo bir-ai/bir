@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchExperimentDetail,
   fetchExperimentSummaries,
@@ -23,10 +23,10 @@ import {
 } from "./experiment-contract";
 import { buildPlaygroundHistorySessions } from "./playground-history";
 import { normalizePlaygroundStatus, type PlaygroundStatus } from "./playground-contract";
+import { createLinkedTraceResolver, resolveSelectedTrace } from "./linked-trace-selection";
 import {
   buildTraceFilterQuery,
   buildTraceTimelineRows,
-  findTraceById,
   isTrace,
   normalizeTraces,
   summarizeTraces,
@@ -52,6 +52,7 @@ export default function DashboardPage() {
   const [activeView, setActiveView] = useState<ViewMode>("traces");
   const [traces, setTraces] = useState<Trace[]>([]);
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
+  const [linkedTrace, setLinkedTrace] = useState<Trace | null>(null);
   const [selectedTraceDetail, setSelectedTraceDetail] = useState<Trace | null>(null);
   const [traceFilters, setTraceFilters] = useState<TraceFilterValues>(DEFAULT_TRACE_FILTERS);
   const [experiments, setExperiments] = useState<ExperimentSummary[]>([]);
@@ -88,6 +89,9 @@ export default function DashboardPage() {
   const [playgroundError, setPlaygroundError] = useState<string | null>(null);
   const [playgroundHistoryError, setPlaygroundHistoryError] = useState<string | null>(null);
   const [missingLinkedTraceId, setMissingLinkedTraceId] = useState<string | null>(null);
+  const [linkedTraceError, setLinkedTraceError] = useState<string | null>(null);
+  const linkedTraceRef = useRef<Trace | null>(null);
+  const linkedTraceResolver = useMemo(() => createLinkedTraceResolver(fetchTraceDetail), []);
 
   const loadTraces = useCallback(async (filters: TraceFilterValues = traceFilters) => {
     setIsTraceLoading(true);
@@ -98,7 +102,10 @@ export default function DashboardPage() {
       const nextTraces = normalizeTraces(await fetchTraces(query), filters.sort);
       setTraces(nextTraces);
       setSelectedTraceId((current) => {
-        if (current && nextTraces.some((trace) => trace.id === current)) {
+        if (
+          current &&
+          (nextTraces.some((trace) => trace.id === current) || linkedTraceRef.current?.id === current)
+        ) {
           return current;
         }
         return nextTraces[0]?.id ?? null;
@@ -184,43 +191,35 @@ export default function DashboardPage() {
     }
   }, []);
 
-  const openTraceFromExperiment = useCallback(
-    async (traceId: string) => {
-      setMissingLinkedTraceId(null);
+  const openLinkedTrace = useCallback(async (traceId: string) => {
+    setMissingLinkedTraceId(null);
+    setLinkedTraceError(null);
 
-      if (findTraceById(traces, traceId)) {
-        setSelectedTraceId(traceId);
-        setActiveView("traces");
-        return;
-      }
+    const result = await linkedTraceResolver.resolve(traceId);
+    if (result.kind === "stale") {
+      return;
+    }
+    if (result.kind === "missing") {
+      setMissingLinkedTraceId(result.traceId);
+      setLinkedTraceError(result.message);
+      return;
+    }
 
-      setTraceFilters(DEFAULT_TRACE_FILTERS);
-      const refreshedTraces = await loadTraces(DEFAULT_TRACE_FILTERS);
-      if (findTraceById(refreshedTraces, traceId)) {
-        setSelectedTraceId(traceId);
-        setActiveView("traces");
-        return;
-      }
+    linkedTraceRef.current = result.trace;
+    setLinkedTrace(result.trace);
+    setSelectedTraceDetail(result.trace);
+    setSelectedTraceId(result.trace.id);
+    setActiveView("traces");
+  }, [linkedTraceResolver]);
 
-      setMissingLinkedTraceId(traceId);
-    },
-    [loadTraces, traces],
-  );
-
-  const openTraceFromPlayground = useCallback(
-    async (traceId: string) => {
-      setMissingLinkedTraceId(null);
-      setTraceFilters(DEFAULT_TRACE_FILTERS);
-      const refreshedTraces = await loadTraces(DEFAULT_TRACE_FILTERS);
-      setSelectedTraceId(traceId);
-      setActiveView("traces");
-
-      if (!findTraceById(refreshedTraces, traceId)) {
-        setMissingLinkedTraceId(traceId);
-      }
-    },
-    [loadTraces],
-  );
+  const selectTraceFromList = useCallback((traceId: string) => {
+    linkedTraceResolver.invalidate();
+    linkedTraceRef.current = null;
+    setLinkedTrace(null);
+    setMissingLinkedTraceId(null);
+    setLinkedTraceError(null);
+    setSelectedTraceId(traceId);
+  }, [linkedTraceResolver]);
 
   useEffect(() => {
     setApiBaseUrl(getApiBaseUrl());
@@ -312,8 +311,8 @@ export default function DashboardPage() {
   }, [comparisonBaselineId, comparisonCandidateId]);
 
   const selectedTrace = useMemo(
-    () => (selectedTraceId ? findTraceById(traces, selectedTraceId) : null) ?? traces[0] ?? null,
-    [selectedTraceId, traces],
+    () => resolveSelectedTrace(traces, selectedTraceId, linkedTrace),
+    [linkedTrace, selectedTraceId, traces],
   );
 
   // Load the selected trace's full events from the dedicated endpoint instead of
@@ -324,6 +323,11 @@ export default function DashboardPage() {
     const traceId = selectedTrace?.id ?? null;
     if (!traceId) {
       setSelectedTraceDetail(null);
+      return;
+    }
+
+    if (linkedTrace?.id === traceId) {
+      setSelectedTraceDetail(linkedTrace);
       return;
     }
 
@@ -345,7 +349,7 @@ export default function DashboardPage() {
     return () => {
       isCurrentRequest = false;
     };
-  }, [selectedTrace]);
+  }, [linkedTrace, selectedTrace]);
 
   const detailTrace = useMemo(() => {
     if (selectedTraceDetail && selectedTrace && selectedTraceDetail.id === selectedTrace.id) {
@@ -468,7 +472,7 @@ export default function DashboardPage() {
           filters={traceFilters}
           isLoading={isTraceLoading}
           selectedTrace={detailTrace}
-          setSelectedTraceId={setSelectedTraceId}
+          setSelectedTraceId={selectTraceFromList}
           setTraceFilters={setTraceFilters}
           stats={traceStats}
           timelineRows={timelineRows}
@@ -488,7 +492,7 @@ export default function DashboardPage() {
           isLoading={isExperimentLoading}
           isTraceLoading={isTraceLoading}
           missingLinkedTraceId={missingLinkedTraceId}
-          onOpenTrace={openTraceFromExperiment}
+          onOpenTrace={openLinkedTrace}
           selectedExperiment={selectedExperiment}
           selectedExperimentId={selectedExperimentId}
           setComparisonBaselineId={setComparisonBaselineId}
@@ -504,7 +508,8 @@ export default function DashboardPage() {
           historySessions={playgroundHistorySessions}
           isHistoryLoading={isPlaygroundHistoryLoading}
           isStatusLoading={isPlaygroundStatusLoading}
-          onOpenTrace={openTraceFromPlayground}
+          linkedTraceError={linkedTraceError}
+          onOpenTrace={openLinkedTrace}
           onRefreshHistory={() => {
             void loadPlaygroundHistory();
           }}

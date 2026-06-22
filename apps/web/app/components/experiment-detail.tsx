@@ -207,7 +207,7 @@ function ExperimentResultRow({
       </div>
 
       {isLinkedTraceMissing ? (
-        <p className="linked-trace-missing">Trace not found. Send local trace events first.</p>
+        <p className="linked-trace-missing">Trace detail was not found or was invalid. Retry after refreshing traces.</p>
       ) : null}
       {result.error ? <pre className="error-block">{result.error}</pre> : null}
 

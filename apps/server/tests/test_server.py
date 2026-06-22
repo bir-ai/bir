@@ -738,7 +738,10 @@ def test_server_event_contract_matches_schema_artifact() -> None:
         assert isinstance(definition, dict)
         assert definition["type"] == [value_type, "null"]
 
-    score_rule = schema["allOf"][-1]
+    all_of = schema["allOf"]
+    if not isinstance(all_of, list):
+        raise TypeError("expected schema allOf definition to be an array")
+    score_rule = all_of[-1]
     assert isinstance(score_rule, dict)
     assert score_rule["then"] == {
         "required": ["value"],
