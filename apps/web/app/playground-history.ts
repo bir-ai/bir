@@ -16,6 +16,15 @@ export type PlaygroundHistoryEntry = {
   content: string;
   expected?: string;
   reply?: PlaygroundChatReply;
+  failedAttempt?: PlaygroundFailedAttempt;
+};
+
+export type PlaygroundFailedAttempt = {
+  traceId: string;
+  status: "error";
+  model: string;
+  error: string | null;
+  latency_ms: number;
 };
 
 export type PlaygroundHistorySession = {
@@ -135,6 +144,20 @@ function buildSession(sessionId: string, traces: Trace[]): PlaygroundHistorySess
           scores: getTraceScores(trace.events).map(({ name, value }) => ({ name, value })),
         },
       });
+    } else if (isFailedPlaygroundGeneration(trace, generation)) {
+      const error = playgroundGenerationError(trace, generation);
+      entries.push({
+        id: `${trace.id}-failed`,
+        role: "assistant",
+        content: error ?? "The model call failed before an assistant reply was captured.",
+        failedAttempt: {
+          traceId: trace.id,
+          status: "error",
+          model: generation.model ?? "unknown",
+          error,
+          latency_ms: latencyMs(generation),
+        },
+      });
     }
   }
 
@@ -198,6 +221,23 @@ function assistantOutput(output: unknown): string | null {
   if (typeof output === "string" && output.length > 0) {
     return output;
   }
+  return null;
+}
+
+function isFailedPlaygroundGeneration(trace: Trace, generation: TraceEvent): boolean {
+  return trace.status === "error" || generation.status === "error";
+}
+
+function playgroundGenerationError(trace: Trace, generation: TraceEvent): string | null {
+  if (generation.error && generation.error.trim().length > 0) {
+    return generation.error;
+  }
+
+  const rootEvent = trace.events.find((event) => event.type === "trace" && event.id === trace.id);
+  if (rootEvent?.error && rootEvent.error.trim().length > 0) {
+    return rootEvent.error;
+  }
+
   return null;
 }
 

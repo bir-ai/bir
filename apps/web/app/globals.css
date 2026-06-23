@@ -1226,6 +1226,10 @@ h3 {
   justify-self: start;
 }
 
+.chat-turn.failed .chat-role {
+  color: rgb(253, 186, 116);
+}
+
 .chat-role {
   color: var(--muted);
   font-size: 0.75rem;
@@ -1252,6 +1256,17 @@ h3 {
 .chat-turn.user .chat-bubble {
   border-color: rgba(48, 106, 248, 0.5);
   background: rgba(48, 106, 248, 0.18);
+}
+
+.chat-turn.failed .chat-bubble {
+  display: grid;
+  gap: 6px;
+  border-color: rgba(239, 68, 68, 0.58);
+  background: rgba(127, 29, 29, 0.28);
+}
+
+.chat-turn.failed .chat-bubble strong {
+  color: rgb(254, 226, 226);
 }
 
 .chat-turn-facts {

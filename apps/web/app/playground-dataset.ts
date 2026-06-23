@@ -1,4 +1,5 @@
 import type { PlaygroundChatReply } from "./playground-contract";
+import type { PlaygroundFailedAttempt } from "./playground-history";
 
 // Structural subset of PlaygroundConversationEntry / PlaygroundHistoryEntry so
 // both live sessions and reconstructed history sessions can be exported.
@@ -7,6 +8,7 @@ export type DatasetSourceEntry = {
   content: string;
   expected?: string;
   reply?: PlaygroundChatReply;
+  failedAttempt?: PlaygroundFailedAttempt;
 };
 
 // One row in the SDK's evals dataset JSONL format, loadable with
@@ -28,6 +30,9 @@ export function buildDatasetRows(
     const userEntry = entries[index];
     const assistantEntry = entries[index + 1];
     if (userEntry.role !== "user" || assistantEntry.role !== "assistant") {
+      continue;
+    }
+    if (assistantEntry.failedAttempt) {
       continue;
     }
 

@@ -7,6 +7,7 @@ import {
   mergePlaygroundHistoryTraces,
   playgroundHistoryCursorFromTraces,
 } from "./playground-history";
+import { buildDatasetRows } from "./playground-dataset";
 import type { Trace, TraceEvent } from "./trace-contract";
 
 test("builds scoped bounded Playground history queries", () => {
@@ -204,6 +205,76 @@ test("recovers the expected answer from contains_expected score metadata", () =>
   assert.equal(expectedBySession.get("session-2"), undefined);
 });
 
+test("reconstructs a failed playground trace without assistant output", () => {
+  const sessions = buildPlaygroundHistorySessions([
+    makePlaygroundTrace({
+      traceId: "failed-trace",
+      sessionId: "session-1",
+      output: null,
+      status: "error",
+      error: "Model server at http://127.0.0.1:11434 returned HTTP 404: model not found",
+    }),
+  ]);
+
+  assert.equal(sessions.length, 1);
+  assert.deepEqual(
+    sessions[0].entries.map((entry) => [entry.role, entry.content]),
+    [
+      ["user", "Say hello."],
+      [
+        "assistant",
+        "Model server at http://127.0.0.1:11434 returned HTTP 404: model not found",
+      ],
+    ],
+  );
+  const failedEntry = sessions[0].entries[1];
+  assert.equal(failedEntry.reply, undefined);
+  assert.deepEqual(failedEntry.failedAttempt, {
+    traceId: "failed-trace",
+    status: "error",
+    model: "llama3.2:1b",
+    error: "Model server at http://127.0.0.1:11434 returned HTTP 404: model not found",
+    latency_ms: 250,
+  });
+});
+
+test("excludes failed playground attempts from dataset export rows", () => {
+  const sessions = buildPlaygroundHistorySessions([
+    makePlaygroundTrace({
+      traceId: "failed-trace",
+      sessionId: "session-1",
+      startTime: "2026-01-01T00:00:01.000Z",
+      messages: [{ role: "user", content: "Will this fail?" }],
+      output: null,
+      status: "error",
+      error: "Model server failed",
+    }),
+    makePlaygroundTrace({
+      traceId: "success-trace",
+      sessionId: "session-1",
+      startTime: "2026-01-01T00:00:02.000Z",
+      messages: [{ role: "user", content: "Will this pass?" }],
+      output: "Yes.",
+    }),
+  ]);
+
+  const rows = buildDatasetRows(sessions[0].entries, sessions[0].sessionId);
+
+  assert.deepEqual(rows, [
+    {
+      id: "turn-1",
+      input: "Will this pass?",
+      expected: null,
+      metadata: {
+        source: "playground",
+        session_id: "session-1",
+        trace_id: "success-trace",
+        model: "llama3.2:1b",
+      },
+    },
+  ]);
+});
+
 test("sorts reconstructed sessions by latest trace end time", () => {
   const sessions = buildPlaygroundHistorySessions([
     makePlaygroundTrace({
@@ -245,15 +316,19 @@ function makePlaygroundTrace({
   output = "Hello.",
   totalTokens = 3,
   scores = [],
+  status = "success",
+  error = null,
 }: {
   traceId: string;
   sessionId: string | null;
   startTime?: string;
   source?: string;
   messages?: { role: "system" | "user" | "assistant"; content: string }[];
-  output?: string;
+  output?: string | null;
   totalTokens?: number;
   scores?: { name: string; value: number; expectedOutput?: string }[];
+  status?: TraceEvent["status"];
+  error?: string | null;
 }): Trace {
   const metadata = sessionId === null ? { source } : { source, session_id: sessionId };
   const endTime = new Date(new Date(startTime).getTime() + 250).toISOString();
@@ -290,6 +365,8 @@ function makePlaygroundTrace({
         metadata,
         input: null,
         output: null,
+        status,
+        error,
       }),
       makeEvent({
         id: `${traceId}-generation`,
@@ -302,14 +379,20 @@ function makePlaygroundTrace({
         metadata: { ...metadata, latency_ms: 250 },
         input: { messages },
         output,
+        status,
+        error,
         model: "llama3.2:1b",
-        usage: {
-          input_tokens: Math.max(0, totalTokens - 1),
-          output_tokens: 1,
-          total_tokens: totalTokens,
-        },
+        usage:
+          output === null
+            ? null
+            : {
+                input_tokens: Math.max(0, totalTokens - 1),
+                output_tokens: 1,
+                total_tokens: totalTokens,
+              },
       }),
     ],
+    status,
   });
 }
 
@@ -319,19 +402,21 @@ function makeTrace({
   startTime = "2026-01-01T00:00:00.000Z",
   endTime = "2026-01-01T00:00:00.250Z",
   events,
+  status = "success",
 }: {
   id: string;
   name: string;
   startTime?: string;
   endTime?: string;
   events: TraceEvent[];
+  status?: TraceEvent["status"];
 }): Trace {
   return {
     id,
     name,
     start_time: startTime,
     end_time: endTime,
-    status: "success",
+    status,
     events,
   };
 }
@@ -350,6 +435,8 @@ function makeEvent({
   model,
   usage,
   value,
+  status = "success",
+  error = null,
 }: {
   id: string;
   traceId: string;
@@ -362,8 +449,10 @@ function makeEvent({
   input: unknown;
   output: unknown;
   model?: string;
-  usage?: Record<string, number>;
+  usage?: Record<string, number> | null;
   value?: number;
+  status?: TraceEvent["status"];
+  error?: string | null;
 }): TraceEvent {
   return {
     schema_version: "1.0",
@@ -374,11 +463,11 @@ function makeEvent({
     type,
     start_time: startTime,
     end_time: endTime,
-    status: "success",
+    status,
     metadata,
     input,
     output,
-    error: null,
+    error,
     model,
     usage,
     value,

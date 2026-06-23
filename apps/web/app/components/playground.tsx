@@ -10,7 +10,7 @@ import {
   type PlaygroundStatus,
 } from "../playground-contract";
 import { buildDatasetRows, datasetFileName, serializeDatasetRows } from "../playground-dataset";
-import type { PlaygroundHistorySession } from "../playground-history";
+import type { PlaygroundFailedAttempt, PlaygroundHistorySession } from "../playground-history";
 import { formatDate } from "./format";
 import { InlineField, Metric, PanelHead } from "./primitives";
 
@@ -21,6 +21,7 @@ export type PlaygroundConversationEntry = {
   // Expected answer in effect when this user turn was sent, kept for dataset export.
   expected?: string;
   reply?: PlaygroundChatReply;
+  failedAttempt?: PlaygroundFailedAttempt;
 };
 
 export type PlaygroundSessionState = {
@@ -467,9 +468,23 @@ export function PlaygroundDashboard({
               <div className="empty-detail">Send a message to start an observed chat.</div>
             ) : (
               visibleEntries.map((entry) => (
-                <article className={`chat-turn ${entry.role}`} key={entry.id}>
-                  <span className="chat-role">{entry.role === "user" ? "You" : (entry.reply?.model ?? "Assistant")}</span>
-                  <div className="chat-bubble">{entry.content}</div>
+                <article
+                  className={`chat-turn ${entry.role}${entry.failedAttempt ? " failed" : ""}`}
+                  key={entry.id}
+                >
+                  <span className="chat-role">
+                    {entry.role === "user" ? "You" : (entry.reply?.model ?? entry.failedAttempt?.model ?? "Assistant")}
+                  </span>
+                  <div className="chat-bubble">
+                    {entry.failedAttempt ? (
+                      <>
+                        <strong>Model call failed</strong>
+                        <span>{entry.failedAttempt.error ?? entry.content}</span>
+                      </>
+                    ) : (
+                      entry.content
+                    )}
+                  </div>
                   {entry.reply ? (
                     <div className="event-fields chat-turn-facts">
                       <InlineField label="Tokens in / out" value={formatTokenCounts(entry.reply)} />
@@ -483,6 +498,19 @@ export function PlaygroundDashboard({
                         </span>
                       ))}
                       <button className="inline-action" type="button" onClick={() => onOpenTrace(entry.reply!.trace_id)}>
+                        Open trace
+                      </button>
+                    </div>
+                  ) : null}
+                  {entry.failedAttempt ? (
+                    <div className="event-fields chat-turn-facts">
+                      <InlineField label="Status" value="Error" />
+                      <InlineField label="Latency" value={formatLatency(entry.failedAttempt.latency_ms)} />
+                      <button
+                        className="inline-action"
+                        type="button"
+                        onClick={() => onOpenTrace(entry.failedAttempt!.traceId)}
+                      >
                         Open trace
                       </button>
                     </div>
