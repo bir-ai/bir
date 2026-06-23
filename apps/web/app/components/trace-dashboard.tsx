@@ -26,8 +26,11 @@ export function TraceDashboard({
   apiBaseUrl,
   error,
   filters,
+  hasMoreTraces,
   hasActiveFilters,
   isLoading,
+  isLoadingOlder,
+  onLoadOlderTraces,
   selectedTrace,
   setSelectedTraceId,
   setTraceFilters,
@@ -39,8 +42,11 @@ export function TraceDashboard({
   apiBaseUrl: string;
   error: string | null;
   filters: TraceFilterValues;
+  hasMoreTraces: boolean;
   hasActiveFilters: boolean;
   isLoading: boolean;
+  isLoadingOlder: boolean;
+  onLoadOlderTraces: () => void;
   selectedTrace: Trace | null;
   setSelectedTraceId: (traceId: string) => void;
   setTraceFilters: (filters: TraceFilterValues, mode?: TraceFilterCommitMode) => void;
@@ -94,8 +100,11 @@ export function TraceDashboard({
           apiBaseUrl={apiBaseUrl}
           error={error}
           filters={filters}
+          hasMoreTraces={hasMoreTraces}
           hasActiveFilters={hasActiveFilters}
           isLoading={isLoading}
+          isLoadingOlder={isLoadingOlder}
+          onLoadOlderTraces={onLoadOlderTraces}
           selectedTraceId={selectedTrace?.id ?? null}
           setSelectedTraceId={setSelectedTraceId}
           setTraceFilters={setTraceFilters}

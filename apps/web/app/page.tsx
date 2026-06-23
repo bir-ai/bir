@@ -36,7 +36,7 @@ import {
   createDebouncedTraceFilterCommitter,
   type TraceFilterCommitMode,
 } from "./trace-filter-commit";
-import { createTraceBrowseRequestCoordinator } from "./trace-browse-request";
+import { createTraceBrowseRequestCoordinator, mergeTraceBrowsePages } from "./trace-browse-request";
 import {
   buildTraceFilterQuery,
   buildTraceTimelineRows,
@@ -70,6 +70,7 @@ export default function DashboardPage() {
   const [selectedTraceDetail, setSelectedTraceDetail] = useState<Trace | null>(null);
   const [traceFilters, setEffectiveTraceFilters] = useState<TraceFilterValues>(DEFAULT_TRACE_FILTERS);
   const [editableTraceFilters, setEditableTraceFilters] = useState<TraceFilterValues>(DEFAULT_TRACE_FILTERS);
+  const [hasMoreTraces, setHasMoreTraces] = useState(true);
   const [experiments, setExperiments] = useState<ExperimentSummary[]>([]);
   const [selectedExperimentId, setSelectedExperimentId] = useState<string | null>(null);
   const [selectedExperiment, setSelectedExperiment] = useState<LoadedExperiment | null>(null);
@@ -96,6 +97,7 @@ export default function DashboardPage() {
     chatError: null,
   });
   const [isTraceLoading, setIsTraceLoading] = useState(true);
+  const [isLoadingOlderTraces, setIsLoadingOlderTraces] = useState(false);
   const [isExperimentLoading, setIsExperimentLoading] = useState(true);
   const [isExperimentDetailLoading, setIsExperimentDetailLoading] = useState(false);
   const [isComparisonLoading, setIsComparisonLoading] = useState(false);
@@ -145,6 +147,7 @@ export default function DashboardPage() {
 
   const loadTraces = useCallback(async (filters: TraceFilterValues) => {
     setIsTraceLoading(true);
+    setIsLoadingOlderTraces(false);
     setTraceError(null);
 
     const result = await traceBrowseCoordinator.load(filters);
@@ -156,6 +159,7 @@ export default function DashboardPage() {
       setTraces([]);
       setTraceStats(summarizeTraces([]));
       setSelectedTraceId(null);
+      setHasMoreTraces(false);
       setIsTraceLoading(false);
       return [];
     }
@@ -163,6 +167,7 @@ export default function DashboardPage() {
     const nextTraces = result.traces;
     setTraces(nextTraces);
     setTraceStats(result.summary);
+    setHasMoreTraces(result.hasMore);
     setSelectedTraceId((current) => {
       if (
         current &&
@@ -175,6 +180,29 @@ export default function DashboardPage() {
     setIsTraceLoading(false);
     return nextTraces;
   }, [traceBrowseCoordinator]);
+
+  const loadOlderTraces = useCallback(async () => {
+    if (isTraceLoading || isLoadingOlderTraces || !hasMoreTraces || traces.length === 0) {
+      return;
+    }
+
+    setIsLoadingOlderTraces(true);
+    setTraceError(null);
+
+    const result = await traceBrowseCoordinator.loadOlder(traceFilters, traces);
+    if (result.kind === "stale") {
+      return;
+    }
+    if (result.kind === "failed") {
+      setTraceError(result.message);
+      setIsLoadingOlderTraces(false);
+      return;
+    }
+
+    setTraces((current) => mergeTraceBrowsePages(current, result.traces));
+    setHasMoreTraces(result.hasMore);
+    setIsLoadingOlderTraces(false);
+  }, [hasMoreTraces, isLoadingOlderTraces, isTraceLoading, traceBrowseCoordinator, traceFilters, traces]);
 
   const loadExperiments = useCallback(async () => {
     setIsExperimentLoading(true);
@@ -498,7 +526,7 @@ export default function DashboardPage() {
 
   const isActiveLoading =
     activeView === "traces"
-      ? isTraceLoading
+      ? isTraceLoading || isLoadingOlderTraces
       : activeView === "experiments"
         ? isExperimentLoading || isExperimentDetailLoading || isComparisonLoading
         : isPlaygroundStatusLoading || isPlaygroundHistoryLoading;
@@ -565,6 +593,11 @@ export default function DashboardPage() {
           hasActiveFilters={hasActiveTraceFilters}
           filters={editableTraceFilters}
           isLoading={isTraceLoading}
+          isLoadingOlder={isLoadingOlderTraces}
+          hasMoreTraces={hasMoreTraces}
+          onLoadOlderTraces={() => {
+            void loadOlderTraces();
+          }}
           selectedTrace={detailTrace}
           setSelectedTraceId={selectTraceFromList}
           setTraceFilters={updateTraceFilters}

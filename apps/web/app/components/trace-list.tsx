@@ -16,8 +16,11 @@ export function TraceList({
   apiBaseUrl,
   error,
   filters,
+  hasMoreTraces,
   hasActiveFilters,
   isLoading,
+  isLoadingOlder,
+  onLoadOlderTraces,
   selectedTraceId,
   setSelectedTraceId,
   setTraceFilters,
@@ -27,14 +30,19 @@ export function TraceList({
   apiBaseUrl: string;
   error: string | null;
   filters: TraceFilterValues;
+  hasMoreTraces: boolean;
   hasActiveFilters: boolean;
   isLoading: boolean;
+  isLoadingOlder: boolean;
+  onLoadOlderTraces: () => void;
   selectedTraceId: string | null;
   setSelectedTraceId: (traceId: string) => void;
   setTraceFilters: (filters: TraceFilterValues, mode?: TraceFilterCommitMode) => void;
   traceLimit: number;
   traces: Trace[];
 }) {
+  const canLoadOlder = (filters.sort ?? "recent") === "recent";
+
   return (
     <aside className="trace-list" aria-label="Traces">
       <PanelHead title="Traces" subtitle={apiBaseUrl} />
@@ -69,8 +77,25 @@ export function TraceList({
         })}
       </div>
 
-      {traces.length >= traceLimit ? (
-        <p className="trace-limit-hint">Showing the most recent {traceLimit} traces.</p>
+      {traces.length > 0 && canLoadOlder ? (
+        <div className="trace-pagination">
+          {hasMoreTraces ? (
+            <button
+              className="trace-load-more"
+              type="button"
+              onClick={onLoadOlderTraces}
+              disabled={isLoading || isLoadingOlder}
+            >
+              {isLoadingOlder ? "Loading older" : "Load older"}
+            </button>
+          ) : (
+            <p className="trace-limit-hint">End of matching trace history.</p>
+          )}
+        </div>
+      ) : null}
+
+      {traces.length >= traceLimit && !canLoadOlder ? (
+        <p className="trace-limit-hint">Load older is available in Recent order.</p>
       ) : null}
     </aside>
   );

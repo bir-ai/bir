@@ -69,6 +69,10 @@ The Playground tab uses the same direct browser-to-server API calls. It is
 enabled when `/v1/playground/status` reports writable server mode and a reachable
 model server. In read-only `BIR_DATA_DIR` mode the tab shows the server's
 disabled state instead of sending chat requests.
+The main Traces view starts from a bounded recent page and uses **Load older** to
+fetch cursor-backed pages without clearing active filters or the selected trace.
+Summary metrics stay scoped to all matching traces rather than only the loaded
+pages.
 History loads from bounded `/v1/traces?name=playground.chat&source=playground`
 pages and the **Load older** action fetches older pages as needed, so opening
 the tab does not request the complete trace store.

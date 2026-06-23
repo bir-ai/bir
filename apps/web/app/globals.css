@@ -490,6 +490,35 @@ h3 {
   font-size: 0.78rem;
 }
 
+.trace-pagination {
+  display: grid;
+  justify-items: center;
+  margin-top: 12px;
+}
+
+.trace-load-more {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid rgba(116, 124, 139, 0.72);
+  border-radius: 8px;
+  background: rgb(54, 58, 65);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.trace-load-more:hover:not(:disabled) {
+  border-color: rgba(199, 203, 211, 0.9);
+  background: rgb(63, 68, 77);
+}
+
+.trace-load-more:disabled {
+  color: var(--quiet);
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
 .trace-row {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr) auto;

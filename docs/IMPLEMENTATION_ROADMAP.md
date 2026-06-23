@@ -51,6 +51,9 @@ truth.
   p50/p95 latency, token and cost totals, mixed-currency handling, and
   model/provider breakdowns. The dashboard labels their scope as all matching
   traces and keeps selected-trace totals local to trace detail.
+- The main trace browser uses cursor-backed **Load older** pagination in recent
+  order, preserving active filters and the selected trace while loading beyond
+  the initial bounded window.
 
 ### Retrieval and evaluation display
 
@@ -108,12 +111,7 @@ Pyright is not part of the server's `[dev]` extra; install it separately and run
 
 ## Next Minimal Commits
 
-The next verified product gap is exposing the same cursor-backed load-more
-workflow in the main trace browser. Keep it scoped to the existing filters and
-ordering controls, with tests for stable page boundaries. Do not add a duplicate
-slow/failed-trace view.
-
-After that, choose the next step from observed product usage and keep it within
-this repository boundary. Each step should preserve existing behavior, add
-tests for new logic, update public documentation when behavior changes, and run
-the relevant checks above.
+The next verified product gap should be chosen from observed product usage and
+kept within this repository boundary. Each step should preserve existing
+behavior, add tests for new logic, update public documentation when behavior
+changes, and run the relevant checks above.
