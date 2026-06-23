@@ -117,6 +117,7 @@ test("composes the limit with existing trace filters", () => {
     status: "error",
     name: " answer question ",
     event_type: "generation",
+    source: "playground",
     service: " rag-api ",
     environment: "production",
     limit: 50,
@@ -124,7 +125,7 @@ test("composes the limit with existing trace filters", () => {
 
   assert.equal(
     query,
-    "status=error&name=answer+question&event_type=generation&service=rag-api&environment=production&limit=50",
+    "status=error&name=answer+question&event_type=generation&source=playground&service=rag-api&environment=production&limit=50",
   );
 });
 
@@ -146,12 +147,31 @@ test("omits the min_duration_ms when unset, NaN, infinite, or non-positive", () 
 test("composes the min_duration_ms with existing trace filters", () => {
   const query = buildTraceFilterQuery({
     status: "error",
+    source: "playground",
     min_duration_ms: 250,
     sort: "slowest",
     limit: 50,
   });
 
-  assert.equal(query, "status=error&min_duration_ms=250&sort=slowest&limit=50");
+  assert.equal(query, "status=error&source=playground&min_duration_ms=250&sort=slowest&limit=50");
+});
+
+test("summary queries keep source with other filters while dropping browse-only params", () => {
+  assert.equal(
+    buildTraceSummaryFilterQuery({
+      status: "error",
+      name: " playground.chat ",
+      source: "playground",
+      service: "web",
+      environment: "dev",
+      min_duration_ms: 250,
+      sort: "slowest",
+      limit: 25,
+      before_start_time: "2026-01-02T00:00:00.000Z",
+      before_id: "trace-2",
+    }),
+    "status=error&name=playground.chat&source=playground&service=web&environment=dev&min_duration_ms=250",
+  );
 });
 
 test("forwards the slowest sort and omits the default recent sort", () => {

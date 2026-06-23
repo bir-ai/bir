@@ -44,9 +44,9 @@ truth.
   status filter.
 - Slow-trace triage is implemented through slowest-first ordering and a
   minimum-duration threshold.
-- Errors only, slowest-first, minimum duration, and the remaining filters can be
-  combined. A separate slow/failed view would duplicate the current workflow
-  and is not planned.
+- Errors only, slowest-first, minimum duration, source, and the remaining
+  filters can be combined. A separate slow/failed view would duplicate the
+  current workflow and is not planned.
 - Summary metrics include trace/event/generation/error counts, nearest-rank
   p50/p95 latency, token and cost totals, mixed-currency handling, and
   model/provider breakdowns. The dashboard labels their scope as all matching

@@ -111,6 +111,7 @@ function TraceFilterControls({
   const status = filters.status ?? "all";
   const eventType = filters.event_type ?? "all";
   const name = filters.name ?? "";
+  const source = filters.source ?? "";
   const service = filters.service ?? "";
   const environment = filters.environment ?? "";
   const minDuration = filters.min_duration_ms ?? "";
@@ -150,6 +151,15 @@ function TraceFilterControls({
           type="search"
           value={service}
           onChange={(event) => setTraceFilters({ ...filters, service: event.target.value }, "debounced")}
+        />
+      </label>
+
+      <label className="filter-group">
+        <span>Source</span>
+        <input
+          type="search"
+          value={source}
+          onChange={(event) => setTraceFilters({ ...filters, source: event.target.value }, "debounced")}
         />
       </label>
 

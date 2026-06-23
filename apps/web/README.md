@@ -12,7 +12,8 @@ Current views:
 - trace detail timeline with spans, generations, retrieval tool calls, scores,
   usage, cost, errors, metadata, input, and output when captured
 - trace triage with an errors-only shortcut, recent/slowest ordering, and a
-  minimum-duration filter; these controls combine with the other trace filters
+  minimum-duration filter; these controls combine with name, service, source,
+  environment, and event-type trace filters
 - dashboard metrics fetched from `GET /v1/traces/summary`, scoped to all traces
   matching the active filters rather than the currently loaded browse window;
   mixed or absent cost currencies are displayed without a currency label

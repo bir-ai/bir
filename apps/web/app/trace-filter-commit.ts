@@ -1,7 +1,7 @@
 import { buildTraceFilterQuery, type TraceFilterValues } from "./trace-contract";
 
 // Short enough to keep filtering feeling responsive, long enough to collapse a
-// normal burst of name/service/environment keystrokes into one server request.
+// normal burst of name/source/service/environment keystrokes into one server request.
 export const TRACE_TEXT_FILTER_DEBOUNCE_MS = 250;
 
 export type TraceFilterCommitMode = "immediate" | "debounced";

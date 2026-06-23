@@ -57,6 +57,38 @@ test("debounces text filter commits and only applies the latest scheduled value"
   assert.deepEqual(commits, [{ name: "answer" }]);
 });
 
+test("debounces source filter commits", () => {
+  const clock = fakeTimers();
+  const commits: TraceFilterValues[] = [];
+  const committer = createDebouncedTraceFilterCommitter({
+    initialFilters: {},
+    commit: (filters) => commits.push(filters),
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+  });
+
+  committer.schedule({ source: "play" });
+  committer.schedule({ source: "playground" });
+  clock.runActiveTimers();
+
+  assert.deepEqual(commits, [{ source: "playground" }]);
+});
+
+test("clearing filters removes an active source filter immediately", () => {
+  const clock = fakeTimers();
+  const commits: TraceFilterValues[] = [];
+  const committer = createDebouncedTraceFilterCommitter({
+    initialFilters: { source: "playground" },
+    commit: (filters) => commits.push(filters),
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+  });
+
+  assert.equal(committer.commitNow({ source: "" }), true);
+
+  assert.deepEqual(commits, [{ source: "" }]);
+});
+
 test("immediate controls cancel pending text debounce and commit the combined filters", () => {
   const clock = fakeTimers();
   const commits: TraceFilterValues[] = [];

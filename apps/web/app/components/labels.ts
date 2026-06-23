@@ -40,6 +40,7 @@ export const DEFAULT_TRACE_FILTERS: TraceFilterValues = {
   status: "all",
   name: "",
   event_type: "all",
+  source: "",
   service: "",
   environment: "",
   sort: "recent",
