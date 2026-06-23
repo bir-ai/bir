@@ -1,8 +1,126 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildPlaygroundHistorySessions } from "./playground-history";
+import {
+  buildPlaygroundHistoryQuery,
+  buildPlaygroundHistorySessions,
+  mergePlaygroundHistoryTraces,
+  playgroundHistoryCursorFromTraces,
+} from "./playground-history";
 import type { Trace, TraceEvent } from "./trace-contract";
+
+test("builds scoped bounded Playground history queries", () => {
+  assert.equal(
+    buildPlaygroundHistoryQuery({ limit: 10 }),
+    "name=playground.chat&source=playground&limit=10",
+  );
+  assert.equal(
+    buildPlaygroundHistoryQuery({
+      limit: 10,
+      cursor: { beforeStartTime: "2026-01-02T00:00:00.000Z", beforeId: "trace-2" },
+    }),
+    "name=playground.chat&source=playground&limit=10&before_start_time=2026-01-02T00%3A00%3A00.000Z&before_id=trace-2",
+  );
+});
+
+test("merges history pages without duplicate traces", () => {
+  const newer = makePlaygroundTrace({
+    traceId: "trace-newer",
+    sessionId: "session-newer",
+    startTime: "2026-01-03T00:00:00.000Z",
+  });
+  const shared = makePlaygroundTrace({
+    traceId: "trace-shared",
+    sessionId: "session-shared",
+    startTime: "2026-01-02T00:00:00.000Z",
+    output: "old copy",
+  });
+  const updatedShared = makePlaygroundTrace({
+    traceId: "trace-shared",
+    sessionId: "session-shared",
+    startTime: "2026-01-02T00:00:00.000Z",
+    output: "new copy",
+  });
+  const older = makePlaygroundTrace({
+    traceId: "trace-older",
+    sessionId: "session-older",
+    startTime: "2026-01-01T00:00:00.000Z",
+  });
+
+  const merged = mergePlaygroundHistoryTraces([newer, shared], [updatedShared, older]);
+
+  assert.deepEqual(merged.map((trace) => trace.id), ["trace-newer", "trace-shared", "trace-older"]);
+  assert.equal(buildPlaygroundHistorySessions(merged).find((session) => session.sessionId === "session-shared")
+    ?.entries[1].content, "new copy");
+  assert.deepEqual(playgroundHistoryCursorFromTraces(merged), {
+    beforeStartTime: older.start_time,
+    beforeId: older.id,
+  });
+});
+
+test("reconstructs a session split across history page boundaries after merging pages", () => {
+  const recentPage = [
+    makePlaygroundTrace({
+      traceId: "session-1-turn-2",
+      sessionId: "session-1",
+      startTime: "2026-01-02T00:00:00.000Z",
+      messages: [
+        { role: "user", content: "First" },
+        { role: "assistant", content: "First reply" },
+        { role: "user", content: "Second" },
+      ],
+      output: "Second reply",
+    }),
+  ];
+  const olderPage = [
+    makePlaygroundTrace({
+      traceId: "session-1-turn-1",
+      sessionId: "session-1",
+      startTime: "2026-01-01T00:00:00.000Z",
+      messages: [{ role: "user", content: "First" }],
+      output: "First reply",
+    }),
+  ];
+
+  const sessions = buildPlaygroundHistorySessions(mergePlaygroundHistoryTraces(recentPage, olderPage));
+
+  assert.deepEqual(
+    sessions[0].entries.map((entry) => [entry.role, entry.content]),
+    [
+      ["user", "First"],
+      ["assistant", "First reply"],
+      ["user", "Second"],
+      ["assistant", "Second reply"],
+    ],
+  );
+});
+
+test("refresh after a new Playground turn preserves older loaded history", () => {
+  const olderLoaded = makePlaygroundTrace({
+    traceId: "older-turn",
+    sessionId: "older-session",
+    startTime: "2026-01-01T00:00:00.000Z",
+  });
+  const previousRecent = makePlaygroundTrace({
+    traceId: "previous-recent",
+    sessionId: "current-session",
+    startTime: "2026-01-02T00:00:00.000Z",
+  });
+  const newRecent = makePlaygroundTrace({
+    traceId: "new-recent",
+    sessionId: "current-session",
+    startTime: "2026-01-03T00:00:00.000Z",
+  });
+
+  const loadedHistory = mergePlaygroundHistoryTraces([previousRecent], [olderLoaded]);
+  const refreshed = mergePlaygroundHistoryTraces(loadedHistory, [newRecent, previousRecent]);
+
+  assert.deepEqual(refreshed.map((trace) => trace.id), ["new-recent", "previous-recent", "older-turn"]);
+  assert.deepEqual(
+    buildPlaygroundHistorySessions(refreshed).map((session) => session.sessionId),
+    ["current-session", "older-session"],
+  );
+});
 
 test("groups playground traces by session id and reconstructs messages", () => {
   const sessions = buildPlaygroundHistorySessions([

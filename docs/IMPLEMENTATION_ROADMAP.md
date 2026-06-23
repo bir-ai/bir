@@ -24,10 +24,12 @@ truth.
 
 - The server validates and stores JSONL trace events, rejects invalid payloads,
   redacts common secrets, and handles duplicate event IDs idempotently.
-- `GET /v1/traces` supports status, root-name, event-type, service,
-  environment, and positive minimum-duration filters. Filters combine with AND.
+- `GET /v1/traces` supports status, root-name, event-type, exact root-source,
+  service, environment, and positive minimum-duration filters. Filters combine
+  with AND.
 - Trace results support recent and slowest-first ordering plus a positive
-  result limit.
+  result limit. Recent-order browse pages can move backward with
+  `before_start_time` and `before_id` cursors.
 - `GET /v1/traces/summary` applies the browse filters through the same matching
   path and computes exact metrics over the complete filtered result set,
   independent of browse limits or pagination windows.
@@ -73,7 +75,9 @@ truth.
   has no score-direction field, nonzero score-only deltas remain visible but are
   classified neutrally as changed.
 - Playground turns are recorded as normal trace events and can include context,
-  a retrieval record, and deterministic scores.
+  a retrieval record, and deterministic scores. The dashboard history view loads
+  those traces through bounded, source-scoped pages and can fetch older sessions
+  incrementally.
 - The server can read SDK-owned `.bir` output in read-only mode and can serve a
   built static dashboard from the same origin.
 
@@ -104,10 +108,10 @@ Pyright is not part of the server's `[dev]` extra; install it separately and run
 
 ## Next Minimal Commits
 
-The next verified product gap is bounded trace browsing beyond the current
-fixed result limit. Add a small pagination or load-more slice that preserves the
-active filters and recent/slowest ordering, with server and dashboard tests for
-stable page boundaries. Do not add a duplicate slow/failed-trace view.
+The next verified product gap is exposing the same cursor-backed load-more
+workflow in the main trace browser. Keep it scoped to the existing filters and
+ordering controls, with tests for stable page boundaries. Do not add a duplicate
+slow/failed-trace view.
 
 After that, choose the next step from observed product usage and keep it within
 this repository boundary. Each step should preserve existing behavior, add

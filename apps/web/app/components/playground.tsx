@@ -42,9 +42,12 @@ export function PlaygroundDashboard({
   error,
   historyError,
   historySessions,
+  hasLoadedHistory,
+  hasMoreHistory,
   isHistoryLoading,
   isStatusLoading,
   linkedTraceError,
+  onLoadOlderHistory,
   onOpenTrace,
   onRefreshHistory,
   onSelectHistorySession,
@@ -57,9 +60,12 @@ export function PlaygroundDashboard({
   error: string | null;
   historyError: string | null;
   historySessions: PlaygroundHistorySession[];
+  hasLoadedHistory: boolean;
+  hasMoreHistory: boolean;
   isHistoryLoading: boolean;
   isStatusLoading: boolean;
   linkedTraceError: string | null;
+  onLoadOlderHistory: () => void;
   onOpenTrace: (traceId: string) => void;
   onRefreshHistory: () => void;
   onSelectHistorySession: (sessionId: string | null) => void;
@@ -412,6 +418,19 @@ export function PlaygroundDashboard({
             </div>
             {!isHistoryLoading && pastSessions.length === 0 ? (
               <p className="subtle">Previous Playground sessions will appear here after traces are recorded.</p>
+            ) : null}
+            {pastSessions.length > 0 && hasMoreHistory ? (
+              <button
+                className="history-load-more"
+                type="button"
+                onClick={onLoadOlderHistory}
+                disabled={isHistoryLoading}
+              >
+                {isHistoryLoading ? "Loading" : "Load older"}
+              </button>
+            ) : null}
+            {hasLoadedHistory && !isHistoryLoading && !hasMoreHistory && pastSessions.length > 0 ? (
+              <p className="subtle">End of history.</p>
             ) : null}
           </div>
           <p className="subtle">

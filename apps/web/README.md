@@ -25,7 +25,8 @@ Current views:
   per-example score deltas; regressions/improvements represent execution
   failures/recoveries, while undirected score-only differences are `changed`
 - Playground for observed local prompt experiments through the Bir server, with
-  model selection, token/latency badges, and trace links
+  model selection, token/latency badges, trace links, and incrementally loaded
+  bounded session history
 - Playground workflow controls: optional context (recorded as a
   `playground.prepare_context` span and, when "Use context as retrieval" is on,
   a retrieval tool call), an expected answer, and a "Run basic evaluators"
@@ -68,6 +69,9 @@ The Playground tab uses the same direct browser-to-server API calls. It is
 enabled when `/v1/playground/status` reports writable server mode and a reachable
 model server. In read-only `BIR_DATA_DIR` mode the tab shows the server's
 disabled state instead of sending chat requests.
+History loads from bounded `/v1/traces?name=playground.chat&source=playground`
+pages and the **Load older** action fetches older pages as needed, so opening
+the tab does not request the complete trace store.
 Failed Playground model calls still return HTTP 502 to the tab, and the server
 records them as ordinary error traces. They are available in the trace dashboard
 through the existing **Errors only** triage filter and trace detail timeline.

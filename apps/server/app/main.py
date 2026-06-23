@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -141,22 +142,28 @@ def create_app(
         status: EventStatus | None = Query(default=None),
         name: str | None = Query(default=None),
         event_type: EventType | None = Query(default=None),
+        source: str | None = Query(default=None),
         service: str | None = Query(default=None),
         environment: str | None = Query(default=None),
         min_duration_ms: float | None = Query(default=None, gt=0),
         sort: TraceSort = Query(default="recent"),
         limit: int | None = Query(default=None, gt=0),
+        before_start_time: datetime | None = Query(default=None),
+        before_id: str | None = Query(default=None, min_length=1),
     ) -> list[LoadedTrace]:
         store = _get_event_store(request)
         return store.load_traces(
             status=status,
             name=name,
             event_type=event_type,
+            source=source,
             service=service,
             environment=environment,
             min_duration_ms=min_duration_ms,
             sort=sort,
             limit=limit,
+            before_start_time=before_start_time,
+            before_id=before_id,
         )
 
     @app.get("/v1/traces/summary", response_model=TraceSummaryPayload)
@@ -165,6 +172,7 @@ def create_app(
         status: EventStatus | None = Query(default=None),
         name: str | None = Query(default=None),
         event_type: EventType | None = Query(default=None),
+        source: str | None = Query(default=None),
         service: str | None = Query(default=None),
         environment: str | None = Query(default=None),
         min_duration_ms: float | None = Query(default=None, gt=0),
@@ -174,6 +182,7 @@ def create_app(
             status=status,
             name=name,
             event_type=event_type,
+            source=source,
             service=service,
             environment=environment,
             min_duration_ms=min_duration_ms,

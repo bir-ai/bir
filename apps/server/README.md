@@ -25,14 +25,15 @@ there is no editable SDK source tree here.
 `GET /v1/traces` accepts optional query parameters to filter the returned
 traces: `status` (`success`/`error`), `name` (case-insensitive substring of the
 root trace name), `event_type` (keeps traces containing at least one event of
-that type), `service`/`environment` (case-insensitive substring of the
+that type), `source` (exact match on root `metadata.source` for product-owned
+sources such as `playground`), `service`/`environment` (case-insensitive substring of the
 `metadata.service` block the SDK records from `configure(service_name=,
 environment=)`), and `min_duration_ms` (a positive number; keeps only traces
 whose root duration `end_time - start_time` is at least that many milliseconds,
 to isolate slow traces). Filters combine with AND.
 
 `GET /v1/traces/summary` accepts the same `status`, `name`, `event_type`,
-`service`, `environment`, and `min_duration_ms` filters. It returns exact
+`source`, `service`, `environment`, and `min_duration_ms` filters. It returns exact
 counts, nearest-rank p50/p95 root latency, generation token/cost totals, and
 model/provider breakdowns over every matching trace. Browse `limit`, ordering,
 and future cursors do not constrain this metric scope. `currency` is the single
@@ -50,6 +51,14 @@ a positive integer, and the returned traces stay sorted oldest-first:
 ```bash
 curl 'http://127.0.0.1:8000/v1/traces?status=error&limit=20'
 curl 'http://127.0.0.1:8000/v1/traces?min_duration_ms=250&sort=slowest'
+```
+
+Recent-order pages can fetch older results with `before_start_time` and
+`before_id`, using the oldest trace from the current page as the cursor:
+
+```bash
+curl 'http://127.0.0.1:8000/v1/traces?name=playground.chat&source=playground&limit=25'
+curl 'http://127.0.0.1:8000/v1/traces?name=playground.chat&source=playground&limit=25&before_start_time=2026-01-02T00:00:00Z&before_id=playground-abc'
 ```
 
 `GET /v1/traces/{trace_id}` returns a single trace by id, with its events ordered

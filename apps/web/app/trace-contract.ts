@@ -43,11 +43,14 @@ export type TraceFilterValues = {
   status?: string | null;
   name?: string | null;
   event_type?: string | null;
+  source?: string | null;
   service?: string | null;
   environment?: string | null;
   min_duration_ms?: number;
   sort?: TraceSort;
   limit?: number;
+  before_start_time?: string | null;
+  before_id?: string | null;
 };
 
 export type TraceService = {
@@ -172,11 +175,14 @@ export function buildTraceFilterQuery(filters: TraceFilterValues): string {
   const status = filters.status?.trim();
   const name = filters.name?.trim();
   const eventType = filters.event_type?.trim();
+  const source = filters.source?.trim();
   const service = filters.service?.trim();
   const environment = filters.environment?.trim();
   const minDurationMs = filters.min_duration_ms;
   const sort = filters.sort;
   const limit = filters.limit;
+  const beforeStartTime = filters.before_start_time?.trim();
+  const beforeId = filters.before_id?.trim();
 
   if (status && status !== "all") {
     params.set("status", status);
@@ -186,6 +192,9 @@ export function buildTraceFilterQuery(filters: TraceFilterValues): string {
   }
   if (eventType && eventType !== "all") {
     params.set("event_type", eventType);
+  }
+  if (source) {
+    params.set("source", source);
   }
   if (service) {
     params.set("service", service);
@@ -208,6 +217,12 @@ export function buildTraceFilterQuery(filters: TraceFilterValues): string {
   if (typeof limit === "number" && Number.isInteger(limit) && limit > 0) {
     params.set("limit", String(limit));
   }
+  if (beforeStartTime) {
+    params.set("before_start_time", beforeStartTime);
+  }
+  if (beforeStartTime && beforeId) {
+    params.set("before_id", beforeId);
+  }
   return params.toString();
 }
 
@@ -215,6 +230,8 @@ export function buildTraceSummaryFilterQuery(filters: TraceFilterValues): string
   const params = new URLSearchParams(buildTraceFilterQuery(filters));
   params.delete("limit");
   params.delete("sort");
+  params.delete("before_start_time");
+  params.delete("before_id");
   return params.toString();
 }
 

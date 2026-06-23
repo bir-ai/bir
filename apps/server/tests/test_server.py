@@ -1510,6 +1510,97 @@ def test_filters_apply_before_limit(tmp_path: Path) -> None:
     assert [trace["id"] for trace in traces] == ["success-mid", "success-new"]
 
 
+def test_filters_traces_by_exact_root_source(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    events = [
+        make_event(
+            id="playground-trace",
+            trace_id="playground-trace",
+            name="playground.chat",
+            start_time="2026-01-01T00:00:00+00:00",
+            end_time="2026-01-01T00:00:01+00:00",
+            metadata={"source": "playground"},
+        ),
+        make_event(
+            id="ordinary-trace",
+            trace_id="ordinary-trace",
+            name="playground.chat",
+            start_time="2026-01-02T00:00:00+00:00",
+            end_time="2026-01-02T00:00:01+00:00",
+            metadata={"source": "sdk"},
+        ),
+    ]
+    for event in events:
+        assert client.post("/v1/events", json=event).status_code == 201
+
+    response = client.get("/v1/traces", params={"name": "playground.chat", "source": "playground", "limit": 10})
+
+    assert response.status_code == 200
+    assert [trace["id"] for trace in response.json()] == ["playground-trace"]
+
+
+def test_pages_recent_traces_before_cursor_after_filters(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    for index in range(5):
+        event = make_event(
+            id=f"playground-{index}",
+            trace_id=f"playground-{index}",
+            name="playground.chat",
+            start_time=f"2026-01-0{index + 1}T00:00:00+00:00",
+            end_time=f"2026-01-0{index + 1}T00:00:01+00:00",
+            metadata={"source": "playground"},
+        )
+        assert client.post("/v1/events", json=event).status_code == 201
+
+    recent = client.get(
+        "/v1/traces",
+        params={"name": "playground.chat", "source": "playground", "limit": 2},
+    )
+    assert recent.status_code == 200
+    recent_traces = recent.json()
+    assert [trace["id"] for trace in recent_traces] == ["playground-3", "playground-4"]
+
+    older = client.get(
+        "/v1/traces",
+        params={
+            "name": "playground.chat",
+            "source": "playground",
+            "limit": 2,
+            "before_start_time": recent_traces[0]["start_time"],
+            "before_id": recent_traces[0]["id"],
+        },
+    )
+
+    assert older.status_code == 200
+    assert [trace["id"] for trace in older.json()] == ["playground-1", "playground-2"]
+
+
+def test_recent_cursor_uses_id_to_break_equal_start_times(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    for trace_id in ["trace-a", "trace-b", "trace-c"]:
+        assert client.post(
+            "/v1/events",
+            json=make_event(
+                id=trace_id,
+                trace_id=trace_id,
+                start_time="2026-01-01T00:00:00+00:00",
+                end_time="2026-01-01T00:00:01+00:00",
+            ),
+        ).status_code == 201
+
+    response = client.get(
+        "/v1/traces",
+        params={
+            "limit": 2,
+            "before_start_time": "2026-01-01T00:00:00+00:00",
+            "before_id": "trace-c",
+        },
+    )
+
+    assert response.status_code == 200
+    assert [trace["id"] for trace in response.json()] == ["trace-a", "trace-b"]
+
+
 def test_rejects_non_positive_limit(tmp_path: Path) -> None:
     client, _ = make_client(tmp_path)
 

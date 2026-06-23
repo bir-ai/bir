@@ -1,5 +1,14 @@
 import type { PlaygroundChatReply } from "./playground-contract";
-import { getTraceScores, type Trace, type TraceEvent } from "./trace-contract";
+import { buildTraceFilterQuery, getTraceScores, type Trace, type TraceEvent } from "./trace-contract";
+
+export const PLAYGROUND_HISTORY_PAGE_SIZE = 25;
+const PLAYGROUND_TRACE_NAME = "playground.chat";
+const PLAYGROUND_TRACE_SOURCE = "playground";
+
+export type PlaygroundHistoryCursor = {
+  beforeStartTime: string;
+  beforeId: string;
+};
 
 export type PlaygroundHistoryEntry = {
   id: string;
@@ -21,6 +30,50 @@ type ChatMessage = {
   role: "system" | "user" | "assistant";
   content: string;
 };
+
+export function buildPlaygroundHistoryQuery({
+  cursor = null,
+  limit = PLAYGROUND_HISTORY_PAGE_SIZE,
+}: {
+  cursor?: PlaygroundHistoryCursor | null;
+  limit?: number;
+} = {}): string {
+  return buildTraceFilterQuery({
+    name: PLAYGROUND_TRACE_NAME,
+    source: PLAYGROUND_TRACE_SOURCE,
+    limit,
+    before_start_time: cursor?.beforeStartTime,
+    before_id: cursor?.beforeId,
+  });
+}
+
+export function mergePlaygroundHistoryTraces(current: Trace[], incoming: Trace[]): Trace[] {
+  const tracesById = new Map<string, Trace>();
+  for (const trace of current) {
+    tracesById.set(trace.id, trace);
+  }
+  for (const trace of incoming) {
+    tracesById.set(trace.id, trace);
+  }
+  return Array.from(tracesById.values()).sort(
+    (first, second) => second.start_time.localeCompare(first.start_time) || second.id.localeCompare(first.id),
+  );
+}
+
+export function playgroundHistoryCursorFromTraces(traces: Trace[]): PlaygroundHistoryCursor | null {
+  if (traces.length === 0) {
+    return null;
+  }
+  const oldestTrace = traces.reduce((oldest, trace) =>
+    trace.start_time < oldest.start_time || (trace.start_time === oldest.start_time && trace.id < oldest.id)
+      ? trace
+      : oldest,
+  );
+  return {
+    beforeStartTime: oldestTrace.start_time,
+    beforeId: oldestTrace.id,
+  };
+}
 
 export function buildPlaygroundHistorySessions(traces: Trace[]): PlaygroundHistorySession[] {
   const groupedTraces = new Map<string, Trace[]>();

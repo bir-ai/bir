@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from threading import Lock
 from typing import TypedDict
@@ -52,13 +53,20 @@ class TraceEventReader:
         status: EventStatus | None = None,
         name: str | None = None,
         event_type: EventType | None = None,
+        source: str | None = None,
         service: str | None = None,
         environment: str | None = None,
         min_duration_ms: float | None = None,
         sort: TraceSort = "recent",
         limit: int | None = None,
+        before_start_time: datetime | None = None,
+        before_id: str | None = None,
     ) -> list[LoadedTrace]:
-        """Load complete traces, optionally filtered by root status, name, event type, or service.
+        """Load complete traces, optionally filtered by root status, name, event type, source, or service.
+
+        ``source`` matches the root trace ``metadata.source`` exactly after
+        trimming the query value. It is intended for product-owned sources such
+        as Playground without broadening the free-text root-name filter.
 
         ``service`` and ``environment`` match the ``metadata.service`` block the
         SDK records on trace roots from ``configure(service_name=, environment=)``,
@@ -75,14 +83,18 @@ class TraceEventReader:
         fall back to recency then ``id``), so with ``limit`` the slowest N are the
         head slice.
 
-        ``limit`` keeps only that many traces after filtering and ordering, so the
-        local experience stays usable as the store grows.
+        ``before_start_time`` with optional ``before_id`` pages backward through
+        the default recent order. It is applied after filtering and before the
+        limit, so ``limit`` keeps the most recent traces older than that cursor.
+        ``limit`` keeps only that many traces after filtering, cursoring, and
+        ordering, so the local experience stays usable as the store grows.
         """
 
         traces = self._load_filtered_traces(
             status=status,
             name=name,
             event_type=event_type,
+            source=source,
             service=service,
             environment=environment,
             min_duration_ms=min_duration_ms,
@@ -100,6 +112,13 @@ class TraceEventReader:
                 return ordered[:limit]
             return ordered
         ordered = sorted(traces, key=lambda trace: (trace.start_time, trace.id))
+        if before_start_time is not None:
+            if before_id is not None:
+                ordered = [
+                    trace for trace in ordered if (trace.start_time, trace.id) < (before_start_time, before_id)
+                ]
+            else:
+                ordered = [trace for trace in ordered if trace.start_time < before_start_time]
         # The newest traces sort last, so the most recent N are the tail slice.
         if limit is not None:
             return ordered[-limit:]
@@ -111,6 +130,7 @@ class TraceEventReader:
         status: EventStatus | None = None,
         name: str | None = None,
         event_type: EventType | None = None,
+        source: str | None = None,
         service: str | None = None,
         environment: str | None = None,
         min_duration_ms: float | None = None,
@@ -122,6 +142,7 @@ class TraceEventReader:
                 status=status,
                 name=name,
                 event_type=event_type,
+                source=source,
                 service=service,
                 environment=environment,
                 min_duration_ms=min_duration_ms,
@@ -134,6 +155,7 @@ class TraceEventReader:
         status: EventStatus | None,
         name: str | None,
         event_type: EventType | None,
+        source: str | None,
         service: str | None,
         environment: str | None,
         min_duration_ms: float | None,
@@ -145,6 +167,7 @@ class TraceEventReader:
             events_by_trace_id.setdefault(event.trace_id, []).append(event)
 
         name_filter = name.strip().lower() if name is not None else None
+        source_filter = source.strip() if source is not None else None
         service_filter = service.strip().lower() if service is not None else None
         environment_filter = environment.strip().lower() if environment is not None else None
         traces: list[LoadedTrace] = []
@@ -155,6 +178,7 @@ class TraceEventReader:
                 status=status,
                 name_filter=name_filter,
                 event_type=event_type,
+                source_filter=source_filter,
                 service_filter=service_filter,
                 environment_filter=environment_filter,
                 min_duration_ms=min_duration_ms,
@@ -359,6 +383,7 @@ def _matches_filters(
     status: EventStatus | None,
     name_filter: str | None,
     event_type: EventType | None,
+    source_filter: str | None,
     service_filter: str | None,
     environment_filter: str | None,
     min_duration_ms: float | None,
@@ -369,6 +394,10 @@ def _matches_filters(
         return False
     if event_type is not None and not any(event.type == event_type for event in trace.events):
         return False
+    if source_filter:
+        source = _trace_source(trace)
+        if source != source_filter:
+            return False
     if service_filter or environment_filter:
         service_name, service_environment = _trace_service(trace)
         if service_filter and (service_name is None or service_filter not in service_name.lower()):
@@ -380,6 +409,14 @@ def _matches_filters(
         if duration_ms < min_duration_ms:
             return False
     return True
+
+
+def _trace_source(trace: LoadedTrace) -> str | None:
+    root = next((event for event in trace.events if event.type == "trace" and event.id == trace.id), None)
+    if root is None:
+        return None
+    source = root.metadata.get("source")
+    return source if isinstance(source, str) else None
 
 
 def _trace_service(trace: LoadedTrace) -> tuple[str | None, str | None]:

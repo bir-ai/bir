@@ -1133,6 +1133,26 @@ h3 {
   background: rgb(50, 53, 58);
 }
 
+.history-load-more {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid rgba(67, 70, 75, 0.9);
+  border-radius: 8px;
+  background: rgb(43, 45, 49);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.history-load-more:hover:not(:disabled) {
+  border-color: rgba(48, 106, 248, 0.72);
+  background: rgb(50, 53, 58);
+}
+
+.history-load-more:disabled {
+  cursor: wait;
+  color: var(--muted);
+}
+
 .session-name {
   overflow: hidden;
   color: var(--text);

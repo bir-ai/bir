@@ -22,7 +22,14 @@ import {
   type ExperimentSummary,
   type LoadedExperiment,
 } from "./experiment-contract";
-import { buildPlaygroundHistorySessions } from "./playground-history";
+import {
+  buildPlaygroundHistoryQuery,
+  buildPlaygroundHistorySessions,
+  mergePlaygroundHistoryTraces,
+  playgroundHistoryCursorFromTraces,
+  PLAYGROUND_HISTORY_PAGE_SIZE,
+  type PlaygroundHistoryCursor,
+} from "./playground-history";
 import { normalizePlaygroundStatus, type PlaygroundStatus } from "./playground-contract";
 import { createLinkedTraceResolver, resolveSelectedTrace } from "./linked-trace-selection";
 import {
@@ -72,6 +79,8 @@ export default function DashboardPage() {
   const [comparisonCandidate, setComparisonCandidate] = useState<LoadedExperiment | null>(null);
   const [playgroundStatus, setPlaygroundStatus] = useState<PlaygroundStatus | null>(null);
   const [playgroundHistoryTraces, setPlaygroundHistoryTraces] = useState<Trace[]>([]);
+  const [hasMorePlaygroundHistory, setHasMorePlaygroundHistory] = useState(true);
+  const [hasLoadedPlaygroundHistory, setHasLoadedPlaygroundHistory] = useState(false);
   const [selectedPlaygroundHistorySessionId, setSelectedPlaygroundHistorySessionId] = useState<string | null>(null);
   const [playgroundSession, setPlaygroundSession] = useState<PlaygroundSessionState>({
     selectedModel: null,
@@ -99,6 +108,10 @@ export default function DashboardPage() {
   const [missingLinkedTraceId, setMissingLinkedTraceId] = useState<string | null>(null);
   const [linkedTraceError, setLinkedTraceError] = useState<string | null>(null);
   const linkedTraceRef = useRef<Trace | null>(null);
+  const playgroundHistoryTracesRef = useRef<Trace[]>([]);
+  const playgroundHistoryCursorRef = useRef<PlaygroundHistoryCursor | null>(null);
+  const playgroundHistoryRequestIdRef = useRef(0);
+  const playgroundHistoryAbortRef = useRef<AbortController | null>(null);
   const linkedTraceResolver = useMemo(() => createLinkedTraceResolver(fetchTraceDetail), []);
   const traceBrowseCoordinator = useMemo(
     () =>
@@ -204,18 +217,53 @@ export default function DashboardPage() {
     }
   }, []);
 
-  const loadPlaygroundHistory = useCallback(async () => {
+  const loadPlaygroundHistory = useCallback(async (mode: "refresh" | "older" = "refresh") => {
+    const cursor = mode === "older" ? playgroundHistoryCursorRef.current : null;
+    if (mode === "older" && !cursor) {
+      return;
+    }
+
+    const requestId = playgroundHistoryRequestIdRef.current + 1;
+    playgroundHistoryRequestIdRef.current = requestId;
+    playgroundHistoryAbortRef.current?.abort();
+    const controller = new AbortController();
+    playgroundHistoryAbortRef.current = controller;
     setIsPlaygroundHistoryLoading(true);
     setPlaygroundHistoryError(null);
 
     try {
-      setPlaygroundHistoryTraces(normalizeTraces(await fetchTraces("")));
+      const pageTraces = normalizeTraces(
+        await fetchTraces(buildPlaygroundHistoryQuery({ cursor }), { signal: controller.signal }),
+      );
+      if (requestId !== playgroundHistoryRequestIdRef.current) {
+        return;
+      }
+      const merged = mergePlaygroundHistoryTraces(playgroundHistoryTracesRef.current, pageTraces);
+      const nextCursor = playgroundHistoryCursorFromTraces(merged);
+      playgroundHistoryTracesRef.current = merged;
+      playgroundHistoryCursorRef.current = nextCursor;
+      setPlaygroundHistoryTraces(merged);
+      setHasLoadedPlaygroundHistory(true);
+      setHasMorePlaygroundHistory((current) => {
+        if (mode === "refresh" && current === false) {
+          return false;
+        }
+        return pageTraces.length >= PLAYGROUND_HISTORY_PAGE_SIZE;
+      });
     } catch (requestError) {
+      if (requestId !== playgroundHistoryRequestIdRef.current || isAbortError(requestError)) {
+        return;
+      }
       setPlaygroundHistoryError(
         requestError instanceof Error ? requestError.message : "Playground history request failed",
       );
     } finally {
-      setIsPlaygroundHistoryLoading(false);
+      if (requestId === playgroundHistoryRequestIdRef.current) {
+        setIsPlaygroundHistoryLoading(false);
+        if (playgroundHistoryAbortRef.current === controller) {
+          playgroundHistoryAbortRef.current = null;
+        }
+      }
     }
   }, []);
 
@@ -280,6 +328,8 @@ export default function DashboardPage() {
     return () => {
       traceFilterCommitter.cancel();
       traceBrowseCoordinator.invalidate();
+      playgroundHistoryRequestIdRef.current += 1;
+      playgroundHistoryAbortRef.current?.abort();
     };
   }, [traceBrowseCoordinator, traceFilterCommitter]);
 
@@ -431,16 +481,10 @@ export default function DashboardPage() {
     [comparisonBaseline, comparisonCandidate],
   );
 
-  const playgroundHistorySessions = useMemo(() => {
-    const tracesById = new Map<string, Trace>();
-    for (const trace of traces) {
-      tracesById.set(trace.id, trace);
-    }
-    for (const trace of playgroundHistoryTraces) {
-      tracesById.set(trace.id, trace);
-    }
-    return buildPlaygroundHistorySessions(Array.from(tracesById.values()));
-  }, [playgroundHistoryTraces, traces]);
+  const playgroundHistorySessions = useMemo(
+    () => buildPlaygroundHistorySessions(playgroundHistoryTraces),
+    [playgroundHistoryTraces],
+  );
 
   useEffect(() => {
     if (
@@ -556,9 +600,14 @@ export default function DashboardPage() {
           error={playgroundError}
           historyError={playgroundHistoryError}
           historySessions={playgroundHistorySessions}
+          hasLoadedHistory={hasLoadedPlaygroundHistory}
+          hasMoreHistory={hasMorePlaygroundHistory}
           isHistoryLoading={isPlaygroundHistoryLoading}
           isStatusLoading={isPlaygroundStatusLoading}
           linkedTraceError={linkedTraceError}
+          onLoadOlderHistory={() => {
+            void loadPlaygroundHistory("older");
+          }}
           onOpenTrace={openLinkedTrace}
           onRefreshHistory={() => {
             void loadPlaygroundHistory();
@@ -572,4 +621,8 @@ export default function DashboardPage() {
       )}
     </main>
   );
+}
+
+function isAbortError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
 }

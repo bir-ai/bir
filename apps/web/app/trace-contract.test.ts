@@ -69,6 +69,33 @@ test("includes service and environment trace filters in the query", () => {
   assert.equal(query, "service=rag-api&environment=production");
 });
 
+test("includes source and recent cursor filters in the trace query", () => {
+  const query = buildTraceFilterQuery({
+    name: "playground.chat",
+    source: "playground",
+    limit: 25,
+    before_start_time: "2026-01-02T00:00:00.000Z",
+    before_id: "trace-2",
+  });
+
+  assert.equal(
+    query,
+    "name=playground.chat&source=playground&limit=25&before_start_time=2026-01-02T00%3A00%3A00.000Z&before_id=trace-2",
+  );
+});
+
+test("summary queries drop browse cursor filters", () => {
+  assert.equal(
+    buildTraceSummaryFilterQuery({
+      source: "playground",
+      limit: 25,
+      before_start_time: "2026-01-02T00:00:00.000Z",
+      before_id: "trace-2",
+    }),
+    "source=playground",
+  );
+});
+
 test("includes a positive integer limit in the trace filter query", () => {
   assert.equal(buildTraceFilterQuery({ limit: 100 }), "limit=100");
 });
