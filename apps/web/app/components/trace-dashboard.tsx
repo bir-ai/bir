@@ -14,6 +14,7 @@ import {
   type TraceSummary,
   type TraceTimelineRow,
 } from "../trace-contract";
+import type { TraceFilterCommitMode } from "../trace-filter-commit";
 import { formatDate, formatDuration, formatMilliseconds, formatNumber } from "./format";
 import { sortLabels, statusLabels } from "./labels";
 import { Fact, Metric } from "./primitives";
@@ -42,7 +43,7 @@ export function TraceDashboard({
   isLoading: boolean;
   selectedTrace: Trace | null;
   setSelectedTraceId: (traceId: string) => void;
-  setTraceFilters: (filters: TraceFilterValues) => void;
+  setTraceFilters: (filters: TraceFilterValues, mode?: TraceFilterCommitMode) => void;
   stats: TraceSummary;
   timelineRows: TraceTimelineRow[];
   traceLimit: number;
@@ -146,7 +147,7 @@ function TraceTriageBar({
 }: {
   errorsOnly: boolean;
   filters: TraceFilterValues;
-  setTraceFilters: (filters: TraceFilterValues) => void;
+  setTraceFilters: (filters: TraceFilterValues, mode?: TraceFilterCommitMode) => void;
 }) {
   const sort = filters.sort ?? "recent";
 

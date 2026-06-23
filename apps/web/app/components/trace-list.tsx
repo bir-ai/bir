@@ -7,6 +7,7 @@ import {
   type TraceFilterValues,
   type TraceService,
 } from "../trace-contract";
+import type { TraceFilterCommitMode } from "../trace-filter-commit";
 import { formatDuration } from "./format";
 import { DEFAULT_TRACE_FILTERS, statusLabels, typeLabels } from "./labels";
 import { PanelHead, TraceSkeleton } from "./primitives";
@@ -30,7 +31,7 @@ export function TraceList({
   isLoading: boolean;
   selectedTraceId: string | null;
   setSelectedTraceId: (traceId: string) => void;
-  setTraceFilters: (filters: TraceFilterValues) => void;
+  setTraceFilters: (filters: TraceFilterValues, mode?: TraceFilterCommitMode) => void;
   traceLimit: number;
   traces: Trace[];
 }) {
@@ -80,7 +81,7 @@ function TraceFilterControls({
   setTraceFilters,
 }: {
   filters: TraceFilterValues;
-  setTraceFilters: (filters: TraceFilterValues) => void;
+  setTraceFilters: (filters: TraceFilterValues, mode?: TraceFilterCommitMode) => void;
 }) {
   const status = filters.status ?? "all";
   const eventType = filters.event_type ?? "all";
@@ -114,7 +115,7 @@ function TraceFilterControls({
         <input
           type="search"
           value={name}
-          onChange={(event) => setTraceFilters({ ...filters, name: event.target.value })}
+          onChange={(event) => setTraceFilters({ ...filters, name: event.target.value }, "debounced")}
         />
       </label>
 
@@ -123,7 +124,7 @@ function TraceFilterControls({
         <input
           type="search"
           value={service}
-          onChange={(event) => setTraceFilters({ ...filters, service: event.target.value })}
+          onChange={(event) => setTraceFilters({ ...filters, service: event.target.value }, "debounced")}
         />
       </label>
 
@@ -132,7 +133,7 @@ function TraceFilterControls({
         <input
           type="search"
           value={environment}
-          onChange={(event) => setTraceFilters({ ...filters, environment: event.target.value })}
+          onChange={(event) => setTraceFilters({ ...filters, environment: event.target.value }, "debounced")}
         />
       </label>
 

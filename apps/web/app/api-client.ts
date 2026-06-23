@@ -13,16 +13,20 @@ export function getApiBaseUrl(): string {
   return DEFAULT_API_BASE_URL;
 }
 
-export function fetchTraces(query: string): Promise<unknown> {
-  return requestJson(`/v1/traces${query ? `?${query}` : ""}`);
+export type ApiRequestOptions = {
+  signal?: AbortSignal;
+};
+
+export function fetchTraces(query: string, options?: ApiRequestOptions): Promise<unknown> {
+  return requestJson(`/v1/traces${query ? `?${query}` : ""}`, options);
 }
 
-export function fetchTraceSummary(query: string): Promise<unknown> {
-  return requestJson(`/v1/traces/summary${query ? `?${query}` : ""}`);
+export function fetchTraceSummary(query: string, options?: ApiRequestOptions): Promise<unknown> {
+  return requestJson(`/v1/traces/summary${query ? `?${query}` : ""}`, options);
 }
 
-export function fetchTraceDetail(traceId: string): Promise<unknown> {
-  return requestJson(`/v1/traces/${encodeURIComponent(traceId)}`);
+export function fetchTraceDetail(traceId: string, options?: ApiRequestOptions): Promise<unknown> {
+  return requestJson(`/v1/traces/${encodeURIComponent(traceId)}`, options);
 }
 
 export function fetchExperimentSummaries(): Promise<unknown> {
@@ -47,9 +51,10 @@ export function postPlaygroundChat(chatRequest: unknown): Promise<unknown> {
 
 async function requestJson(
   path: string,
-  options?: { method: "POST"; body: unknown },
+  options?: ApiRequestOptions & { method?: "POST"; body?: unknown },
 ): Promise<unknown> {
   const apiBaseUrl = getApiBaseUrl();
+  const hasBody = options?.body !== undefined;
 
   let response: Response;
   try {
@@ -57,12 +62,16 @@ async function requestJson(
       method: options?.method ?? "GET",
       headers: {
         accept: "application/json",
-        ...(options ? { "content-type": "application/json" } : {}),
+        ...(hasBody ? { "content-type": "application/json" } : {}),
       },
-      body: options ? JSON.stringify(options.body) : undefined,
+      body: hasBody ? JSON.stringify(options.body) : undefined,
       cache: "no-store",
+      signal: options?.signal,
     });
   } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
     const detail = error instanceof Error ? error.message : "Unknown error";
     throw new Error(`Could not reach Bir server at ${apiBaseUrl}: ${detail}`);
   }
@@ -73,6 +82,10 @@ async function requestJson(
     throw new Error(`Bir server returned HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
   }
   return safeJson(body);
+}
+
+function isAbortError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
 }
 
 function errorDetail(body: string): string | null {

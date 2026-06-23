@@ -111,6 +111,20 @@ test("fetches traces without a question mark when the query is empty", async () 
   }
 });
 
+test("passes an optional abort signal to trace requests", async () => {
+  const controller = new AbortController();
+  const { calls, restore } = withStubbedFetch(async () => jsonResponse([]));
+  try {
+    await fetchTraces("", { signal: controller.signal });
+    await fetchTraceSummary("", { signal: controller.signal });
+
+    assert.equal(calls[0]?.init?.signal, controller.signal);
+    assert.equal(calls[1]?.init?.signal, controller.signal);
+  } finally {
+    restore();
+  }
+});
+
 test("fetches the complete trace summary with the filter query appended", async () => {
   const { calls, restore } = withStubbedFetch(async () => jsonResponse({ trace_count: 2 }));
   try {

@@ -26,12 +26,15 @@ import { buildPlaygroundHistorySessions } from "./playground-history";
 import { normalizePlaygroundStatus, type PlaygroundStatus } from "./playground-contract";
 import { createLinkedTraceResolver, resolveSelectedTrace } from "./linked-trace-selection";
 import {
+  createDebouncedTraceFilterCommitter,
+  type TraceFilterCommitMode,
+} from "./trace-filter-commit";
+import { createTraceBrowseRequestCoordinator } from "./trace-browse-request";
+import {
   buildTraceFilterQuery,
-  buildTraceSummaryFilterQuery,
   buildTraceTimelineRows,
   isTrace,
   normalizeTraces,
-  normalizeTraceSummary,
   summarizeTraces,
   type Trace,
   type TraceFilterValues,
@@ -58,7 +61,8 @@ export default function DashboardPage() {
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [linkedTrace, setLinkedTrace] = useState<Trace | null>(null);
   const [selectedTraceDetail, setSelectedTraceDetail] = useState<Trace | null>(null);
-  const [traceFilters, setTraceFilters] = useState<TraceFilterValues>(DEFAULT_TRACE_FILTERS);
+  const [traceFilters, setEffectiveTraceFilters] = useState<TraceFilterValues>(DEFAULT_TRACE_FILTERS);
+  const [editableTraceFilters, setEditableTraceFilters] = useState<TraceFilterValues>(DEFAULT_TRACE_FILTERS);
   const [experiments, setExperiments] = useState<ExperimentSummary[]>([]);
   const [selectedExperimentId, setSelectedExperimentId] = useState<string | null>(null);
   const [selectedExperiment, setSelectedExperiment] = useState<LoadedExperiment | null>(null);
@@ -95,57 +99,69 @@ export default function DashboardPage() {
   const [missingLinkedTraceId, setMissingLinkedTraceId] = useState<string | null>(null);
   const [linkedTraceError, setLinkedTraceError] = useState<string | null>(null);
   const linkedTraceRef = useRef<Trace | null>(null);
-  const traceRequestIdRef = useRef(0);
   const linkedTraceResolver = useMemo(() => createLinkedTraceResolver(fetchTraceDetail), []);
+  const traceBrowseCoordinator = useMemo(
+    () =>
+      createTraceBrowseRequestCoordinator({
+        fetchTraceList: fetchTraces,
+        fetchSummary: fetchTraceSummary,
+        traceLimit: DEFAULT_TRACE_LIMIT,
+      }),
+    [],
+  );
+  const traceFilterCommitter = useMemo(
+    () =>
+      createDebouncedTraceFilterCommitter({
+        initialFilters: DEFAULT_TRACE_FILTERS,
+        commit: setEffectiveTraceFilters,
+      }),
+    [],
+  );
 
-  const loadTraces = useCallback(async (filters: TraceFilterValues = traceFilters) => {
-    const requestId = traceRequestIdRef.current + 1;
-    traceRequestIdRef.current = requestId;
+  const updateTraceFilters = useCallback((
+    filters: TraceFilterValues,
+    mode: TraceFilterCommitMode = "immediate",
+  ) => {
+    setEditableTraceFilters(filters);
+    if (mode === "debounced") {
+      traceFilterCommitter.schedule(filters);
+      return;
+    }
+    traceFilterCommitter.commitNow(filters);
+  }, [traceFilterCommitter]);
+
+  const loadTraces = useCallback(async (filters: TraceFilterValues) => {
     setIsTraceLoading(true);
     setTraceError(null);
 
-    try {
-      const browseQuery = buildTraceFilterQuery({ ...filters, limit: DEFAULT_TRACE_LIMIT });
-      const summaryQuery = buildTraceSummaryFilterQuery(filters);
-      const [traceResponse, summaryResponse] = await Promise.all([
-        fetchTraces(browseQuery),
-        fetchTraceSummary(summaryQuery),
-      ]);
-      const nextTraces = normalizeTraces(traceResponse, filters.sort);
-      const nextSummary = normalizeTraceSummary(summaryResponse);
-      if (!nextSummary) {
-        throw new Error("Bir server returned an unexpected trace summary");
-      }
-      if (requestId !== traceRequestIdRef.current) {
-        return nextTraces;
-      }
-      setTraces(nextTraces);
-      setTraceStats(nextSummary);
-      setSelectedTraceId((current) => {
-        if (
-          current &&
-          (nextTraces.some((trace) => trace.id === current) || linkedTraceRef.current?.id === current)
-        ) {
-          return current;
-        }
-        return nextTraces[0]?.id ?? null;
-      });
-      return nextTraces;
-    } catch (requestError) {
-      if (requestId !== traceRequestIdRef.current) {
-        return [];
-      }
-      setTraceError(requestError instanceof Error ? requestError.message : "Trace request failed");
+    const result = await traceBrowseCoordinator.load(filters);
+    if (result.kind === "stale") {
+      return [];
+    }
+    if (result.kind === "failed") {
+      setTraceError(result.message);
       setTraces([]);
       setTraceStats(summarizeTraces([]));
       setSelectedTraceId(null);
+      setIsTraceLoading(false);
       return [];
-    } finally {
-      if (requestId === traceRequestIdRef.current) {
-        setIsTraceLoading(false);
-      }
     }
-  }, [traceFilters]);
+
+    const nextTraces = result.traces;
+    setTraces(nextTraces);
+    setTraceStats(result.summary);
+    setSelectedTraceId((current) => {
+      if (
+        current &&
+        (nextTraces.some((trace) => trace.id === current) || linkedTraceRef.current?.id === current)
+      ) {
+        return current;
+      }
+      return nextTraces[0]?.id ?? null;
+    });
+    setIsTraceLoading(false);
+    return nextTraces;
+  }, [traceBrowseCoordinator]);
 
   const loadExperiments = useCallback(async () => {
     setIsExperimentLoading(true);
@@ -252,10 +268,20 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    void loadTraces();
+    void loadTraces(traceFilters);
+  }, [loadTraces, traceFilters]);
+
+  useEffect(() => {
     void loadExperiments();
     void loadPlaygroundStatus();
-  }, [loadExperiments, loadPlaygroundStatus, loadTraces]);
+  }, [loadExperiments, loadPlaygroundStatus]);
+
+  useEffect(() => {
+    return () => {
+      traceFilterCommitter.cancel();
+      traceBrowseCoordinator.invalidate();
+    };
+  }, [traceBrowseCoordinator, traceFilterCommitter]);
 
   useEffect(() => {
     if (selectedExperimentId) {
@@ -434,7 +460,7 @@ export default function DashboardPage() {
         : isPlaygroundStatusLoading || isPlaygroundHistoryLoading;
   const refreshActiveView = useCallback(() => {
     if (activeView === "traces") {
-      void loadTraces();
+      void loadTraces(traceFilters);
       return;
     }
     if (activeView === "experiments") {
@@ -443,7 +469,7 @@ export default function DashboardPage() {
     }
     void loadPlaygroundStatus();
     void loadPlaygroundHistory();
-  }, [activeView, loadExperiments, loadPlaygroundHistory, loadPlaygroundStatus, loadTraces]);
+  }, [activeView, loadExperiments, loadPlaygroundHistory, loadPlaygroundStatus, loadTraces, traceFilters]);
 
   return (
     <main className="shell">
@@ -493,11 +519,11 @@ export default function DashboardPage() {
           apiBaseUrl={apiBaseUrl}
           error={traceError}
           hasActiveFilters={hasActiveTraceFilters}
-          filters={traceFilters}
+          filters={editableTraceFilters}
           isLoading={isTraceLoading}
           selectedTrace={detailTrace}
           setSelectedTraceId={selectTraceFromList}
-          setTraceFilters={setTraceFilters}
+          setTraceFilters={updateTraceFilters}
           stats={traceStats}
           timelineRows={timelineRows}
           traceLimit={DEFAULT_TRACE_LIMIT}
