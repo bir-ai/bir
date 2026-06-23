@@ -33,6 +33,10 @@ export type Trace = {
   events: TraceEvent[];
 };
 
+export type TraceDetailResult =
+  | { kind: "loaded"; trace: Trace }
+  | { kind: "invalid"; message: string };
+
 export type TraceTimelineRow = {
   event: TraceEvent;
   depth: number;
@@ -168,6 +172,16 @@ export function normalizeTraces(value: unknown, sort: TraceSort = "recent"): Tra
 
 export function findTraceById(traces: Trace[], traceId: string): Trace | null {
   return traces.find((trace) => trace.id === traceId) ?? null;
+}
+
+export function normalizeTraceDetail(value: unknown, expectedTraceId?: string): TraceDetailResult {
+  if (!isTrace(value)) {
+    return { kind: "invalid", message: "Bir server returned an unexpected trace detail." };
+  }
+  if (expectedTraceId && value.id !== expectedTraceId) {
+    return { kind: "invalid", message: "Bir server returned trace detail for a different trace." };
+  }
+  return { kind: "loaded", trace: value };
 }
 
 export function buildTraceFilterQuery(filters: TraceFilterValues): string {

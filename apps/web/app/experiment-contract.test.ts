@@ -3,7 +3,12 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { filterFailedResults, normalizeExperiment, type ExperimentExampleResult } from "./experiment-contract";
+import {
+  filterFailedResults,
+  normalizeExperiment,
+  normalizeExperimentDetail,
+  type ExperimentExampleResult,
+} from "./experiment-contract";
 
 test("normalizes the shared valid experiment fixture", () => {
   const fixturePath = path.resolve(process.cwd(), "../../tests/fixtures/valid-experiment.json");
@@ -39,6 +44,16 @@ test("rejects internally inconsistent experiment details", () => {
     null,
   );
   assert.equal(normalizeExperiment({ ...summary, results: [{ ...result, duration_ms: -1 }] }), null);
+});
+
+test("reports an explicit error result for malformed experiment detail", () => {
+  const result = makeResult({});
+  const summary = makeSummary();
+
+  assert.deepEqual(normalizeExperimentDetail({ ...summary, example_count: 2, results: [result] }), {
+    kind: "invalid",
+    message: "Bir server returned an unexpected experiment detail.",
+  });
 });
 
 test("filterFailedResults returns only the error rows when active", () => {

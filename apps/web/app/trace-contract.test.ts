@@ -16,6 +16,7 @@ import {
   getTraceService,
   getTraceTotals,
   isErrorsOnlyFilter,
+  normalizeTraceDetail,
   normalizeTraces,
   normalizeTraceSummary,
   summarizeTraces,
@@ -572,6 +573,25 @@ test("ignores malformed trace responses without throwing", () => {
 
   assert.equal(traces.length, 1);
   assert.equal(traces[0].id, contractTrace.id);
+});
+
+test("reports an explicit error result for malformed trace detail", () => {
+  const malformedTrace = {
+    ...contractTrace,
+    events: [{ ...contractTrace.events[0], type: "unknown" }],
+  };
+
+  assert.deepEqual(normalizeTraceDetail(malformedTrace, contractTrace.id), {
+    kind: "invalid",
+    message: "Bir server returned an unexpected trace detail.",
+  });
+});
+
+test("reports an explicit error result for mismatched trace detail", () => {
+  assert.deepEqual(normalizeTraceDetail({ ...contractTrace, id: "other-trace" }, contractTrace.id), {
+    kind: "invalid",
+    message: "Bir server returned trace detail for a different trace.",
+  });
 });
 
 test("builds nested timeline rows from parent-child event relationships", () => {

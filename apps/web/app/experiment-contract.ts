@@ -38,6 +38,10 @@ export type LoadedExperiment = ExperimentSummary & {
   results: ExperimentExampleResult[];
 };
 
+export type ExperimentDetailResult =
+  | { kind: "loaded"; experiment: LoadedExperiment }
+  | { kind: "invalid"; message: string };
+
 export type ExperimentComparisonStatus =
   | "regressed"
   | "improved"
@@ -81,6 +85,14 @@ export function normalizeExperiment(value: unknown): LoadedExperiment | null {
     return null;
   }
   return value;
+}
+
+export function normalizeExperimentDetail(value: unknown): ExperimentDetailResult {
+  const experiment = normalizeExperiment(value);
+  if (!experiment) {
+    return { kind: "invalid", message: "Bir server returned an unexpected experiment detail." };
+  }
+  return { kind: "loaded", experiment };
 }
 
 // One-click triage for the experiment detail view: narrow the rendered example

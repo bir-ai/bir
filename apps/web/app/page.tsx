@@ -17,7 +17,7 @@ import { PlaygroundDashboard, type PlaygroundSessionState } from "./components/p
 import { TraceDashboard } from "./components/trace-dashboard";
 import {
   compareExperiments,
-  normalizeExperiment,
+  normalizeExperimentDetail,
   normalizeExperimentSummaries,
   type ExperimentSummary,
   type LoadedExperiment,
@@ -40,7 +40,7 @@ import { createTraceBrowseRequestCoordinator, mergeTraceBrowsePages } from "./tr
 import {
   buildTraceFilterQuery,
   buildTraceTimelineRows,
-  isTrace,
+  normalizeTraceDetail,
   normalizeTraces,
   summarizeTraces,
   type Trace,
@@ -54,8 +54,12 @@ type ViewMode = "traces" | "experiments" | "playground";
 // normalizeTraces re-sorts newest first, so this is a recency window.
 const DEFAULT_TRACE_LIMIT = 100;
 
-async function getExperimentDetail(experimentId: string): Promise<LoadedExperiment | null> {
-  return normalizeExperiment(await fetchExperimentDetail(experimentId));
+async function getExperimentDetail(experimentId: string): Promise<LoadedExperiment> {
+  const result = normalizeExperimentDetail(await fetchExperimentDetail(experimentId));
+  if (result.kind === "invalid") {
+    throw new Error(result.message);
+  }
+  return result.experiment;
 }
 
 export default function DashboardPage() {
@@ -104,7 +108,9 @@ export default function DashboardPage() {
   const [isPlaygroundStatusLoading, setIsPlaygroundStatusLoading] = useState(true);
   const [isPlaygroundHistoryLoading, setIsPlaygroundHistoryLoading] = useState(false);
   const [traceError, setTraceError] = useState<string | null>(null);
+  const [traceDetailError, setTraceDetailError] = useState<string | null>(null);
   const [experimentError, setExperimentError] = useState<string | null>(null);
+  const [experimentDetailError, setExperimentDetailError] = useState<string | null>(null);
   const [playgroundError, setPlaygroundError] = useState<string | null>(null);
   const [playgroundHistoryError, setPlaygroundHistoryError] = useState<string | null>(null);
   const [missingLinkedTraceId, setMissingLinkedTraceId] = useState<string | null>(null);
@@ -297,12 +303,12 @@ export default function DashboardPage() {
 
   const loadExperimentDetail = useCallback(async (experimentId: string) => {
     setIsExperimentDetailLoading(true);
-    setExperimentError(null);
+    setExperimentDetailError(null);
 
     try {
       setSelectedExperiment(await getExperimentDetail(experimentId));
     } catch (requestError) {
-      setExperimentError(requestError instanceof Error ? requestError.message : "Experiment detail request failed");
+      setExperimentDetailError(requestError instanceof Error ? requestError.message : "Experiment detail request failed");
       setSelectedExperiment(null);
     } finally {
       setIsExperimentDetailLoading(false);
@@ -367,6 +373,7 @@ export default function DashboardPage() {
       return;
     }
     setSelectedExperiment(null);
+    setExperimentDetailError(null);
   }, [loadExperimentDetail, selectedExperimentId]);
 
   useEffect(() => {
@@ -453,26 +460,37 @@ export default function DashboardPage() {
     const traceId = selectedTrace?.id ?? null;
     if (!traceId) {
       setSelectedTraceDetail(null);
+      setTraceDetailError(null);
       return;
     }
 
     if (linkedTrace?.id === traceId) {
       setSelectedTraceDetail(linkedTrace);
+      setTraceDetailError(null);
       return;
     }
 
     let isCurrentRequest = true;
     setSelectedTraceDetail(null);
+    setTraceDetailError(null);
 
     void fetchTraceDetail(traceId)
       .then((detail) => {
         if (isCurrentRequest) {
-          setSelectedTraceDetail(isTrace(detail) ? detail : null);
+          const result = normalizeTraceDetail(detail, traceId);
+          if (result.kind === "loaded") {
+            setSelectedTraceDetail(result.trace);
+            return;
+          }
+          setSelectedTraceDetail(null);
+          setTraceDetailError(result.message);
         }
       })
-      .catch(() => {
+      .catch((requestError) => {
         if (isCurrentRequest) {
           setSelectedTraceDetail(null);
+          const detail = requestError instanceof Error ? requestError.message : "Trace detail request failed";
+          setTraceDetailError(`Could not load trace detail: ${detail}`);
         }
       });
 
@@ -599,6 +617,7 @@ export default function DashboardPage() {
             void loadOlderTraces();
           }}
           selectedTrace={detailTrace}
+          traceDetailError={traceDetailError}
           setSelectedTraceId={selectTraceFromList}
           setTraceFilters={updateTraceFilters}
           stats={traceStats}
@@ -613,6 +632,7 @@ export default function DashboardPage() {
           comparisonBaselineId={comparisonBaselineId}
           comparisonCandidateId={comparisonCandidateId}
           error={experimentError}
+          detailError={experimentDetailError}
           experiments={experiments}
           isComparisonLoading={isComparisonLoading}
           isDetailLoading={isExperimentDetailLoading}

@@ -18,6 +18,7 @@ export function ExperimentDetailPanel({
   comparison,
   comparisonBaselineId,
   comparisonCandidateId,
+  detailError,
   detail,
   experiments,
   isComparisonLoading,
@@ -32,6 +33,7 @@ export function ExperimentDetailPanel({
   comparison: ExperimentComparison | null;
   comparisonBaselineId: string | null;
   comparisonCandidateId: string | null;
+  detailError: string | null;
   detail: ExperimentSummary | null;
   experiments: ExperimentSummary[];
   isComparisonLoading: boolean;
@@ -86,6 +88,7 @@ export function ExperimentDetailPanel({
             </section>
 
             {isDetailLoading && !selectedExperiment ? <TraceSkeleton /> : null}
+            {detailError ? <div className="error-block">{detailError}</div> : null}
             {selectedExperiment ? (
               <ExperimentResultList
                 isTraceLoading={isTraceLoading}
@@ -93,7 +96,7 @@ export function ExperimentDetailPanel({
                 onOpenTrace={onOpenTrace}
                 results={selectedExperiment.results}
               />
-            ) : !isDetailLoading ? (
+            ) : !isDetailLoading && !detailError ? (
               <div className="empty-detail">No experiment detail loaded.</div>
             ) : null}
           </div>

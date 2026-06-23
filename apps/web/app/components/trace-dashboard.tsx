@@ -35,6 +35,7 @@ export function TraceDashboard({
   setSelectedTraceId,
   setTraceFilters,
   stats,
+  traceDetailError,
   timelineRows,
   traceLimit,
   traces,
@@ -51,6 +52,7 @@ export function TraceDashboard({
   setSelectedTraceId: (traceId: string) => void;
   setTraceFilters: (filters: TraceFilterValues, mode?: TraceFilterCommitMode) => void;
   stats: TraceSummary;
+  traceDetailError: string | null;
   timelineRows: TraceTimelineRow[];
   traceLimit: number;
   traces: Trace[];
@@ -135,6 +137,8 @@ export function TraceDashboard({
               </div>
 
               {traceScoreGroups.length > 0 ? <TraceScorePanel groups={traceScoreGroups} /> : null}
+
+              {traceDetailError ? <div className="error-block">{traceDetailError}</div> : null}
 
               <TraceTimeline rows={timelineRows} />
             </>

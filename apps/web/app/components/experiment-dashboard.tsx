@@ -14,6 +14,7 @@ export function ExperimentDashboard({
   comparison,
   comparisonBaselineId,
   comparisonCandidateId,
+  detailError,
   error,
   experiments,
   isComparisonLoading,
@@ -33,6 +34,7 @@ export function ExperimentDashboard({
   comparison: ExperimentComparison | null;
   comparisonBaselineId: string | null;
   comparisonCandidateId: string | null;
+  detailError: string | null;
   error: string | null;
   experiments: ExperimentSummary[];
   isComparisonLoading: boolean;
@@ -74,6 +76,7 @@ export function ExperimentDashboard({
           comparison={comparison}
           comparisonBaselineId={comparisonBaselineId}
           comparisonCandidateId={comparisonCandidateId}
+          detailError={detailError}
           detail={detail}
           experiments={experiments}
           isComparisonLoading={isComparisonLoading}
