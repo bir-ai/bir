@@ -19,9 +19,7 @@ dev = [
     # The server's contract tests exercise the real SDK (configure/observe/
     # service+source metadata). Floor is 0.2.0 — the first release that emits
     # metadata.service and metadata.source — with an upper bound so a future
-    # major SDK cannot silently change the contract these tests rely on. CI
-    # installs the SDK from source until 0.2.0 is published; see
-    # .github/workflows/ci.yml.
+    # major SDK cannot silently change the contract these tests rely on.
     "bir-sdk>=0.2.0,<0.3.0",
     "httpx>=0.27",
     "pytest>=8.0",

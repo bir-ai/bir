@@ -146,9 +146,10 @@ duration. They do not search arbitrary captured input, output, other metadata,
 or error payloads.
 
 To triage slow traces, order results by root-trace duration (longest first) with
-`sort=slowest`; the default `sort=recent` preserves the most-recent-first order.
-The dashboard exposes the same choice as a Recent/Slowest toggle. To isolate slow
-traces, drop everything under a threshold with `min_duration_ms`, a positive
+`sort=slowest`; the default `sort=recent` returns the most recent page, ordered
+oldest-first within that page. The dashboard displays recent traces newest-first.
+The dashboard exposes the same choice as a Recent/Slowest toggle. To isolate
+slow traces, drop everything under a threshold with `min_duration_ms`, a positive
 number that keeps only traces whose root duration (`end_time - start_time`) is at
 least that many milliseconds. The dashboard exposes it as a "Min Duration (ms)"
 input, and it combines with the other filters and the sort.
