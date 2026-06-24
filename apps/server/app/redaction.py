@@ -47,7 +47,7 @@ def redact_value(value: Any, *, key: str | None = None) -> Any:
 
 
 def redact_secret_text(value: str) -> str:
-    """Redact common labeled, bearer, and OpenAI-style secret strings."""
+    """Redact labeled, bearer, OpenAI-style, and high-signal secret strings."""
 
     redacted = value
     redacted = re.sub(
@@ -70,6 +70,15 @@ def redact_secret_text(value: str) -> str:
         redacted,
     )
     redacted = re.sub(r"\b(sk-[A-Za-z0-9_-]{4,})\b", REDACTED, redacted)
+    redacted = re.sub(
+        r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?![A-Za-z0-9_-])",
+        REDACTED,
+        redacted,
+    )
+    redacted = re.sub(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b", REDACTED, redacted)
+    redacted = re.sub(r"(?<![0-9A-Za-z_-])AIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])", REDACTED, redacted)
+    redacted = re.sub(r"\bxox[baprs]-[0-9A-Za-z-]+\b", REDACTED, redacted)
+    redacted = re.sub(r"\b(?:ghp|gho|ghs|ghu|ghr)_[0-9A-Za-z]{36,}\b", REDACTED, redacted)
     return redacted
 
 
