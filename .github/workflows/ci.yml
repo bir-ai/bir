@@ -56,3 +56,20 @@ jobs:
       - name: Run contract tests
         working-directory: apps/web
         run: npm run test
+
+  fixtures:
+    name: Contract fixture drift guard
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Stdlib-only; no install step. Fails if a shared fixture no longer
+      # matches tests/fixtures/CHECKSUMS.sha256. Keep this identical to the
+      # bir-python (SDK) repo's fixtures job. See tests/fixtures/README.md.
+      - name: Verify shared contract fixtures match the committed manifest
+        run: python scripts/fixtures.py check
