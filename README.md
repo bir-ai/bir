@@ -27,8 +27,10 @@ docs/       # Design notes and implementation roadmap
 ```
 
 The SDK surface — `@observe`, spans, generations, scores, datasets, experiments,
-and the LangChain / LlamaIndex / OpenAI / Anthropic / Gemini / LiteLLM
-integrations — is **not** in this repo. See the separate
+and its provider wrappers (OpenAI, Anthropic, Google Gemini, Vertex AI, AWS
+Bedrock, Mistral, Cohere, LiteLLM), framework handlers (LangChain, LlamaIndex,
+OpenAI Agents), and OpenTelemetry/OTLP export — is **not** in this repo. See the
+separate
 [`bir-sdk`](https://pypi.org/project/bir-sdk/) package.
 
 ## Requirements
