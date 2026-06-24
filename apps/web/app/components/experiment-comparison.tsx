@@ -86,7 +86,7 @@ export function ExperimentComparisonPanel({ comparison }: { comparison: Experime
       </div>
 
       <p className="subtle">
-        Improved and regressed reflect execution recovery or failure. Score deltas are shown as direction-neutral changes.
+        Improved and regressed reflect a higher or lower score, or an execution recovery or failure, matching the SDK&apos;s eval-gate. Rows whose scores move in both directions at once are shown as changed.
       </p>
 
       <section className="score-grid comparison-score-grid" aria-label="Aggregate score deltas">

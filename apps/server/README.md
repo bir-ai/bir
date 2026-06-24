@@ -25,12 +25,16 @@ there is no editable SDK source tree here.
 `GET /v1/traces` accepts optional query parameters to filter the returned
 traces: `status` (`success`/`error`), `name` (case-insensitive substring of the
 root trace name), `event_type` (keeps traces containing at least one event of
-that type), `source` (exact match on root `metadata.source` for product-owned
-sources such as `playground`), `service`/`environment` (case-insensitive substring of the
+that type), `source` (exact match on root `metadata.source`, which the
+Playground sets to `playground` and SDK callers can set with
+`configure(source=...)`), `service`/`environment` (case-insensitive substring of the
 `metadata.service` block the SDK records from `configure(service_name=,
 environment=)`), and `min_duration_ms` (a positive number; keeps only traces
 whose root duration `end_time - start_time` is at least that many milliseconds,
-to isolate slow traces). Filters combine with AND.
+to isolate slow traces). Filters combine with AND. Populating `source`,
+`service`, and `environment` on SDK-generated traces requires bir-sdk >= 0.2.0
+(the release that adds `configure(source=...)` and records the `metadata.service`
+block); traces from older SDKs simply have no value to match.
 
 `GET /v1/traces/summary` accepts the same `status`, `name`, `event_type`,
 `source`, `service`, `environment`, and `min_duration_ms` filters. It returns exact
@@ -114,6 +118,8 @@ from bir.evals import send_experiment
 
 send_experiment(".bir/experiments/prompt-v1-<experiment-id>.jsonl")
 ```
+
+`send_experiment` requires bir-sdk >= 0.2.0.
 
 Uploaded experiments are exposed as summary rows through `/v1/experiments` and
 as summary plus per-example result rows through

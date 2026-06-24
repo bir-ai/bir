@@ -174,8 +174,11 @@ function comparisonStatus(
   candidateResult: ExperimentExampleResult | null,
   scores: ExperimentScoreDelta[],
 ): ExperimentComparisonStatus {
-  // Classification precedence: row presence, execution transition, comparable
-  // score change, then unchanged. Score signs carry no quality direction.
+  // Classification precedence: row presence, execution transition, then score
+  // direction. Matching the SDK's compare_experiments, a higher candidate score
+  // reads as an improvement and a lower one as a regression; a row whose
+  // comparable scores move in both directions at once stays a direction-neutral
+  // "changed".
   if (baselineResult === null) {
     return "new_candidate";
   }
@@ -189,10 +192,17 @@ function comparisonStatus(
     return "improved";
   }
   const deltas = scores.map((score) => score.delta).filter((delta): delta is number => delta !== null);
-  if (deltas.some((delta) => delta !== 0)) {
-    return "changed";
+  const moved = deltas.filter((delta) => delta !== 0);
+  if (moved.length === 0) {
+    return "unchanged";
   }
-  return "unchanged";
+  if (moved.every((delta) => delta > 0)) {
+    return "improved";
+  }
+  if (moved.every((delta) => delta < 0)) {
+    return "regressed";
+  }
+  return "changed";
 }
 
 function compareRows(left: ExperimentComparisonRow, right: ExperimentComparisonRow): number {

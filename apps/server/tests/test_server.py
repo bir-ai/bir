@@ -8,13 +8,19 @@ import pytest
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[3]
-# bir is installed as a published package (declared in apps/server dev
-# dependencies); the SDK source lives in the separate bir repository.
+# bir-sdk is a separate package (declared in apps/server dev dependencies,
+# pinned >=0.2.0,<0.3.0). CI installs it from source until 0.2.0 is published;
+# the SDK source lives in the sibling bir-python repository.
 CONTRACT_EVENTS_PATH = ROOT / "tests" / "fixtures" / "valid-events.jsonl"
 CONTRACT_SCHEMA_PATH = ROOT / "tests" / "fixtures" / "event-schema-v1.json"
 CONTRACT_EXPERIMENT_PATH = ROOT / "tests" / "fixtures" / "valid-experiment.json"
 
 from bir import configure, generation, load_traces, observe, retrieval, score, span
+
+# Test-only internals: a config reset plus the SDK's redaction helpers, used to
+# compute the exact redacted values the server must reproduce. They are private
+# (bir._sdk), so the dev dependency is bounded to <0.3.0 to keep a major SDK
+# release from changing them out from under these tests.
 from bir._sdk import _reset_config_for_tests, _safe_capture, _safe_error
 
 import app.storage as storage
@@ -1948,5 +1954,51 @@ def test_ingests_sdk_generated_events(tmp_path: Path) -> None:
             "generation",
             "score",
         ]
+    finally:
+        _reset_config_for_tests()
+
+
+def test_service_source_filters_match_sdk_generated_traces(tmp_path: Path) -> None:
+    # End-to-end guard for the service/environment/source filters: they are only
+    # useful if the SDK actually emits metadata.service and metadata.source on
+    # trace roots. This drives the real SDK rather than hand-built metadata, so
+    # it fails loudly against any bir-sdk that does not produce them (requires
+    # bir-sdk >= 0.2.0, which adds configure(source=...)).
+    client, _ = make_client(tmp_path)
+    trace_path = tmp_path / "sdk-service-traces.jsonl"
+    configure(
+        trace_path=trace_path,
+        service_name="rag-api",
+        environment="production",
+        source="checkout-api",
+    )
+
+    try:
+
+        @observe()
+        def answer() -> str:
+            return "ok"
+
+        answer()
+
+        for event in load_traces(trace_path)[0].events:
+            assert client.post("/v1/events", json=event.raw).status_code == 201
+
+        def ids(params: dict[str, str]) -> list[str]:
+            response = client.get("/v1/traces", params=params)
+            assert response.status_code == 200
+            return [trace["id"] for trace in response.json()]
+
+        all_ids = ids({})
+        assert len(all_ids) == 1
+        # The SDK emitted the metadata, so each filter matches the generated
+        # trace: service/environment by case-insensitive substring, source by
+        # exact value.
+        assert ids({"service": "RAG"}) == all_ids
+        assert ids({"environment": "production"}) == all_ids
+        assert ids({"source": "checkout-api"}) == all_ids
+        # And non-matching values exclude it.
+        assert ids({"service": "billing"}) == []
+        assert ids({"source": "playground"}) == []
     finally:
         _reset_config_for_tests()

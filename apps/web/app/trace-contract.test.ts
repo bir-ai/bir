@@ -1116,7 +1116,7 @@ test("rejects malformed experiment responses without throwing", () => {
   assert.equal(normalizeExperiment(null), null);
 });
 
-test("compares experiments by aggregate and direction-neutral per-example score deltas", () => {
+test("compares experiments by aggregate and directional per-example score deltas", () => {
   const baseline = makeLoadedExperiment({
     summary: makeExperimentSummary({
       experiment_id: "baseline",
@@ -1186,19 +1186,19 @@ test("compares experiments by aggregate and direction-neutral per-example score 
   assert.deepEqual(
     comparison.rows.map((row) => [row.example_id, row.status]),
     [
+      ["q1", "regressed"],
       ["q4", "missing_candidate"],
-      ["q1", "changed"],
-      ["q3", "changed"],
       ["q5", "new_candidate"],
+      ["q3", "improved"],
       ["q2", "unchanged"],
     ],
   );
   assert.deepEqual(comparison.counts, {
-    regressed: 0,
+    regressed: 1,
     missing_candidate: 1,
-    changed: 2,
+    changed: 0,
     new_candidate: 1,
-    improved: 0,
+    improved: 1,
     unchanged: 1,
   });
 });
@@ -1245,7 +1245,7 @@ test("classifies execution failures as regressions and recoveries as improvement
   );
 });
 
-test("classifies both positive and negative undirected score changes neutrally", () => {
+test("classifies directional per-example score changes as improved or regressed", () => {
   const baseline = makeLoadedExperiment({
     results: [
       makeExperimentResult({ example_id: "negative", scores: [{ name: "score", value: 1, metadata: {} }] }),
@@ -1263,8 +1263,8 @@ test("classifies both positive and negative undirected score changes neutrally",
   const comparison = compareExperiments(baseline, candidate);
 
   assert.deepEqual(comparison.rows.map((row) => [row.example_id, row.status]), [
-    ["negative", "changed"],
-    ["positive", "changed"],
+    ["negative", "regressed"],
+    ["positive", "improved"],
   ]);
   assert.deepEqual(comparison.rows.map((row) => row.scores[0].delta), [-1, 1]);
 });
