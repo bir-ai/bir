@@ -34,6 +34,19 @@ The runner starts the API at `http://127.0.0.1:8000` and dashboard at
 Use `./scripts/server.sh` when only the API is needed. These scripts do not
 develop or publish the external SDK.
 
+To run the server tests against unreleased SDK changes from a sibling checkout,
+use the local-only wrapper:
+
+```bash
+./scripts/test-server-local-sdk.sh
+```
+
+It uses `BIR_SDK_PATH` when set and otherwise defaults to `../bir-python` if
+that sibling directory exists. The wrapper does not install the SDK or change
+`apps/server[dev]`; it prepends the sibling SDK's `src/` directory to
+`PYTHONPATH` for one pytest invocation. If the sibling checkout is absent, run
+the normal PyPI-backed server tests instead.
+
 The manual fallback is to run the server and dashboard separately:
 
 ```bash

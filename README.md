@@ -87,6 +87,20 @@ at `http://127.0.0.1:8000`, and the server allows that origin through CORS by
 default. Open `http://localhost:3000` and use the filters to narrow traces by
 status, name, or event type.
 
+To test this product repo against unreleased SDK changes in a sibling
+`bir-python` checkout, keep the server dev dependencies installed and run:
+
+```bash
+./scripts/test-server-local-sdk.sh
+```
+
+The script defaults to `../bir-python` when it exists. Override the checkout
+location with `BIR_SDK_PATH=/path/to/bir-python`. It places the sibling
+`src/` directory on `PYTHONPATH` for that one pytest run, so the package floor in
+`apps/server[dev]` stays unchanged and normal tests continue to use the
+published PyPI `bir-sdk`. If the sibling checkout is missing, use the regular
+server test command in the Tests section below.
+
 By default the server stores ingested events in `.bir/server-events.jsonl` and
 uploaded experiments under `.bir/experiments/`. See
 [apps/server/README.md](apps/server/README.md) for every endpoint and
@@ -178,6 +192,10 @@ Playground is disabled in read-only `BIR_DATA_DIR` mode. See
 # Server
 cd apps/server
 ../../.venv/bin/python -m pytest
+
+# Server against a sibling bir-python checkout
+cd ../..
+./scripts/test-server-local-sdk.sh
 
 # Dashboard
 cd apps/web

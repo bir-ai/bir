@@ -277,5 +277,18 @@ cd apps/server
 ../../.venv/bin/uvicorn app.main:app --reload
 ```
 
+The normal pytest command above uses the published `bir-sdk` resolved by
+`apps/server[dev]`. To test this server against unreleased SDK changes in a
+sibling checkout, run from the repository root:
+
+```bash
+./scripts/test-server-local-sdk.sh
+```
+
+The wrapper defaults to `../bir-python` when present, or accepts
+`BIR_SDK_PATH=/path/to/bir-python`. It prepends that checkout's `src/` directory
+to `PYTHONPATH` for one pytest process and fails with a clear message if the
+checkout is missing or does not look like `bir-python`.
+
 CI also runs `pyright` from the repository root after installing it separately;
 it is not included in the server's `[dev]` extra.
