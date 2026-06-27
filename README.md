@@ -161,6 +161,9 @@ The server re-reads `traces.jsonl` as the SDK appends to it, and the SDK's
 `run_experiment()` or `run_experiment_async()` results under `.bir/experiments/`
 appear without a separate upload. Because this mode does not own the data files,
 ingestion and Playground endpoints return `403`.
+Concurrent experiment rows are shown in the dataset order persisted by the SDK,
+even when example timings differ; rows recorded with `record_traces=True` link
+to their separate trace trees in the same local `traces.jsonl`.
 
 ## Serve the dashboard from the server (single origin)
 

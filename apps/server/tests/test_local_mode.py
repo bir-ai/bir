@@ -19,6 +19,10 @@ from test_server import (
 )
 
 READ_ONLY_DETAIL = "Ingestion is disabled: the server is running in read-only local data mode (BIR_DATA_DIR)"
+PRODUCT_FIXTURES_DIR = Path(__file__).resolve().parents[3] / "tests" / "product-fixtures"
+SDK_CONCURRENT_EXPERIMENT_STEM = "concurrent-order-experiment-sdk-concurrent"
+SDK_PARTIAL_EXPERIMENT_STEM = "raise-on-error-experiment-sdk-partial"
+SDK_CONCURRENT_EXPERIMENT_TRACES_PATH = PRODUCT_FIXTURES_DIR / "sdk-concurrent-experiment-traces.jsonl"
 
 
 def make_local_client(tmp_path: Path) -> tuple[TestClient, Path]:
@@ -335,6 +339,15 @@ def make_sdk_experiment_summary(**overrides: object) -> dict[str, object]:
     return summary
 
 
+def install_sdk_concurrent_experiment_artifacts(data_dir: Path) -> None:
+    experiments_dir = data_dir / "experiments"
+    experiments_dir.mkdir(parents=True, exist_ok=True)
+    for stem in (SDK_CONCURRENT_EXPERIMENT_STEM, SDK_PARTIAL_EXPERIMENT_STEM):
+        shutil.copyfile(PRODUCT_FIXTURES_DIR / f"{stem}.jsonl", experiments_dir / f"{stem}.jsonl")
+        shutil.copyfile(PRODUCT_FIXTURES_DIR / f"{stem}.summary.json", experiments_dir / f"{stem}.summary.json")
+    shutil.copyfile(SDK_CONCURRENT_EXPERIMENT_TRACES_PATH, data_dir / "traces.jsonl")
+
+
 def test_local_mode_lists_sdk_experiments_newest_first(tmp_path: Path) -> None:
     client, data_dir = make_local_client(tmp_path)
     write_sdk_experiment(data_dir, make_sdk_experiment_summary(), [make_experiment_result()])
@@ -370,6 +383,94 @@ def test_local_mode_gets_experiment_detail_from_sibling_result_file(tmp_path: Pa
     assert len(experiment["results"]) == 1
     assert experiment["results"][0]["example_id"] == "q1"
     assert experiment["results"][0]["trace_id"] == "trace-1"
+
+
+def test_local_mode_preserves_sdk_concurrent_result_order_and_redaction(tmp_path: Path) -> None:
+    client, data_dir = make_local_client(tmp_path)
+    install_sdk_concurrent_experiment_artifacts(data_dir)
+
+    list_response = client.get("/v1/experiments")
+    detail_response = client.get("/v1/experiments/experiment-sdk-concurrent")
+
+    assert list_response.status_code == 200
+    assert [summary["experiment_id"] for summary in list_response.json()] == [
+        "experiment-sdk-partial",
+        "experiment-sdk-concurrent",
+    ]
+    assert detail_response.status_code == 200
+    experiment = detail_response.json()
+    assert experiment["result_path"] == ".bir/experiments/concurrent-order-experiment-sdk-concurrent.jsonl"
+    assert [result["example_id"] for result in experiment["results"]] == ["q0", "q1", "q2"]
+    assert experiment["results"][0]["start_time"] > experiment["results"][1]["start_time"]
+    assert len({result["trace_id"] for result in experiment["results"]}) == 3
+    redacted_result = experiment["results"][2]
+    assert redacted_result["input"] == {"api_key": "[redacted]", "question": "2"}
+    assert redacted_result["output"] == {"answer": "2", "api_key": "[redacted]"}
+    assert redacted_result["scores"][0]["metadata"] == {"api_key": "[redacted]"}
+    assert "sk-secret" not in json.dumps(experiment)
+
+
+def test_local_mode_serves_sdk_concurrent_linked_trace_rows(tmp_path: Path) -> None:
+    client, data_dir = make_local_client(tmp_path)
+    install_sdk_concurrent_experiment_artifacts(data_dir)
+
+    experiment = client.get("/v1/experiments/experiment-sdk-concurrent").json()
+
+    for result in experiment["results"]:
+        trace_id = result["trace_id"]
+        trace_response = client.get(f"/v1/traces/{trace_id}")
+
+        assert trace_response.status_code == 200
+        trace = trace_response.json()
+        assert trace["id"] == trace_id
+        assert all(event["trace_id"] == trace_id for event in trace["events"])
+        root = trace["events"][0]
+        assert root["id"] == trace_id
+        assert root["metadata"]["kind"] == "experiment"
+        assert root["metadata"]["experiment_id"] == "experiment-sdk-concurrent"
+        assert root["metadata"]["experiment_name"] == "concurrent-order"
+        assert root["metadata"]["example_id"] == result["example_id"]
+        assert [event["parent_id"] for event in trace["events"] if event["type"] == "score"] == [trace_id]
+
+    redacted_trace = client.get("/v1/traces/trace-sdk-concurrent-q2").json()
+    redacted_span = next(event for event in redacted_trace["events"] if event["type"] == "span")
+    redacted_score = next(event for event in redacted_trace["events"] if event["type"] == "score")
+    assert redacted_span["input"]["api_key"] == "[redacted]"
+    assert redacted_span["output"]["api_key"] == "[redacted]"
+    assert redacted_score["metadata"]["api_key"] == "[redacted]"
+
+
+def test_local_mode_serves_sdk_raise_on_error_partial_experiment(tmp_path: Path) -> None:
+    client, data_dir = make_local_client(tmp_path)
+    install_sdk_concurrent_experiment_artifacts(data_dir)
+
+    detail_response = client.get("/v1/experiments/experiment-sdk-partial")
+    trace_response = client.get("/v1/traces/trace-sdk-partial-q1")
+
+    assert detail_response.status_code == 200
+    experiment = detail_response.json()
+    assert experiment["status"] == "error"
+    assert experiment["example_count"] == 2
+    assert experiment["error_count"] == 1
+    assert [result["example_id"] for result in experiment["results"]] == ["q0", "q1"]
+    assert experiment["results"][0]["start_time"] > experiment["results"][1]["start_time"]
+    assert experiment["results"][1]["status"] == "error"
+    assert experiment["results"][1]["error"] == "provider failed token=[redacted]"
+    assert {result["trace_id"] for result in experiment["results"]} == {
+        "trace-sdk-partial-q0",
+        "trace-sdk-partial-q1",
+    }
+    assert "raw-token" not in json.dumps(experiment)
+
+    assert trace_response.status_code == 200
+    trace = trace_response.json()
+    assert trace["status"] == "error"
+    assert [(event["type"], event["name"], event["status"]) for event in trace["events"]] == [
+        ("trace", "experiment.raise-on-error.q1", "error"),
+        ("span", "failing_step", "error"),
+    ]
+    assert trace["events"][0]["error"] == "provider failed token=[redacted]"
+    assert trace["events"][1]["parent_id"] == "trace-sdk-partial-q1"
 
 
 def test_local_mode_experiment_detail_returns_404_for_missing_experiment(tmp_path: Path) -> None:
@@ -437,6 +538,35 @@ def test_bir_data_dir_env_enables_local_mode(tmp_path: Path, monkeypatch: pytest
     assert traces_response.status_code == 200
     assert [trace["id"] for trace in traces_response.json()] == ["trace-1"]
     assert ingest_response.status_code == 403
+
+
+def test_bir_data_dir_env_loads_sdk_experiment_artifacts_consistently(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_dir = tmp_path / ".bir"
+    data_dir.mkdir()
+    install_sdk_concurrent_experiment_artifacts(data_dir)
+    direct_client = TestClient(create_app(local_data_dir=data_dir))
+    monkeypatch.setenv("BIR_DATA_DIR", str(data_dir))
+    env_client = TestClient(create_app())
+
+    direct_detail = direct_client.get("/v1/experiments/experiment-sdk-concurrent")
+    env_detail = env_client.get("/v1/experiments/experiment-sdk-concurrent")
+    env_trace = env_client.get("/v1/traces/trace-sdk-concurrent-q0")
+    ingest_response = env_client.post(
+        "/v1/experiments",
+        json={"summary": make_experiment_summary(), "results": [make_experiment_result()]},
+    )
+
+    assert direct_detail.status_code == 200
+    assert env_detail.status_code == 200
+    assert env_detail.json() == direct_detail.json()
+    assert [result["example_id"] for result in env_detail.json()["results"]] == ["q0", "q1", "q2"]
+    assert env_trace.status_code == 200
+    assert env_trace.json()["name"] == "experiment.concurrent-order.q0"
+    assert ingest_response.status_code == 403
+    assert ingest_response.json() == {"detail": READ_ONLY_DETAIL}
 
 
 def test_explicit_store_paths_ignore_bir_data_dir_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

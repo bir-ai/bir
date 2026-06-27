@@ -1,0 +1,1 @@
+{"aggregate_scores":{"json_valid":1.0},"end_time":"2026-03-01T00:10:03+00:00","error_count":1,"example_count":2,"experiment_id":"experiment-sdk-partial","name":"raise-on-error","result_path":".bir/experiments/raise-on-error-experiment-sdk-partial.jsonl","schema_version":"1.0","start_time":"2026-03-01T00:10:00+00:00","status":"error"}

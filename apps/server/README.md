@@ -265,6 +265,13 @@ without a `send_experiment()` upload. SDK summaries record `result_path`
 relative to the project root, so the server locates result rows through the
 sibling file that shares the summary's stem
 (`<stem>.summary.json` / `<stem>.jsonl`), matching how the SDK pairs them.
+Concurrent SDK runs (`run_experiment(max_workers=...)` and
+`run_experiment_async(...)`) still persist rows in dataset order even when
+example timings and linked trace writes complete out of order; the API serves
+that persisted order unchanged. With `record_traces=True`, each result row's
+`trace_id` points at a separate trace tree in `$BIR_DATA_DIR/traces.jsonl`.
+If `raise_on_error=True` stops a concurrent run, the SDK may leave a partial
+error summary and result file; read-only mode serves those persisted rows as-is.
 Read-only inspection validates each summary and result row but does not apply
 the upload-only cross-row count and uniqueness checks or rewrite SDK-owned
 files. The dashboard accepts experiment detail for comparison only when its

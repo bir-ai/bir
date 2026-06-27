@@ -1,0 +1,1 @@
+{"aggregate_scores":{"exact_match":1.0},"end_time":"2026-03-01T00:00:04+00:00","error_count":0,"example_count":3,"experiment_id":"experiment-sdk-concurrent","name":"concurrent-order","result_path":".bir/experiments/concurrent-order-experiment-sdk-concurrent.jsonl","schema_version":"1.0","start_time":"2026-03-01T00:00:00+00:00","status":"success"}

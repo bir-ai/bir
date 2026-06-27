@@ -29,6 +29,40 @@ test("normalizes the shared valid experiment fixture", () => {
   assert.deepEqual(experiment.results.map((result) => result.example_id), ["question-1", "question-2"]);
 });
 
+test("normalizes SDK concurrent experiment rows without reordering linked traces", () => {
+  const experiment = normalizeExperiment(loadProductExperimentFixture("concurrent-order-experiment-sdk-concurrent"));
+
+  assert.ok(experiment);
+  assert.deepEqual(
+    experiment.results.map((result) => result.example_id),
+    ["q0", "q1", "q2"],
+  );
+  assert.ok(experiment.results[0].start_time > experiment.results[1].start_time);
+  assert.deepEqual(
+    experiment.results.map((result) => result.trace_id),
+    ["trace-sdk-concurrent-q0", "trace-sdk-concurrent-q1", "trace-sdk-concurrent-q2"],
+  );
+  assert.deepEqual(experiment.results[2].input, { api_key: "[redacted]", question: "2" });
+  assert.deepEqual(experiment.results[2].scores[0]?.metadata, { api_key: "[redacted]" });
+});
+
+test("normalizes SDK raise-on-error partial experiment rows", () => {
+  const experiment = normalizeExperiment(loadProductExperimentFixture("raise-on-error-experiment-sdk-partial"));
+
+  assert.ok(experiment);
+  assert.equal(experiment.status, "error");
+  assert.equal(experiment.example_count, 2);
+  assert.equal(experiment.error_count, 1);
+  assert.deepEqual(
+    experiment.results.map((result) => [result.example_id, result.status, result.trace_id]),
+    [
+      ["q0", "success", "trace-sdk-partial-q0"],
+      ["q1", "error", "trace-sdk-partial-q1"],
+    ],
+  );
+  assert.equal(experiment.results[1].error, "provider failed token=[redacted]");
+});
+
 test("rejects internally inconsistent experiment details", () => {
   const result = makeResult({});
   const summary = makeSummary();
@@ -181,6 +215,19 @@ function experimentFrom(results: ExperimentExampleResult[]): LoadedExperiment {
     result_path: "prompt-v1-experiment-1.jsonl",
     results,
   };
+}
+
+function loadProductExperimentFixture(stem: string): unknown {
+  const fixturesDir = path.resolve(process.cwd(), "../../tests/product-fixtures");
+  const summary = JSON.parse(readFileSync(path.join(fixturesDir, `${stem}.summary.json`), "utf-8")) as Record<
+    string,
+    unknown
+  >;
+  const results = readFileSync(path.join(fixturesDir, `${stem}.jsonl`), "utf-8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as unknown);
+  return { ...summary, results };
 }
 
 function makeResult(overrides: Partial<ExperimentExampleResult>): ExperimentExampleResult {
