@@ -88,21 +88,33 @@ The following is a consumer example. It describes the published package API;
 the implementation is not part of this repository.
 
 ```python
-from bir import generation, observe, retrieval, score, span
+from bir import configure, generation, observe, retrieval, score, span
 
 
-@observe(capture_inputs=True, capture_outputs=True)
+configure(
+    sample_rate=0.25,
+    sample_rules={"answer_question": 1.0, "chatty": 0.0},
+    model_prices={"demo-gpt-4o-mini": {"input": 0.00000015, "output": 0.0000006}},
+)
+
+
+@observe(
+    capture_inputs=True,
+    capture_outputs=True,
+    metadata={"route": "/answer"},
+)
 def answer_question(question: str) -> str:
-    with span("retrieve_context"):
+    with span("retrieve_context") as current_span:
         with retrieval("search_docs", query=question) as result:
             documents = ["local context"]
             result.add_document(id="doc-1", text=documents[0])
+        current_span.set_metadata({"documents": len(documents)})
 
-    with generation("openai.chat.completions", model="demo-gpt-4o-mini") as gen:
+    with generation("openai.chat.completions") as gen:
         answer = f"{documents[0]}: {question}"
+        gen.set_model("demo-gpt-4o-mini")
         gen.set_output(answer)
         gen.set_usage(input_tokens=12, output_tokens=24)
-        gen.set_cost(input_cost=0.000012, output_cost=0.000048)
 
     score("helpfulness", 0.82)
     return answer
@@ -122,13 +134,47 @@ with trace("answer_question"):
 
 Input and output capture is disabled by default. Enable it only when you want to
 store request and response payloads locally.
-Generation token usage and cost are optional user-provided values. When provided,
-usage and cost calls require at least one field. Bir records the values you pass
-and does not calculate provider pricing automatically.
+Generation token usage and cost are optional. Bir records the values the SDK
+emits: an application can call `set_cost()` explicitly, or it can opt into a
+local SDK price table with `configure(model_prices=...)` so cost is derived from
+token usage before events reach this product. The SDK ships no bundled provider
+prices, and this server does not infer costs from model names.
 The server applies best-effort redaction for common secret-like keys and text
 patterns before events are written. Contract tests exercise the installed
 `bir-sdk` against the shared redaction cases, but capture should still stay
 opt-in for sensitive payloads.
+
+## Current SDK Surface Snapshot
+
+This product consumes SDK output; it does not implement the SDK APIs below.
+Implementation and release work for these surfaces belongs in the external
+`bir-python` repository.
+
+- `configure(sample_rules=...)` sets exact trace-root sampling overrides on top
+  of `sample_rate`. Passing `{}` clears the table; omitting the argument leaves
+  existing rules unchanged.
+- `configure(model_prices=...)` installs a local per-token price table. The SDK
+  validates the table, derives generation cost only when token usage and model
+  match, and preserves explicit `set_cost()` values.
+- `@observe(metadata=...)` attaches static metadata to the trace root opened by
+  the decorated call. Nested observed calls become spans and do not carry that
+  root metadata.
+- `set_metadata(...)` is available on `trace()`, `span()`, `generation()`,
+  `tool_call()`, and `retrieval()` context managers for metadata learned while a
+  block runs. It merges with constructor metadata and is redacted before write.
+- `generation.set_model(...)` records or refines the model at generation exit,
+  useful when a router or stream only reveals the concrete model after the call.
+- `bir.logging.install_trace_id_filter()` stamps Python log records with
+  `bir_trace_id` and `bir_span_id`; direct accessors are also available as
+  `get_current_trace_id()` and `get_current_span_id()`.
+- `bir.testing.capture_traces()` redirects writes to a temporary trace file for
+  instrumentation tests and reads captured events/traces through the public
+  loaders.
+- SDK CLI commands include `bir show`, `bir stats`, `bir experiment-show`, and
+  `bir export-otel`; every command can also run through `python -m bir`.
+- Optional integrations include dependency-free provider wrappers, async and
+  streaming wrappers, Instructor, DSPy, LangChain, LlamaIndex, OpenAI Agents,
+  Pydantic AI, CrewAI, Haystack, and OpenTelemetry/OTLP export.
 
 ## Event Contract
 
@@ -188,6 +234,23 @@ from bir import configure
 
 configure(sample_rate=0.25)  # keep about a quarter of traces
 ```
+
+Use `sample_rules` when specific trace roots need a different rate. Rule names
+match `@observe(name=...)`, the decorated function name for plain `@observe()`,
+or the name passed to `trace("...")`:
+
+```python
+configure(
+    sample_rate=0.01,
+    sample_rules={
+        "checkout": 1.0,
+        "chatty": 0.0,
+    },
+)
+```
+
+Passing `sample_rules={}` clears the overrides; leaving `sample_rules` out of a
+later `configure()` call keeps the current table.
 
 ## Retrieval Events
 
@@ -257,7 +320,127 @@ opt-in through `capture_template=True`, `capture_variables=True`, and
 `capture_rendered=True`. Sent generation traces show this prompt metadata in
 the dashboard trace detail view.
 
-## LangChain Callback Integration
+## Trace Metadata and Log Correlation
+
+The SDK supports metadata at creation time and during a trace-work block. The
+dashboard renders event metadata exactly as it appears in the ingested event
+after redaction:
+
+```python
+from bir import generation, observe, span, trace
+
+
+@observe(metadata={"route": "/checkout"})
+def checkout() -> str:
+    with span("load_cart") as current_span:
+        items = ["sku-1"]
+        current_span.set_metadata({"items": len(items)})
+
+    with generation("router.chat") as gen:
+        response = call_router()
+        gen.set_model(response.model)
+        gen.set_metadata({"cache_hit": response.cache_hit})
+        gen.set_output(response.text)
+
+    return "ok"
+
+
+with trace("background_job", metadata={"kind": "maintenance"}) as current_trace:
+    current_trace.set_metadata({"shard": "a"})
+```
+
+`set_metadata(...)` is available on `trace()`, `span()`, `generation()`,
+`tool_call()`, and `retrieval()` context managers. Later keys win when metadata
+is set more than once.
+
+For logs, the SDK-owned `bir.logging` helper can stamp Python log records with
+the current trace and span ids:
+
+```python
+import logging
+
+from bir import observe
+from bir.logging import install_trace_id_filter
+
+install_trace_id_filter()
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s [trace=%(bir_trace_id)s span=%(bir_span_id)s] %(message)s"
+)
+
+
+@observe()
+def answer() -> str:
+    logging.info("handling request")
+    return "ok"
+```
+
+The filter adds `bir_trace_id` and `bir_span_id` attributes to records; outside a
+trace they are `None`.
+
+## Testing Instrumentation
+
+Use the SDK's `bir.testing.capture_traces()` in application tests when you need
+to assert on generated trace events without writing to the real `.bir/`
+directory:
+
+```python
+from bir.testing import capture_traces
+
+with capture_traces() as captured:
+    answer_question("hello")
+
+trace_record = captured.traces()[0]
+assert trace_record.name == "answer_question"
+```
+
+The helper is part of the SDK, not this product. The product repo only uses the
+published SDK in contract tests and can read the resulting JSONL through the
+server/dashboard.
+
+## SDK CLI for Local Data
+
+The SDK CLI inspects local `.bir/` output before anything is sent to this
+server:
+
+```bash
+bir show <trace-id>
+bir stats
+bir experiment-show <experiment-id>
+bir export-otel --endpoint http://localhost:4318/v1/traces
+python -m bir stats
+```
+
+`bir show` prints a trace tree, `bir stats` summarizes local trace counts,
+tokens, costs, and latency, `bir experiment-show` renders one saved experiment,
+and `bir export-otel` forwards local traces to an OTLP endpoint when the SDK's
+`otel` extra is installed. `python -m bir ...` exposes the same commands when
+the console script is not on `PATH`.
+
+## SDK Integrations
+
+Integrations live in the SDK. This product stores and displays the emitted Bir
+events, but it does not import provider SDKs or frameworks.
+
+Provider wrappers cover OpenAI Chat Completions and Responses, Anthropic, Google
+Gemini, Google Vertex AI, AWS Bedrock, Mistral, Cohere, and LiteLLM. Structured
+and programmatic LLM wrappers include Instructor and DSPy. The SDK includes
+async counterparts such as
+`trace_chat_completion_async`, `trace_messages_async`, `trace_completion_async`,
+and provider-specific async wrappers; streaming wrappers pass provider chunks
+through unchanged and record output, model, and usage after the stream is
+consumed.
+
+Framework handlers include LangChain, LlamaIndex, OpenAI Agents, Pydantic AI,
+CrewAI, and Haystack. OpenAI Agents runs are mapped through
+`BirAgentsTracingProcessor`; Pydantic AI uses its OpenTelemetry instrumentation;
+CrewAI events are forwarded through `BirCrewAIHandler.on_event`; Haystack 2.x
+uses `BirHaystackTracer` via `haystack.tracing.enable_tracing(...)`.
+
+OpenTelemetry/OTLP export is SDK-owned too. Install the SDK's `otel` extra and
+use `bir.integrations.otel.export_traces_to_otlp(...)` or `bir export-otel` to
+replay local Bir traces to an existing observability backend.
+
+### LangChain Callback Integration
 
 LangChain apps can pass Bir's dependency-free callback handler through runnable
 config:
@@ -289,7 +472,17 @@ the examples below show how this product consumes the published API.
 
 ```python
 from bir import generation, span
-from bir.evals import Dataset, DatasetExample, contains, exact_match, latency_under, list_experiments, load_experiment, run_experiment, send_experiment
+from bir.evals import (
+    Dataset,
+    DatasetExample,
+    contains,
+    exact_match,
+    latency_under,
+    list_experiments,
+    load_experiment,
+    run_experiment,
+    send_experiment,
+)
 
 
 dataset = Dataset(
@@ -320,6 +513,7 @@ result = run_experiment(
         exact_match("Bir adds local observability to LLM apps."),
         latency_under(1000),
     ],
+    max_workers=4,
 )
 
 print(result.aggregate_scores)
@@ -328,6 +522,37 @@ print([summary.name for summary in list_experiments()])
 
 send_experiment(result.path, "http://127.0.0.1:8000")
 ```
+
+`run_experiment(max_workers=N)` runs synchronous tasks in a thread pool while
+preserving dataset order in results, JSONL rows, and aggregate summaries. Leave
+`max_workers` at `1` for sequential execution.
+
+Use `run_experiment_async()` for coroutine tasks or async provider clients:
+
+```python
+import asyncio
+
+from bir.evals import Dataset, DatasetExample, contains, run_experiment_async
+
+
+async def answer_question_async(question: str) -> str:
+    response = await async_model_client(question)
+    return response.text
+
+
+async_result = asyncio.run(
+    run_experiment_async(
+        "prompt-v1-async",
+        dataset=Dataset([DatasetExample(id="q1", input={"question": "What is Bir?"})]),
+        task=answer_question_async,
+        evaluators=[contains("observability")],
+        max_concurrency=8,
+    )
+)
+```
+
+The async runner accepts async tasks, sync callables, and sync callables that
+return awaitables. It keeps persisted rows and returned results in dataset order.
 
 To link experiment examples to local Bir traces, opt in with
 `record_traces=True`:
@@ -388,11 +613,13 @@ evaluators = [
 ]
 ```
 
-`latency_under()` uses the measured task duration in `run_experiment()`.
-`cost_under()` reads explicit user-provided cost fields from task output, either
-as `{"total_cost": 0.01}` or `{"cost": {"total_cost": 0.01}}`; Bir does not
-calculate provider pricing. `numeric_between()` evaluates numeric task outputs,
-or a numeric field when `field=` is provided.
+`latency_under()` uses the measured task duration in `run_experiment()` or
+`run_experiment_async()`. `cost_under()` reads cost fields from task output,
+either as `{"total_cost": 0.01}` or `{"cost": {"total_cost": 0.01}}`; return an
+explicit task cost, or return a cost your instrumented code already derived from
+the SDK's `configure(model_prices=...)`. The evaluator itself does not fetch
+provider prices or inspect trace events. `numeric_between()` evaluates numeric
+task outputs, or a numeric field when `field=` is provided.
 
 Use structured output evaluators for JSON-like task results:
 

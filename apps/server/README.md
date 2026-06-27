@@ -94,9 +94,13 @@ duplicate handling per event, and returns the accepted count plus accepted event
 IDs. The SDK's `send_events()` uses the batch endpoint and falls back to
 per-event posting when the server does not provide it.
 
-Generation token usage and cost values must be non-negative finite numbers.
-Retrieval document `rank` values must be non-negative integers, and retrieval
-document `score` values must be non-negative finite numbers.
+Generation token usage and cost values must be non-negative finite numbers. The
+server validates, stores, and aggregates cost fields as the SDK emits them; it
+does not derive provider pricing from model names. SDK applications can emit
+costs explicitly with `set_cost()` or by opting into the SDK's local
+`configure(model_prices=...)` table before sending or exposing traces to this
+server. Retrieval document `rank` values must be non-negative integers, and
+retrieval document `score` values must be non-negative finite numbers.
 
 Before accepted events are written, the server applies best-effort redaction to
 common secret-like keys and text patterns in event metadata, input, output,

@@ -26,12 +26,19 @@ apps/
 docs/       # Design notes and implementation roadmap
 ```
 
-The SDK surface — `@observe`, spans, generations, scores, datasets, experiments,
-and its provider wrappers (OpenAI, Anthropic, Google Gemini, Vertex AI, AWS
-Bedrock, Mistral, Cohere, LiteLLM), framework handlers (LangChain, LlamaIndex,
-OpenAI Agents), and OpenTelemetry/OTLP export — is **not** in this repo. See the
-separate
-[`bir-sdk`](https://pypi.org/project/bir-sdk/) package.
+The SDK surface - `@observe(metadata=...)`, spans, generations,
+`generation.set_model(...)`, `set_metadata()` on trace work, scores, datasets,
+experiments, `configure(sample_rules=...)`, `configure(model_prices=...)`,
+`bir.logging`, and `bir.testing.capture_traces()` - is **not** in this repo. The
+same boundary applies to SDK CLIs such as `bir show`, `bir stats`,
+`bir experiment-show`, `bir export-otel`, and `python -m bir`.
+
+Provider wrappers and framework integrations are also SDK-owned: OpenAI,
+Anthropic, Google Gemini, Vertex AI, AWS Bedrock, Mistral, Cohere, LiteLLM,
+Instructor, DSPy, LangChain, LlamaIndex, OpenAI Agents, Pydantic AI, CrewAI,
+Haystack, async/streaming provider wrappers, and OpenTelemetry/OTLP export. This
+product repo stores, queries, and displays the events those SDK APIs write.
+See the separate [`bir-sdk`](https://pypi.org/project/bir-sdk/) package.
 
 ## Requirements
 
@@ -127,6 +134,17 @@ The uploaded traces, spans, generations, and scores then show up in the
 dashboard. See the external [`bir-sdk`](https://pypi.org/project/bir-sdk/)
 package documentation for the full SDK API and framework integrations.
 
+Local SDK data can also be inspected without the server by running SDK commands
+in the instrumented app's environment:
+
+```bash
+bir show <trace-id>
+bir stats
+bir experiment-show <experiment-id>
+bir export-otel --endpoint http://localhost:4318/v1/traces
+python -m bir show <trace-id>  # same CLI when `bir` is not on PATH
+```
+
 ## Browse traces locally (no upload)
 
 The SDK writes traces to `.bir/traces.jsonl` in your project. The server can read
@@ -140,9 +158,9 @@ BIR_DATA_DIR=/path/to/your/project/.bir \
 ```
 
 The server re-reads `traces.jsonl` as the SDK appends to it, and the SDK's
-`run_experiment()` results under `.bir/experiments/` appear without a separate
-upload. Because this mode does not own the data files, ingestion and Playground
-endpoints return `403`.
+`run_experiment()` or `run_experiment_async()` results under `.bir/experiments/`
+appear without a separate upload. Because this mode does not own the data files,
+ingestion and Playground endpoints return `403`.
 
 ## Serve the dashboard from the server (single origin)
 
