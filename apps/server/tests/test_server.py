@@ -1395,7 +1395,82 @@ def test_trace_summary_is_exact_and_independent_of_browse_limit(tmp_path: Path) 
                 "total_cost": pytest.approx(0.004),
             },
         ],
+        "integrations": [],
     }
+
+
+def test_trace_summary_reports_integrations_separately_from_providers(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    root = make_event(id="trace-integrations", trace_id="trace-integrations", name="framework-run")
+    integration_only = make_event(
+        id="generation-crewai",
+        trace_id="trace-integrations",
+        parent_id="trace-integrations",
+        name="crewai.llm.completion",
+        type="generation",
+        metadata={"integration": "crewai"},
+        model="gpt-4o-mini",
+        usage={"total_tokens": 10, "input_tokens": 3, "output_tokens": 7},
+        cost={"total_cost": 0.001},
+        currency="USD",
+    )
+    explicit_provider = make_event(
+        id="generation-provider",
+        trace_id="trace-integrations",
+        parent_id="trace-integrations",
+        name="crewai.llm.completion",
+        type="generation",
+        metadata={"integration": "crewai", "provider": "openai"},
+        model="gpt-4o-mini",
+        usage={"total_tokens": 20, "input_tokens": 8, "output_tokens": 12},
+        cost={"total_cost": 0.002},
+        currency="USD",
+    )
+    dotted_provider = make_event(
+        id="generation-openai",
+        trace_id="trace-integrations",
+        parent_id="trace-integrations",
+        name="openai.chat.completions",
+        type="generation",
+        model="gpt-4o-mini",
+        usage={"total_tokens": 5},
+    )
+
+    for event in [root, integration_only, explicit_provider, dotted_provider]:
+        assert client.post("/v1/events", json=event).status_code == 201
+
+    response = client.get("/v1/traces/summary")
+
+    assert response.status_code == 200
+    summary = response.json()
+    assert summary["providers"] == [
+        {
+            "provider": "openai",
+            "generation_count": 2,
+            "total_tokens": 25,
+            "input_tokens": 8,
+            "output_tokens": 12,
+            "total_cost": pytest.approx(0.002),
+        },
+        {
+            "provider": "unknown",
+            "generation_count": 1,
+            "total_tokens": 10,
+            "input_tokens": 3,
+            "output_tokens": 7,
+            "total_cost": pytest.approx(0.001),
+        },
+    ]
+    assert summary["integrations"] == [
+        {
+            "integration": "crewai",
+            "generation_count": 2,
+            "total_tokens": 30,
+            "input_tokens": 11,
+            "output_tokens": 19,
+            "total_cost": pytest.approx(0.003),
+        },
+    ]
 
 
 def test_trace_summary_filters_match_trace_browsing(tmp_path: Path) -> None:
@@ -1436,6 +1511,7 @@ def test_trace_summary_empty_store_is_zeroed(tmp_path: Path) -> None:
         "p95_latency_ms": 0,
         "models": [],
         "providers": [],
+        "integrations": [],
     }
 
 
@@ -1453,6 +1529,7 @@ def test_trace_summary_schema_rejects_non_finite_aggregates() -> None:
             p95_latency_ms=1,
             models=[],
             providers=[],
+            integrations=[],
         )
 
 

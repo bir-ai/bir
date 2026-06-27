@@ -109,8 +109,7 @@ export type TraceScoreGroup = {
   scores: TraceScore[];
 };
 
-export type TraceModelSummary = {
-  model: string;
+type TraceBreakdownTotals = {
   generationCount: number;
   totalTokens: number;
   // Reported input/output split. Generations that send only total_tokens leave
@@ -121,15 +120,16 @@ export type TraceModelSummary = {
   totalCost: number;
 };
 
-export type TraceProviderSummary = {
+export type TraceModelSummary = TraceBreakdownTotals & {
+  model: string;
+};
+
+export type TraceProviderSummary = TraceBreakdownTotals & {
   provider: string;
-  generationCount: number;
-  totalTokens: number;
-  // Same reported-only input/output split as TraceModelSummary: generations that
-  // send just total_tokens leave these at 0 instead of inferring a breakdown.
-  inputTokens: number;
-  outputTokens: number;
-  totalCost: number;
+};
+
+export type TraceIntegrationSummary = TraceBreakdownTotals & {
+  integration: string;
 };
 
 export type TraceSummary = {
@@ -144,6 +144,7 @@ export type TraceSummary = {
   p95LatencyMs: number;
   models: TraceModelSummary[];
   providers: TraceProviderSummary[];
+  integrations: TraceIntegrationSummary[];
 };
 
 export type TraceTotals = {
@@ -418,6 +419,7 @@ export function summarizeTraces(traces: Trace[]): TraceSummary {
   const durationsMs: number[] = [];
   const modelSummaries = new Map<string, TraceModelSummary>();
   const providerSummaries = new Map<string, TraceProviderSummary>();
+  const integrationSummaries = new Map<string, TraceIntegrationSummary>();
 
   for (const trace of traces) {
     eventCount += trace.events.length;
@@ -481,6 +483,24 @@ export function summarizeTraces(traces: Trace[]): TraceSummary {
       providerBucket.outputTokens += outputTokens;
       providerBucket.totalCost += cost ?? 0;
       providerSummaries.set(providerKey, providerBucket);
+
+      const integrationKey = deriveIntegration(event);
+      if (integrationKey !== null) {
+        const integrationBucket = integrationSummaries.get(integrationKey) ?? {
+          integration: integrationKey,
+          generationCount: 0,
+          totalTokens: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          totalCost: 0,
+        };
+        integrationBucket.generationCount += 1;
+        integrationBucket.totalTokens += tokens;
+        integrationBucket.inputTokens += inputTokens;
+        integrationBucket.outputTokens += outputTokens;
+        integrationBucket.totalCost += cost ?? 0;
+        integrationSummaries.set(integrationKey, integrationBucket);
+      }
     }
   }
 
@@ -492,6 +512,11 @@ export function summarizeTraces(traces: Trace[]): TraceSummary {
 
   const providers = [...providerSummaries.values()].sort(
     (first, second) => second.generationCount - first.generationCount || first.provider.localeCompare(second.provider),
+  );
+
+  const integrations = [...integrationSummaries.values()].sort(
+    (first, second) =>
+      second.generationCount - first.generationCount || first.integration.localeCompare(second.integration),
   );
 
   return {
@@ -506,6 +531,7 @@ export function summarizeTraces(traces: Trace[]): TraceSummary {
     p95LatencyMs: percentile(durationsMs, 95),
     models,
     providers,
+    integrations,
   };
 }
 
@@ -515,19 +541,26 @@ export function normalizeTraceSummary(value: unknown): TraceSummary | null {
   }
   const countKeys = ["trace_count", "event_count", "generation_count", "error_count"] as const;
   const totalKeys = ["total_tokens", "total_cost", "p50_latency_ms", "p95_latency_ms"] as const;
+  const rawIntegrations = "integrations" in value ? value.integrations : [];
   if (
     !countKeys.every((key) => isNonNegativeInteger(value[key])) ||
     !totalKeys.every((key) => isNonNegativeFiniteNumber(value[key])) ||
     !(value.currency === null || (typeof value.currency === "string" && value.currency.length > 0)) ||
     !Array.isArray(value.models) ||
-    !Array.isArray(value.providers)
+    !Array.isArray(value.providers) ||
+    !Array.isArray(rawIntegrations)
   ) {
     return null;
   }
 
   const models = value.models.map(normalizeModelSummary);
   const providers = value.providers.map(normalizeProviderSummary);
-  if (models.some((entry) => entry === null) || providers.some((entry) => entry === null)) {
+  const integrations = rawIntegrations.map(normalizeIntegrationSummary);
+  if (
+    models.some((entry) => entry === null) ||
+    providers.some((entry) => entry === null) ||
+    integrations.some((entry) => entry === null)
+  ) {
     return null;
   }
   return {
@@ -542,6 +575,7 @@ export function normalizeTraceSummary(value: unknown): TraceSummary | null {
     p95LatencyMs: value.p95_latency_ms as number,
     models: models as TraceModelSummary[],
     providers: providers as TraceProviderSummary[],
+    integrations: integrations as TraceIntegrationSummary[],
   };
 }
 
@@ -644,18 +678,29 @@ function generationCost(cost: Record<string, number> | null | undefined): number
 // Provider attribution for a generation: an explicit non-empty metadata.provider
 // wins, otherwise fall back to the namespace prefix of a dotted generation name
 // such as "openai.chat.completions" -> "openai" or "local.llm" -> "local". Names
-// without a namespace prefix have no derivable provider and collapse into
-// "unknown".
+// with metadata.integration or without a namespace prefix have no derivable
+// provider and collapse into "unknown".
 function deriveProvider(event: TraceEvent): string {
   const provider = event.metadata.provider;
   if (typeof provider === "string" && provider.length > 0) {
     return provider;
+  }
+  if (deriveIntegration(event) !== null) {
+    return "unknown";
   }
   const dotIndex = event.name.indexOf(".");
   if (dotIndex > 0) {
     return event.name.slice(0, dotIndex);
   }
   return "unknown";
+}
+
+function deriveIntegration(event: TraceEvent): string | null {
+  const integration = event.metadata.integration;
+  if (typeof integration === "string" && integration.length > 0) {
+    return integration;
+  }
+  return null;
 }
 
 // Nearest-rank percentile over an ascending list, so reported values are always
@@ -685,7 +730,15 @@ function normalizeProviderSummary(value: unknown): TraceProviderSummary | null {
   return totals ? { provider: value.provider, ...totals } : null;
 }
 
-function normalizeBreakdownTotals(value: Record<string, unknown>): Omit<TraceModelSummary, "model"> | null {
+function normalizeIntegrationSummary(value: unknown): TraceIntegrationSummary | null {
+  if (!isRecord(value) || typeof value.integration !== "string" || value.integration.length === 0) {
+    return null;
+  }
+  const totals = normalizeBreakdownTotals(value);
+  return totals ? { integration: value.integration, ...totals } : null;
+}
+
+function normalizeBreakdownTotals(value: Record<string, unknown>): TraceBreakdownTotals | null {
   if (
     !isNonNegativeInteger(value.generation_count) ||
     !isNonNegativeFiniteNumber(value.total_tokens) ||

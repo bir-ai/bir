@@ -8,6 +8,7 @@ import {
   toggleErrorsOnlyFilter,
   type Trace,
   type TraceFilterValues,
+  type TraceIntegrationSummary,
   type TraceModelSummary,
   type TraceProviderSummary,
   type TraceSort,
@@ -96,6 +97,10 @@ export function TraceDashboard({
       {stats.models.length > 0 ? <ModelBreakdown models={stats.models} currency={stats.currency} /> : null}
 
       {stats.providers.length > 0 ? <ProviderBreakdown providers={stats.providers} currency={stats.currency} /> : null}
+
+      {stats.integrations.length > 0 ? (
+        <IntegrationBreakdown integrations={stats.integrations} currency={stats.currency} />
+      ) : null}
 
       <section className="workspace">
         <TraceList
@@ -274,6 +279,51 @@ function ProviderBreakdown({
                   {currency
                     ? `${formatNumber(provider.totalCost)} ${currency}`
                     : formatNumber(provider.totalCost)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function IntegrationBreakdown({
+  integrations,
+  currency,
+}: {
+  integrations: TraceIntegrationSummary[];
+  currency: string | null;
+}) {
+  return (
+    <section className="model-breakdown" aria-label="Integration breakdown">
+      <h3>Integration breakdown</h3>
+      <table className="model-table">
+        <thead>
+          <tr>
+            <th scope="col">Integration</th>
+            <th scope="col">Generations</th>
+            <th scope="col">Tokens</th>
+            <th scope="col">Input</th>
+            <th scope="col">Output</th>
+            <th scope="col">Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          {integrations.map((integration) => {
+            const hasTokenSplit = integration.inputTokens + integration.outputTokens > 0;
+            return (
+              <tr key={integration.integration}>
+                <td>{integration.integration}</td>
+                <td>{formatNumber(integration.generationCount)}</td>
+                <td>{formatNumber(integration.totalTokens)}</td>
+                <td>{hasTokenSplit ? formatNumber(integration.inputTokens) : "-"}</td>
+                <td>{hasTokenSplit ? formatNumber(integration.outputTokens) : "-"}</td>
+                <td>
+                  {currency
+                    ? `${formatNumber(integration.totalCost)} ${currency}`
+                    : formatNumber(integration.totalCost)}
                 </td>
               </tr>
             );

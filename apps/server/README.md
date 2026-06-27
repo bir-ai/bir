@@ -39,10 +39,14 @@ block); traces from older SDKs simply have no value to match.
 `GET /v1/traces/summary` accepts the same `status`, `name`, `event_type`,
 `source`, `service`, `environment`, and `min_duration_ms` filters. It returns exact
 counts, nearest-rank p50/p95 root latency, generation token/cost totals, and
-model/provider breakdowns over every matching trace. Browse `limit`, ordering,
-and future cursors do not constrain this metric scope. `currency` is the single
-currency used by cost-bearing generations, or `null` for no cost or mixed
-currencies.
+model/provider/integration breakdowns over every matching trace. Provider
+buckets use explicit `metadata.provider`, or a dotted provider event-name prefix
+when no `metadata.integration` is present. SDK framework integrations such as
+`crewai`, `dspy`, `haystack`, `pydantic_ai`, and `instructor` are reported in
+the separate integration breakdown from `metadata.integration`. Browse `limit`,
+ordering, and future cursors do not constrain this metric scope. `currency` is
+the single currency used by cost-bearing generations, or `null` for no cost or
+mixed currencies.
 
 ```bash
 curl 'http://127.0.0.1:8000/v1/traces/summary?status=error&min_duration_ms=250'

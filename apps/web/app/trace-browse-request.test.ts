@@ -55,6 +55,7 @@ function summary(traceCount: number) {
     p95_latency_ms: 0,
     models: [],
     providers: [],
+    integrations: [],
   };
 }
 
@@ -96,6 +97,7 @@ test("does not let an older browse response replace a newer filter response", as
       p95LatencyMs: 0,
       models: [],
       providers: [],
+      integrations: [],
     },
     hasMore: false,
   });

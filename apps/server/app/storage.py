@@ -16,6 +16,7 @@ from .schemas import (
     EventType,
     LoadedTrace,
     TraceEventPayload,
+    TraceIntegrationSummaryPayload,
     TraceModelSummaryPayload,
     TraceProviderSummaryPayload,
     TraceSort,
@@ -444,6 +445,7 @@ def _summarize_traces(traces: list[LoadedTrace]) -> TraceSummaryPayload:
     durations_ms: list[float] = []
     models: dict[str, _BreakdownTotals] = {}
     providers: dict[str, _BreakdownTotals] = {}
+    integrations: dict[str, _BreakdownTotals] = {}
 
     for trace in traces:
         event_count += len(trace.events)
@@ -463,6 +465,9 @@ def _summarize_traces(traces: list[LoadedTrace]) -> TraceSummaryPayload:
                 currencies.add(event.currency)
             _add_breakdown(models, event.model or "unknown", tokens, input_tokens, output_tokens, cost)
             _add_breakdown(providers, _generation_provider(event), tokens, input_tokens, output_tokens, cost)
+            integration = _generation_integration(event)
+            if integration is not None:
+                _add_breakdown(integrations, integration, tokens, input_tokens, output_tokens, cost)
 
     durations_ms.sort()
     model_payloads = [
@@ -472,6 +477,10 @@ def _summarize_traces(traces: list[LoadedTrace]) -> TraceSummaryPayload:
     provider_payloads = [
         TraceProviderSummaryPayload(provider=key, **values)
         for key, values in sorted(providers.items(), key=lambda item: (-item[1]["generation_count"], item[0]))
+    ]
+    integration_payloads = [
+        TraceIntegrationSummaryPayload(integration=key, **values)
+        for key, values in sorted(integrations.items(), key=lambda item: (-item[1]["generation_count"], item[0]))
     ]
     return TraceSummaryPayload(
         trace_count=len(traces),
@@ -485,6 +494,7 @@ def _summarize_traces(traces: list[LoadedTrace]) -> TraceSummaryPayload:
         p95_latency_ms=_percentile(durations_ms, 95),
         models=model_payloads,
         providers=provider_payloads,
+        integrations=integration_payloads,
     )
 
 
@@ -512,8 +522,17 @@ def _generation_provider(event: TraceEventPayload) -> str:
     provider = event.metadata.get("provider")
     if isinstance(provider, str) and provider:
         return provider
+    if _generation_integration(event) is not None:
+        return "unknown"
     prefix, separator, _ = event.name.partition(".")
     return prefix if separator and prefix else "unknown"
+
+
+def _generation_integration(event: TraceEventPayload) -> str | None:
+    integration = event.metadata.get("integration")
+    if isinstance(integration, str) and integration:
+        return integration
+    return None
 
 
 def _add_breakdown(

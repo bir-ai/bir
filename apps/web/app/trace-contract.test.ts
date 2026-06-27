@@ -708,6 +708,7 @@ test("returns a zeroed summary for an empty trace list", () => {
     p95LatencyMs: 0,
     models: [],
     providers: [],
+    integrations: [],
   });
 });
 
@@ -742,12 +743,38 @@ test("normalizes an explicit server trace summary", () => {
         total_cost: 0.25,
       },
     ],
+    integrations: [
+      {
+        integration: "crewai",
+        generation_count: 25,
+        total_tokens: 500,
+        input_tokens: 400,
+        output_tokens: 100,
+        total_cost: 0.1,
+      },
+    ],
   });
 
   assert.ok(summary);
   assert.equal(summary.traceCount, 250);
   assert.equal(summary.models[0]?.model, "gpt-4o-mini");
   assert.equal(summary.providers[0]?.provider, "openai");
+  assert.equal(summary.integrations[0]?.integration, "crewai");
+
+  const legacySummary = normalizeTraceSummary({
+    trace_count: 1,
+    event_count: 1,
+    generation_count: 0,
+    error_count: 0,
+    total_tokens: 0,
+    total_cost: 0,
+    currency: null,
+    p50_latency_ms: 0,
+    p95_latency_ms: 0,
+    models: [],
+    providers: [],
+  });
+  assert.deepEqual(legacySummary?.integrations, []);
 });
 
 test("rejects malformed or non-finite server trace summaries", () => {
@@ -763,10 +790,12 @@ test("rejects malformed or non-finite server trace summaries", () => {
     p95_latency_ms: 0,
     models: [],
     providers: [],
+    integrations: [],
   };
   assert.equal(normalizeTraceSummary({ ...valid, total_cost: Number.POSITIVE_INFINITY }), null);
   assert.equal(normalizeTraceSummary({ ...valid, trace_count: 1.5 }), null);
   assert.equal(normalizeTraceSummary({ ...valid, currency: "" }), null);
+  assert.equal(normalizeTraceSummary({ ...valid, integrations: [{ integration: "" }] }), null);
 });
 
 test("server summary state remains independent of loaded page contents", () => {
@@ -783,6 +812,7 @@ test("server summary state remains independent of loaded page contents", () => {
     p95_latency_ms: 50,
     models: [],
     providers: [],
+    integrations: [],
   });
 
   assert.equal(summarizeTraces(loadedPage).traceCount, 1);
@@ -1016,6 +1046,43 @@ test("prefers metadata.provider over the generation name prefix", () => {
 
   assert.equal(summary.providers.length, 1);
   assert.equal(summary.providers[0].provider, "azure-openai");
+});
+
+test("surfaces metadata.integration separately from provider attribution", () => {
+  const traces = [
+    summarizableTrace({
+      id: "trace-integrations",
+      generations: [
+        generationEvent({
+          id: "gen-integration",
+          name: "crewai.llm.completion",
+          metadata: { integration: "crewai" },
+          usage: { total_tokens: 10, input_tokens: 3, output_tokens: 7 },
+          cost: { total_cost: 1 },
+          currency: "USD",
+        }),
+        generationEvent({
+          id: "gen-explicit-provider",
+          name: "crewai.llm.completion",
+          metadata: { integration: "crewai", provider: "openai" },
+          usage: { total_tokens: 20, input_tokens: 8, output_tokens: 12 },
+          cost: { total_cost: 2 },
+          currency: "USD",
+        }),
+        generationEvent({ id: "gen-dotted-provider", name: "openai.chat.completions", usage: { total_tokens: 5 } }),
+      ],
+    }),
+  ];
+
+  const summary = summarizeTraces(traces);
+
+  assert.deepEqual(summary.providers, [
+    { provider: "openai", generationCount: 2, totalTokens: 25, inputTokens: 8, outputTokens: 12, totalCost: 2 },
+    { provider: "unknown", generationCount: 1, totalTokens: 10, inputTokens: 3, outputTokens: 7, totalCost: 1 },
+  ]);
+  assert.deepEqual(summary.integrations, [
+    { integration: "crewai", generationCount: 2, totalTokens: 30, inputTokens: 11, outputTokens: 19, totalCost: 3 },
+  ]);
 });
 
 test("totals a trace's generation tokens and cost", () => {

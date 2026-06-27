@@ -219,6 +219,12 @@ class TraceProviderSummaryPayload(TraceBreakdownPayload):
     provider: str = Field(min_length=1)
 
 
+class TraceIntegrationSummaryPayload(TraceBreakdownPayload):
+    """Aggregate generation metrics for one SDK framework integration."""
+
+    integration: str = Field(min_length=1)
+
+
 class TraceSummaryPayload(BaseModel):
     """Exact aggregate metrics over every trace matching a filter set."""
 
@@ -233,6 +239,7 @@ class TraceSummaryPayload(BaseModel):
     p95_latency_ms: int | float
     models: list[TraceModelSummaryPayload]
     providers: list[TraceProviderSummaryPayload]
+    integrations: list[TraceIntegrationSummaryPayload] = Field(default_factory=list)
 
     @field_validator("total_tokens", "total_cost", "p50_latency_ms", "p95_latency_ms", mode="before")
     @classmethod
