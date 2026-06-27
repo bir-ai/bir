@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[3]
 CONTRACT_EVENTS_PATH = ROOT / "tests" / "fixtures" / "valid-events.jsonl"
 CONTRACT_SCHEMA_PATH = ROOT / "tests" / "fixtures" / "event-schema-v1.json"
 CONTRACT_EXPERIMENT_PATH = ROOT / "tests" / "fixtures" / "valid-experiment.json"
+PRODUCT_INTEGRATION_EVENTS_PATH = ROOT / "tests" / "product-fixtures" / "integration-events.jsonl"
 
 from bir import configure, generation, load_traces, observe, retrieval, score, span
 
@@ -114,6 +115,14 @@ def write_experiment(experiment_store_path: Path, *, summary: dict[str, object],
 
 def load_contract_events() -> list[dict[str, object]]:
     return [json.loads(line) for line in CONTRACT_EVENTS_PATH.read_text(encoding="utf-8").splitlines()]
+
+
+def load_product_integration_events() -> list[dict[str, object]]:
+    return [
+        json.loads(line)
+        for line in PRODUCT_INTEGRATION_EVENTS_PATH.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
 
 
 def load_contract_schema() -> dict[str, object]:
@@ -571,6 +580,131 @@ def test_ingests_event_batch_to_jsonl(tmp_path: Path) -> None:
     assert response.json() == {"accepted": 2, "event_ids": ["trace-1", "span-1"]}
     stored_events = [json.loads(line) for line in event_store_path.read_text(encoding="utf-8").splitlines()]
     assert [event["id"] for event in stored_events] == ["trace-1", "span-1"]
+
+
+def test_ingests_representative_sdk_integration_traces(tmp_path: Path) -> None:
+    client, event_store_path = make_client(tmp_path)
+    events = load_product_integration_events()
+
+    response = client.post("/v1/events/batch", json=events)
+    events_response = client.get("/v1/events")
+    traces_response = client.get("/v1/traces")
+    tool_traces_response = client.get("/v1/traces", params={"event_type": "tool_call"})
+    service_traces_response = client.get("/v1/traces", params={"service": "integration-contracts"})
+    crewai_detail_response = client.get("/v1/traces/trace-crewai-crew")
+    summary_response = client.get("/v1/traces/summary")
+
+    assert response.status_code == 201
+    assert response.json() == {"accepted": len(events), "event_ids": [event["id"] for event in events]}
+    stored_events = [json.loads(line) for line in event_store_path.read_text(encoding="utf-8").splitlines()]
+    assert len(stored_events) == len(events)
+    assert stored_events[3]["id"] == "generation-haystack-llm"
+    assert stored_events[3]["model"] == "gpt-4o"
+    assert stored_events[3]["usage"] == {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+    assert stored_events[3]["cost"] == {
+        "input_cost": 0.000025,
+        "output_cost": 0.00005,
+        "total_cost": 0.000075,
+    }
+    assert stored_events[3]["currency"] == "USD"
+
+    assert events_response.status_code == 200
+    assert len(events_response.json()) == len(events)
+    assert traces_response.status_code == 200
+    assert [trace["id"] for trace in traces_response.json()] == [
+        "trace-haystack-pipeline",
+        "trace-crewai-crew",
+        "trace-dspy-program",
+        "trace-pydantic-ai-agent",
+        "trace-instructor-call",
+        "trace-openai-agents-workflow",
+    ]
+    assert tool_traces_response.status_code == 200
+    assert [trace["id"] for trace in tool_traces_response.json()] == [
+        "trace-haystack-pipeline",
+        "trace-crewai-crew",
+        "trace-pydantic-ai-agent",
+        "trace-openai-agents-workflow",
+    ]
+    assert service_traces_response.status_code == 200
+    assert len(service_traces_response.json()) == 6
+
+    assert crewai_detail_response.status_code == 200
+    crewai_events = crewai_detail_response.json()["events"]
+    assert [(event["name"], event["type"], event["parent_id"]) for event in crewai_events] == [
+        ("Research crew", "trace", None),
+        ("Summarize", "span", "trace-crewai-crew"),
+        ("Researcher", "span", "span-crewai-task"),
+        ("crewai.llm_call", "generation", "span-crewai-agent"),
+        ("web_search", "tool_call", "span-crewai-agent"),
+    ]
+    assert crewai_events[3]["metadata"] == {
+        "agent_role": "Researcher",
+        "crewai_event": "llm_call_started",
+        "integration": "crewai",
+    }
+
+    assert summary_response.status_code == 200
+    summary = summary_response.json()
+    assert summary["trace_count"] == 6
+    assert summary["event_count"] == 21
+    assert summary["generation_count"] == 6
+    assert summary["error_count"] == 0
+    assert summary["total_tokens"] == 91
+    assert summary["total_cost"] == pytest.approx(0.000455)
+    assert summary["currency"] == "USD"
+    assert summary["models"] == [
+        {
+            "model": "gpt-4o",
+            "generation_count": 4,
+            "total_tokens": 64,
+            "input_tokens": 43,
+            "output_tokens": 21,
+            "total_cost": pytest.approx(0.00032),
+        },
+        {
+            "model": "gpt-4o-mini-response",
+            "generation_count": 2,
+            "total_tokens": 27,
+            "input_tokens": 18,
+            "output_tokens": 9,
+            "total_cost": pytest.approx(0.000135),
+        },
+    ]
+    assert summary["providers"] == [
+        {
+            "provider": "unknown",
+            "generation_count": 5,
+            "total_tokens": 76,
+            "input_tokens": 51,
+            "output_tokens": 25,
+            "total_cost": pytest.approx(0.00038),
+        },
+        {
+            "provider": "openai",
+            "generation_count": 1,
+            "total_tokens": 15,
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "total_cost": pytest.approx(0.000075),
+        },
+    ]
+    assert [entry["integration"] for entry in summary["integrations"]] == [
+        "crewai",
+        "dspy",
+        "haystack",
+        "instructor",
+        "openai_agents",
+        "pydantic_ai",
+    ]
+    assert {entry["integration"]: entry["total_tokens"] for entry in summary["integrations"]} == {
+        "crewai": 16,
+        "dspy": 15,
+        "haystack": 15,
+        "instructor": 12,
+        "openai_agents": 15,
+        "pydantic_ai": 18,
+    }
 
 
 def test_event_batch_skips_duplicate_event_ids(tmp_path: Path) -> None:

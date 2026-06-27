@@ -10,7 +10,13 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.storage import LocalJsonlEventReader
 
-from test_server import CONTRACT_EVENTS_PATH, make_event, make_experiment_result, make_experiment_summary
+from test_server import (
+    CONTRACT_EVENTS_PATH,
+    PRODUCT_INTEGRATION_EVENTS_PATH,
+    make_event,
+    make_experiment_result,
+    make_experiment_summary,
+)
 
 READ_ONLY_DETAIL = "Ingestion is disabled: the server is running in read-only local data mode (BIR_DATA_DIR)"
 
@@ -103,6 +109,56 @@ def test_local_mode_serves_sdk_written_trace_file(tmp_path: Path) -> None:
     ]
     assert detail_response.status_code == 200
     assert detail_response.json()["name"] == "answer_question"
+
+
+def test_local_mode_loads_representative_sdk_integration_traces(tmp_path: Path) -> None:
+    client, data_dir = make_local_client(tmp_path)
+    shutil.copyfile(PRODUCT_INTEGRATION_EVENTS_PATH, data_dir / "traces.jsonl")
+
+    events_response = client.get("/v1/events")
+    traces_response = client.get("/v1/traces")
+    detail_response = client.get("/v1/traces/trace-openai-agents-workflow")
+    summary_response = client.get("/v1/traces/summary")
+
+    assert events_response.status_code == 200
+    assert len(events_response.json()) == 21
+    assert traces_response.status_code == 200
+    assert [trace["id"] for trace in traces_response.json()] == [
+        "trace-haystack-pipeline",
+        "trace-crewai-crew",
+        "trace-dspy-program",
+        "trace-pydantic-ai-agent",
+        "trace-instructor-call",
+        "trace-openai-agents-workflow",
+    ]
+    assert detail_response.status_code == 200
+    detail = detail_response.json()
+    assert detail["name"] == "Joke workflow"
+    assert [event["name"] for event in detail["events"]] == [
+        "Joke workflow",
+        "Assistant",
+        "openai_agents.generation",
+        "get_weather",
+    ]
+    assert detail["events"][2]["model"] == "gpt-4o"
+    assert detail["events"][2]["usage"] == {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+    assert detail["events"][2]["metadata"]["agents_type"] == "generation"
+
+    assert summary_response.status_code == 200
+    summary = summary_response.json()
+    assert summary["trace_count"] == 6
+    assert summary["event_count"] == 21
+    assert summary["generation_count"] == 6
+    assert summary["total_tokens"] == 91
+    assert summary["total_cost"] == pytest.approx(0.000455)
+    assert [entry["integration"] for entry in summary["integrations"]] == [
+        "crewai",
+        "dspy",
+        "haystack",
+        "instructor",
+        "openai_agents",
+        "pydantic_ai",
+    ]
 
 
 def test_local_mode_returns_empty_lists_for_missing_trace_file(tmp_path: Path) -> None:

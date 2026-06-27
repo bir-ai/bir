@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
 import {
   buildTraceTimelineRows,
   buildTraceFilterQuery,
@@ -26,10 +29,13 @@ import {
   type TraceEvent,
 } from "./trace-contract";
 import { compareExperiments, normalizeExperiment, normalizeExperimentSummaries } from "./experiment-contract";
+import { TraceTimeline } from "./components/trace-timeline";
 
 const contractTraceResponseFixture = loadSharedContractTraceResponse();
 const [contractTrace] = normalizeTraces(contractTraceResponseFixture);
 assert.ok(contractTrace);
+const integrationTraceResponseFixture = loadProductIntegrationTraceResponse();
+const integrationTraces = normalizeTraces(integrationTraceResponseFixture);
 
 test("builds trace filter query strings from non-empty filters", () => {
   const query = buildTraceFilterQuery({
@@ -282,6 +288,41 @@ test("normalizes valid trace responses from the shared contract fixture", () => 
   const generationEvent = traces[0].events.find((event) => event.type === "generation");
   assert.deepEqual(generationEvent?.cost, { input_cost: 0.000012, output_cost: 0.000048, total_cost: 0.00006 });
   assert.equal(generationEvent?.currency, "USD");
+});
+
+test("normalizes representative SDK integration trace fixtures", () => {
+  assert.equal(integrationTraces.length, 6);
+  assert.deepEqual(
+    integrationTraces.map((trace) => trace.id).sort(),
+    [
+      "trace-crewai-crew",
+      "trace-dspy-program",
+      "trace-haystack-pipeline",
+      "trace-instructor-call",
+      "trace-openai-agents-workflow",
+      "trace-pydantic-ai-agent",
+    ],
+  );
+
+  const haystack = integrationTrace("trace-haystack-pipeline");
+  const haystackGeneration = haystack.events.find((event) => event.id === "generation-haystack-llm");
+  assert.ok(haystackGeneration);
+  assert.equal(haystackGeneration.metadata.integration, "haystack");
+  assert.equal(haystackGeneration.metadata.haystack_component_type, "OpenAIGenerator");
+  assert.equal(haystackGeneration.model, "gpt-4o");
+  assert.deepEqual(haystackGeneration.usage, { input_tokens: 10, output_tokens: 5, total_tokens: 15 });
+  assert.deepEqual(haystackGeneration.cost, {
+    input_cost: 0.000025,
+    output_cost: 0.00005,
+    total_cost: 0.000075,
+  });
+  assert.equal(haystackGeneration.currency, "USD");
+
+  const pydanticAI = integrationTrace("trace-pydantic-ai-agent");
+  const pydanticTool = pydanticAI.events.find((event) => event.id === "tool-pydantic-ai-weather");
+  assert.ok(pydanticTool);
+  assert.equal(pydanticTool.metadata.integration, "pydantic_ai");
+  assert.equal(pydanticTool.metadata.gen_ai_tool_call_id, "call_1");
 });
 
 test("accepts omitted optional fields and canonical explicit nulls", () => {
@@ -611,6 +652,52 @@ test("builds nested timeline rows from parent-child event relationships", () => 
       { name: "helpfulness", depth: 2, isOrphan: false },
     ],
   );
+});
+
+test("builds timeline rows for nested SDK integration traces", () => {
+  const crewaiRows = buildTraceTimelineRows(integrationTrace("trace-crewai-crew").events);
+  assert.deepEqual(
+    crewaiRows.map((row) => ({
+      name: row.event.name,
+      depth: row.depth,
+      isOrphan: row.isOrphan,
+    })),
+    [
+      { name: "Research crew", depth: 0, isOrphan: false },
+      { name: "Summarize", depth: 1, isOrphan: false },
+      { name: "Researcher", depth: 2, isOrphan: false },
+      { name: "crewai.llm_call", depth: 3, isOrphan: false },
+      { name: "web_search", depth: 3, isOrphan: false },
+    ],
+  );
+
+  const agentsRows = buildTraceTimelineRows(integrationTrace("trace-openai-agents-workflow").events);
+  assert.deepEqual(
+    agentsRows.map((row) => [row.event.name, row.depth]),
+    [
+      ["Joke workflow", 0],
+      ["Assistant", 1],
+      ["openai_agents.generation", 2],
+      ["get_weather", 2],
+    ],
+  );
+});
+
+test("renders SDK integration timeline metadata and generation stats", () => {
+  const rows = buildTraceTimelineRows(integrationTrace("trace-crewai-crew").events);
+  const html = renderToStaticMarkup(createElement(TraceTimeline, { rows }));
+
+  assert.match(html, /Research crew/);
+  assert.match(html, /crewai\.llm_call/);
+  assert.match(html, /Model/);
+  assert.match(html, /gpt-4o/);
+  assert.match(html, /Usage/);
+  assert.match(html, /total_tokens: 16/);
+  assert.match(html, /Cost/);
+  assert.match(html, /total_cost: 0\.00008 USD/);
+  assert.match(html, /Metadata/);
+  assert.match(html, /crewai/);
+  assert.match(html, /agent_role/);
 });
 
 test("marks events whose parent is missing as orphan timeline rows", () => {
@@ -1085,6 +1172,134 @@ test("surfaces metadata.integration separately from provider attribution", () =>
   ]);
 });
 
+test("summarizes representative SDK integration traces by model, provider, and integration", () => {
+  const summary = summarizeTraces(integrationTraces);
+
+  assert.equal(summary.traceCount, 6);
+  assert.equal(summary.eventCount, 21);
+  assert.equal(summary.generationCount, 6);
+  assert.equal(summary.errorCount, 0);
+  assert.equal(summary.totalTokens, 91);
+  assert.ok(Math.abs(summary.totalCost - 0.000455) < 1e-12);
+  assert.equal(summary.currency, "USD");
+  assert.deepEqual(
+    summary.models.map(({ model, generationCount, totalTokens, inputTokens, outputTokens }) => ({
+      model,
+      generationCount,
+      totalTokens,
+      inputTokens,
+      outputTokens,
+    })),
+    [
+      {
+        model: "gpt-4o",
+        generationCount: 4,
+        totalTokens: 64,
+        inputTokens: 43,
+        outputTokens: 21,
+      },
+      {
+        model: "gpt-4o-mini-response",
+        generationCount: 2,
+        totalTokens: 27,
+        inputTokens: 18,
+        outputTokens: 9,
+      },
+    ],
+  );
+  assert.ok(Math.abs((summary.models[0]?.totalCost ?? 0) - 0.00032) < 1e-12);
+  assert.ok(Math.abs((summary.models[1]?.totalCost ?? 0) - 0.000135) < 1e-12);
+  assert.deepEqual(
+    summary.providers.map(({ provider, generationCount, totalTokens, inputTokens, outputTokens }) => ({
+      provider,
+      generationCount,
+      totalTokens,
+      inputTokens,
+      outputTokens,
+    })),
+    [
+      {
+        provider: "unknown",
+        generationCount: 5,
+        totalTokens: 76,
+        inputTokens: 51,
+        outputTokens: 25,
+      },
+      {
+        provider: "openai",
+        generationCount: 1,
+        totalTokens: 15,
+        inputTokens: 10,
+        outputTokens: 5,
+      },
+    ],
+  );
+  assert.ok(Math.abs((summary.providers[0]?.totalCost ?? 0) - 0.00038) < 1e-12);
+  assert.ok(Math.abs((summary.providers[1]?.totalCost ?? 0) - 0.000075) < 1e-12);
+  assert.deepEqual(
+    summary.integrations.map((entry) => ({
+      integration: entry.integration,
+      generationCount: entry.generationCount,
+      totalTokens: entry.totalTokens,
+      inputTokens: entry.inputTokens,
+      outputTokens: entry.outputTokens,
+    })),
+    [
+      {
+        integration: "crewai",
+        generationCount: 1,
+        totalTokens: 16,
+        inputTokens: 12,
+        outputTokens: 4,
+      },
+      {
+        integration: "dspy",
+        generationCount: 1,
+        totalTokens: 15,
+        inputTokens: 10,
+        outputTokens: 5,
+      },
+      {
+        integration: "haystack",
+        generationCount: 1,
+        totalTokens: 15,
+        inputTokens: 10,
+        outputTokens: 5,
+      },
+      {
+        integration: "instructor",
+        generationCount: 1,
+        totalTokens: 12,
+        inputTokens: 8,
+        outputTokens: 4,
+      },
+      {
+        integration: "openai_agents",
+        generationCount: 1,
+        totalTokens: 15,
+        inputTokens: 10,
+        outputTokens: 5,
+      },
+      {
+        integration: "pydantic_ai",
+        generationCount: 1,
+        totalTokens: 18,
+        inputTokens: 11,
+        outputTokens: 7,
+      },
+    ],
+  );
+  const integrationCosts = Object.fromEntries(
+    summary.integrations.map((entry) => [entry.integration, entry.totalCost]),
+  );
+  assert.ok(Math.abs((integrationCosts.crewai ?? 0) - 0.00008) < 1e-12);
+  assert.ok(Math.abs((integrationCosts.dspy ?? 0) - 0.000075) < 1e-12);
+  assert.ok(Math.abs((integrationCosts.haystack ?? 0) - 0.000075) < 1e-12);
+  assert.ok(Math.abs((integrationCosts.instructor ?? 0) - 0.00006) < 1e-12);
+  assert.ok(Math.abs((integrationCosts.openai_agents ?? 0) - 0.000075) < 1e-12);
+  assert.ok(Math.abs((integrationCosts.pydantic_ai ?? 0) - 0.00009) < 1e-12);
+});
+
 test("totals a trace's generation tokens and cost", () => {
   const events = summarizableTrace({
     id: "trace-totals",
@@ -1391,6 +1606,47 @@ function loadSharedContractTraceResponse(): unknown[] {
       events,
     },
   ];
+}
+
+function loadProductIntegrationTraceResponse(): unknown[] {
+  const fixturePath = path.resolve(process.cwd(), "../../tests/product-fixtures/integration-events.jsonl");
+  const events = readFileSync(fixturePath, "utf-8")
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as unknown);
+
+  const eventsByTraceId = new Map<string, Record<string, unknown>[]>();
+  for (const event of events) {
+    assert.ok(isRecord(event));
+    const traceId = event.trace_id;
+    if (typeof traceId !== "string") {
+      assert.fail("integration fixture event is missing trace_id");
+    }
+    const traceEvents = eventsByTraceId.get(traceId) ?? [];
+    traceEvents.push(event);
+    eventsByTraceId.set(traceId, traceEvents);
+  }
+
+  return [...eventsByTraceId.entries()].map(([traceId, traceEvents]) => {
+    const rootEvent = traceEvents.find(
+      (event) => event.type === "trace" && event.id === traceId,
+    );
+    assert.ok(rootEvent);
+    return {
+      id: rootEvent.id,
+      name: rootEvent.name,
+      start_time: rootEvent.start_time,
+      end_time: rootEvent.end_time,
+      status: rootEvent.status,
+      events: traceEvents,
+    };
+  });
+}
+
+function integrationTrace(traceId: string): Trace {
+  const trace = findTraceById(integrationTraces, traceId);
+  assert.ok(trace);
+  return trace;
 }
 
 function makeExperimentSummary(overrides: Record<string, unknown> = {}): Record<string, unknown> {
