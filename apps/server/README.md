@@ -4,7 +4,9 @@ Minimal FastAPI ingestion server for Bir trace events.
 
 The Python SDK is developed and published separately. This repository consumes
 the published `bir-sdk` package as a development dependency for contract tests;
-there is no editable SDK source tree here.
+there is no editable SDK source tree here. SDK CLI commands such as `bir show`,
+`bir stats`, `bir experiment-show`, `bir export-otel`, and `python -m bir ...`
+are provided by the SDK package, not by this server.
 
 ## API
 
@@ -250,9 +252,12 @@ uvicorn app.main:app --reload
 ```
 
 In this mode the server reads `$BIR_DATA_DIR/traces.jsonl` (the file the SDK
-writes) directly. The file is re-parsed only when it changes, and a final line
-that the SDK is still appending is skipped until the write completes. All read
-endpoints work normally; `POST /v1/events`, `POST /v1/events/batch`, and
+writes) directly. This is the server/dashboard counterpart to SDK CLI commands
+like `bir show` and `bir stats`: the product reads the same artifact shape for
+API and UI browsing, but it does not invoke or reimplement those commands. The
+file is re-parsed only when it changes, and a final line that the SDK is still
+appending is skipped until the write completes. All read endpoints work
+normally; `POST /v1/events`, `POST /v1/events/batch`, and
 `POST /v1/experiments` return `403` because the server does not own the data
 files.
 
@@ -261,7 +266,9 @@ requests return `enabled: false`; model and chat requests return `403`.
 
 Experiments endpoints read SDK-written artifacts from
 `$BIR_DATA_DIR/experiments/` directly, so `run_experiment()` results show up
-without a `send_experiment()` upload. SDK summaries record `result_path`
+without a `send_experiment()` upload. This mirrors the local artifacts that
+`bir experiment-show` inspects, while keeping the product behavior limited to
+read-only server/dashboard display. SDK summaries record `result_path`
 relative to the project root, so the server locates result rows through the
 sibling file that shares the summary's stem
 (`<stem>.summary.json` / `<stem>.jsonl`), matching how the SDK pairs them.
@@ -281,6 +288,11 @@ When `BIR_DATA_DIR` is unset, the server runs exactly as before with its own
 ingestion store. Passing an explicit `event_store_path` or
 `experiment_store_path` to `create_app()` also keeps the server in ingestion
 mode even when `BIR_DATA_DIR` is set.
+
+OpenTelemetry/OTLP export is intentionally outside this server. Use the SDK's
+`bir export-otel` command, or `bir.integrations.otel.export_traces_to_otlp(...)`
+from application code, when local `.bir/traces.jsonl` data should be forwarded
+to an OTLP collector.
 
 ## Development
 

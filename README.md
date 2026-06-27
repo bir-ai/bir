@@ -40,6 +40,31 @@ Haystack, async/streaming provider wrappers, and OpenTelemetry/OTLP export. This
 product repo stores, queries, and displays the events those SDK APIs write.
 See the separate [`bir-sdk`](https://pypi.org/project/bir-sdk/) package.
 
+## SDK CLI vs product dashboard
+
+This repo does not ship a `bir` command and should not reimplement the SDK CLI.
+Install `bir-sdk` in the instrumented application's environment when you need
+local command-line inspection or export:
+
+```bash
+python -m bir show <trace-id>
+bir show <trace-id>
+bir stats
+bir experiment-show <experiment-id>
+bir export-otel --endpoint http://localhost:4318/v1/traces
+```
+
+Those commands read SDK-owned `.bir` artifacts: trace commands inspect
+`.bir/traces.jsonl`, experiment commands inspect `.bir/experiments/`, and
+`bir export-otel` forwards local traces to an OTLP endpoint through the SDK's
+optional OpenTelemetry extra.
+
+The product server and dashboard are for API/UI inspection. They can browse the
+same local SDK artifacts in read-only mode by setting `BIR_DATA_DIR` to a
+project's `.bir` directory, or they can display events uploaded through the
+server ingestion API. OTLP export remains SDK-side; the dashboard stays a local
+trace and experiment browser.
+
 ## Requirements
 
 - Python 3.10+
@@ -134,8 +159,8 @@ The uploaded traces, spans, generations, and scores then show up in the
 dashboard. See the external [`bir-sdk`](https://pypi.org/project/bir-sdk/)
 package documentation for the full SDK API and framework integrations.
 
-Local SDK data can also be inspected without the server by running SDK commands
-in the instrumented app's environment:
+Local SDK data can also be inspected without this product server by running SDK
+commands in the instrumented app's environment:
 
 ```bash
 bir show <trace-id>
@@ -161,6 +186,10 @@ The server re-reads `traces.jsonl` as the SDK appends to it, and the SDK's
 `run_experiment()` or `run_experiment_async()` results under `.bir/experiments/`
 appear without a separate upload. Because this mode does not own the data files,
 ingestion and Playground endpoints return `403`.
+
+This mode does not invoke or wrap SDK CLI commands; it reads the same artifact
+shapes directly for dashboard/API browsing.
+
 Concurrent experiment rows are shown in the dataset order persisted by the SDK,
 even when example timings differ; rows recorded with `record_traces=True` link
 to their separate trace trees in the same local `traces.jsonl`.

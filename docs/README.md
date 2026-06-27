@@ -170,8 +170,9 @@ Implementation and release work for these surfaces belongs in the external
 - `bir.testing.capture_traces()` redirects writes to a temporary trace file for
   instrumentation tests and reads captured events/traces through the public
   loaders.
-- SDK CLI commands include `bir show`, `bir stats`, `bir experiment-show`, and
-  `bir export-otel`; every command can also run through `python -m bir`.
+- The SDK CLI entry point is `bir`, or `python -m bir <command>` when the
+  console script is not on `PATH`. Commands include `bir show`, `bir stats`,
+  `bir experiment-show`, and `bir export-otel`.
 - Optional integrations include dependency-free provider wrappers, async and
   streaming wrappers, Instructor, DSPy, LangChain, LlamaIndex, OpenAI Agents,
   Pydantic AI, CrewAI, Haystack, and OpenTelemetry/OTLP export.
@@ -399,10 +400,12 @@ server/dashboard.
 
 ## SDK CLI for Local Data
 
-The SDK CLI inspects local `.bir/` output before anything is sent to this
-server:
+The product repo has no `bir` command. Installing `bir-sdk` in an instrumented
+application provides the SDK CLI, which inspects local `.bir/` output before
+anything is sent to this server:
 
 ```bash
+python -m bir show <trace-id>
 bir show <trace-id>
 bir stats
 bir experiment-show <experiment-id>
@@ -410,11 +413,24 @@ bir export-otel --endpoint http://localhost:4318/v1/traces
 python -m bir stats
 ```
 
-`bir show` prints a trace tree, `bir stats` summarizes local trace counts,
-tokens, costs, and latency, `bir experiment-show` renders one saved experiment,
-and `bir export-otel` forwards local traces to an OTLP endpoint when the SDK's
-`otel` extra is installed. `python -m bir ...` exposes the same commands when
-the console script is not on `PATH`.
+`bir show` and `bir stats` read SDK-written `.bir/traces.jsonl`.
+`bir experiment-show` reads SDK-written summaries and result rows under
+`.bir/experiments/`. `bir export-otel` reads local traces and forwards them to
+an OTLP endpoint when the SDK's `otel` extra is installed. `python -m bir ...`
+exposes the same command surface when the console script is not on `PATH`.
+
+The product server/dashboard consume those artifact shapes; they do not call the
+SDK CLI. For local visual inspection, start the FastAPI server with
+`BIR_DATA_DIR=/path/to/project/.bir`. The server then serves
+`$BIR_DATA_DIR/traces.jsonl` and `$BIR_DATA_DIR/experiments/` through the normal
+`/v1/traces` and `/v1/experiments` APIs, and the dashboard renders those local
+records in read-only mode. Ingestion and Playground writes are disabled because
+the SDK owns those files.
+
+OpenTelemetry/OTLP export stays SDK-owned. Use `bir export-otel` or
+`bir.integrations.otel.export_traces_to_otlp(...)` for forwarding traces to a
+collector; the product dashboard remains a local trace and experiment
+inspection surface.
 
 ## SDK Integrations
 
@@ -438,7 +454,8 @@ uses `BirHaystackTracer` via `haystack.tracing.enable_tracing(...)`.
 
 OpenTelemetry/OTLP export is SDK-owned too. Install the SDK's `otel` extra and
 use `bir.integrations.otel.export_traces_to_otlp(...)` or `bir export-otel` to
-replay local Bir traces to an existing observability backend.
+replay local Bir traces to an existing observability backend; the product
+dashboard does not export OTLP.
 
 ### LangChain Callback Integration
 

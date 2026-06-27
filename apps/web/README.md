@@ -5,6 +5,11 @@ FastAPI server.
 
 Development and CI use Node.js 22. The Python SDK is an external published
 package; this dashboard consumes server responses and contains no SDK source.
+SDK CLI inspection and OTLP export remain in that package (`bir show`,
+`bir stats`, `bir experiment-show`, `bir export-otel`, or
+`python -m bir <command>`). The dashboard only renders traces and experiments
+served by the product API, including read-only local `.bir` data exposed through
+`BIR_DATA_DIR`.
 
 Current views:
 
