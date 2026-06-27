@@ -186,6 +186,10 @@ score events. Keep the server and dashboard aligned with those fixtures when
 changing event fields, and coordinate corresponding SDK contract changes in the
 external SDK repository.
 
+For product-side SDK parity audits, use [`PARITY_AUDIT.md`](PARITY_AUDIT.md) as
+the checklist for mapping recent SDK capability areas to server handling,
+dashboard display, shared fixtures, docs, and intentional no-op product areas.
+
 ## Trace Filtering
 
 Use the dashboard's trace filters, or query the ingestion server directly, to
