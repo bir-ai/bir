@@ -291,14 +291,16 @@ test("normalizes valid trace responses from the shared contract fixture", () => 
 });
 
 test("normalizes representative SDK integration trace fixtures", () => {
-  assert.equal(integrationTraces.length, 6);
+  assert.equal(integrationTraces.length, 8);
   assert.deepEqual(
     integrationTraces.map((trace) => trace.id).sort(),
     [
+      "trace-autogen-run",
       "trace-crewai-crew",
       "trace-dspy-program",
       "trace-haystack-pipeline",
       "trace-instructor-call",
+      "trace-ollama-chat",
       "trace-openai-agents-workflow",
       "trace-pydantic-ai-agent",
     ],
@@ -323,6 +325,30 @@ test("normalizes representative SDK integration trace fixtures", () => {
   assert.ok(pydanticTool);
   assert.equal(pydanticTool.metadata.integration, "pydantic_ai");
   assert.equal(pydanticTool.metadata.gen_ai_tool_call_id, "call_1");
+
+  const autogen = integrationTrace("trace-autogen-run");
+  const autogenGeneration = autogen.events.find((event) => event.id === "generation-autogen-chat");
+  assert.ok(autogenGeneration);
+  assert.equal(autogenGeneration.metadata.integration, "autogen");
+  assert.equal(autogenGeneration.metadata.autogen_event, "chat_completion");
+  assert.equal(autogenGeneration.model, "gpt-4o");
+  assert.deepEqual(autogenGeneration.usage, { input_tokens: 12, output_tokens: 4, total_tokens: 16 });
+  // AG2 reports a single run cost, so the generation carries a total-only cost.
+  assert.deepEqual(autogenGeneration.cost, { total_cost: 0.0012 });
+  assert.equal(autogenGeneration.currency, "USD");
+  const autogenTool = autogen.events.find((event) => event.id === "tool-autogen-web-search");
+  assert.ok(autogenTool);
+  assert.equal(autogenTool.metadata.integration, "autogen");
+  assert.equal(autogenTool.metadata.autogen_event, "function_use");
+
+  const ollama = integrationTrace("trace-ollama-chat");
+  const ollamaGeneration = ollama.events.find((event) => event.id === "generation-ollama-chat");
+  assert.ok(ollamaGeneration);
+  assert.equal(ollamaGeneration.metadata.integration, "ollama");
+  assert.equal(ollamaGeneration.model, "llama3.2:1b");
+  // Usage is derived from Ollama's prompt_eval_count/eval_count; no cost is reported.
+  assert.deepEqual(ollamaGeneration.usage, { input_tokens: 12, output_tokens: 6, total_tokens: 18 });
+  assert.equal(ollamaGeneration.cost ?? null, null);
 });
 
 test("accepts omitted optional fields and canonical explicit nulls", () => {
@@ -724,6 +750,20 @@ test("builds timeline rows for nested SDK integration traces", () => {
       ["Assistant", 1],
       ["openai_agents.generation", 2],
       ["get_weather", 2],
+    ],
+  );
+
+  // AutoGen nests each agent turn under the run root, with the LLM call and tool
+  // call parented to the turn of the agent that produced them.
+  const autogenRows = buildTraceTimelineRows(integrationTrace("trace-autogen-run").events);
+  assert.deepEqual(
+    autogenRows.map((row) => [row.event.name, row.depth]),
+    [
+      ["autogen.run", 0],
+      ["assistant", 1],
+      ["autogen.chat_completion", 2],
+      ["user_proxy", 1],
+      ["web_search", 2],
     ],
   );
 });
@@ -1220,12 +1260,14 @@ test("surfaces metadata.integration separately from provider attribution", () =>
 test("summarizes representative SDK integration traces by model, provider, and integration", () => {
   const summary = summarizeTraces(integrationTraces);
 
-  assert.equal(summary.traceCount, 6);
-  assert.equal(summary.eventCount, 21);
-  assert.equal(summary.generationCount, 6);
+  assert.equal(summary.traceCount, 8);
+  assert.equal(summary.eventCount, 28);
+  assert.equal(summary.generationCount, 8);
   assert.equal(summary.errorCount, 0);
-  assert.equal(summary.totalTokens, 91);
-  assert.ok(Math.abs(summary.totalCost - 0.000455) < 1e-12);
+  assert.equal(summary.totalTokens, 125);
+  assert.ok(Math.abs(summary.totalCost - 0.001655) < 1e-12);
+  // The Ollama generation has no cost/currency, which must not disturb the
+  // single-currency rollup over the costed generations.
   assert.equal(summary.currency, "USD");
   assert.deepEqual(
     summary.models.map(({ model, generationCount, totalTokens, inputTokens, outputTokens }) => ({
@@ -1238,10 +1280,10 @@ test("summarizes representative SDK integration traces by model, provider, and i
     [
       {
         model: "gpt-4o",
-        generationCount: 4,
-        totalTokens: 64,
-        inputTokens: 43,
-        outputTokens: 21,
+        generationCount: 5,
+        totalTokens: 80,
+        inputTokens: 55,
+        outputTokens: 25,
       },
       {
         model: "gpt-4o-mini-response",
@@ -1250,10 +1292,18 @@ test("summarizes representative SDK integration traces by model, provider, and i
         inputTokens: 18,
         outputTokens: 9,
       },
+      {
+        model: "llama3.2:1b",
+        generationCount: 1,
+        totalTokens: 18,
+        inputTokens: 12,
+        outputTokens: 6,
+      },
     ],
   );
-  assert.ok(Math.abs((summary.models[0]?.totalCost ?? 0) - 0.00032) < 1e-12);
+  assert.ok(Math.abs((summary.models[0]?.totalCost ?? 0) - 0.00152) < 1e-12);
   assert.ok(Math.abs((summary.models[1]?.totalCost ?? 0) - 0.000135) < 1e-12);
+  assert.equal(summary.models[2]?.totalCost, 0);
   assert.deepEqual(
     summary.providers.map(({ provider, generationCount, totalTokens, inputTokens, outputTokens }) => ({
       provider,
@@ -1265,10 +1315,10 @@ test("summarizes representative SDK integration traces by model, provider, and i
     [
       {
         provider: "unknown",
-        generationCount: 5,
-        totalTokens: 76,
-        inputTokens: 51,
-        outputTokens: 25,
+        generationCount: 7,
+        totalTokens: 110,
+        inputTokens: 75,
+        outputTokens: 35,
       },
       {
         provider: "openai",
@@ -1279,7 +1329,7 @@ test("summarizes representative SDK integration traces by model, provider, and i
       },
     ],
   );
-  assert.ok(Math.abs((summary.providers[0]?.totalCost ?? 0) - 0.00038) < 1e-12);
+  assert.ok(Math.abs((summary.providers[0]?.totalCost ?? 0) - 0.00158) < 1e-12);
   assert.ok(Math.abs((summary.providers[1]?.totalCost ?? 0) - 0.000075) < 1e-12);
   assert.deepEqual(
     summary.integrations.map((entry) => ({
@@ -1290,6 +1340,13 @@ test("summarizes representative SDK integration traces by model, provider, and i
       outputTokens: entry.outputTokens,
     })),
     [
+      {
+        integration: "autogen",
+        generationCount: 1,
+        totalTokens: 16,
+        inputTokens: 12,
+        outputTokens: 4,
+      },
       {
         integration: "crewai",
         generationCount: 1,
@@ -1319,6 +1376,13 @@ test("summarizes representative SDK integration traces by model, provider, and i
         outputTokens: 4,
       },
       {
+        integration: "ollama",
+        generationCount: 1,
+        totalTokens: 18,
+        inputTokens: 12,
+        outputTokens: 6,
+      },
+      {
         integration: "openai_agents",
         generationCount: 1,
         totalTokens: 15,
@@ -1337,10 +1401,12 @@ test("summarizes representative SDK integration traces by model, provider, and i
   const integrationCosts = Object.fromEntries(
     summary.integrations.map((entry) => [entry.integration, entry.totalCost]),
   );
+  assert.ok(Math.abs((integrationCosts.autogen ?? 0) - 0.0012) < 1e-12);
   assert.ok(Math.abs((integrationCosts.crewai ?? 0) - 0.00008) < 1e-12);
   assert.ok(Math.abs((integrationCosts.dspy ?? 0) - 0.000075) < 1e-12);
   assert.ok(Math.abs((integrationCosts.haystack ?? 0) - 0.000075) < 1e-12);
   assert.ok(Math.abs((integrationCosts.instructor ?? 0) - 0.00006) < 1e-12);
+  assert.equal(integrationCosts.ollama, 0);
   assert.ok(Math.abs((integrationCosts.openai_agents ?? 0) - 0.000075) < 1e-12);
   assert.ok(Math.abs((integrationCosts.pydantic_ai ?? 0) - 0.00009) < 1e-12);
 });

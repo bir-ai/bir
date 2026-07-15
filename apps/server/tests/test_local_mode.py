@@ -125,7 +125,7 @@ def test_local_mode_loads_representative_sdk_integration_traces(tmp_path: Path) 
     summary_response = client.get("/v1/traces/summary")
 
     assert events_response.status_code == 200
-    assert len(events_response.json()) == 21
+    assert len(events_response.json()) == 28
     assert traces_response.status_code == 200
     assert [trace["id"] for trace in traces_response.json()] == [
         "trace-haystack-pipeline",
@@ -134,6 +134,8 @@ def test_local_mode_loads_representative_sdk_integration_traces(tmp_path: Path) 
         "trace-pydantic-ai-agent",
         "trace-instructor-call",
         "trace-openai-agents-workflow",
+        "trace-autogen-run",
+        "trace-ollama-chat",
     ]
     assert detail_response.status_code == 200
     detail = detail_response.json()
@@ -150,16 +152,18 @@ def test_local_mode_loads_representative_sdk_integration_traces(tmp_path: Path) 
 
     assert summary_response.status_code == 200
     summary = summary_response.json()
-    assert summary["trace_count"] == 6
-    assert summary["event_count"] == 21
-    assert summary["generation_count"] == 6
-    assert summary["total_tokens"] == 91
-    assert summary["total_cost"] == pytest.approx(0.000455)
+    assert summary["trace_count"] == 8
+    assert summary["event_count"] == 28
+    assert summary["generation_count"] == 8
+    assert summary["total_tokens"] == 125
+    assert summary["total_cost"] == pytest.approx(0.001655)
     assert [entry["integration"] for entry in summary["integrations"]] == [
+        "autogen",
         "crewai",
         "dspy",
         "haystack",
         "instructor",
+        "ollama",
         "openai_agents",
         "pydantic_ai",
     ]

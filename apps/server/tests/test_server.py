@@ -592,6 +592,7 @@ def test_ingests_representative_sdk_integration_traces(tmp_path: Path) -> None:
     tool_traces_response = client.get("/v1/traces", params={"event_type": "tool_call"})
     service_traces_response = client.get("/v1/traces", params={"service": "integration-contracts"})
     crewai_detail_response = client.get("/v1/traces/trace-crewai-crew")
+    autogen_detail_response = client.get("/v1/traces/trace-autogen-run")
     summary_response = client.get("/v1/traces/summary")
 
     assert response.status_code == 201
@@ -618,6 +619,8 @@ def test_ingests_representative_sdk_integration_traces(tmp_path: Path) -> None:
         "trace-pydantic-ai-agent",
         "trace-instructor-call",
         "trace-openai-agents-workflow",
+        "trace-autogen-run",
+        "trace-ollama-chat",
     ]
     assert tool_traces_response.status_code == 200
     assert [trace["id"] for trace in tool_traces_response.json()] == [
@@ -625,9 +628,10 @@ def test_ingests_representative_sdk_integration_traces(tmp_path: Path) -> None:
         "trace-crewai-crew",
         "trace-pydantic-ai-agent",
         "trace-openai-agents-workflow",
+        "trace-autogen-run",
     ]
     assert service_traces_response.status_code == 200
-    assert len(service_traces_response.json()) == 6
+    assert len(service_traces_response.json()) == 8
 
     assert crewai_detail_response.status_code == 200
     crewai_events = crewai_detail_response.json()["events"]
@@ -644,23 +648,51 @@ def test_ingests_representative_sdk_integration_traces(tmp_path: Path) -> None:
         "integration": "crewai",
     }
 
+    assert autogen_detail_response.status_code == 200
+    autogen_events = autogen_detail_response.json()["events"]
+    assert [(event["name"], event["type"], event["parent_id"]) for event in autogen_events] == [
+        ("autogen.run", "trace", None),
+        ("assistant", "span", "trace-autogen-run"),
+        ("autogen.chat_completion", "generation", "span-autogen-assistant-turn"),
+        ("user_proxy", "span", "trace-autogen-run"),
+        ("web_search", "tool_call", "span-autogen-user-proxy-turn"),
+    ]
+    autogen_generation = autogen_events[2]
+    assert autogen_generation["metadata"] == {
+        "agent": "assistant",
+        "autogen_event": "chat_completion",
+        "integration": "autogen",
+    }
+    assert autogen_generation["model"] == "gpt-4o"
+    assert autogen_generation["usage"] == {"input_tokens": 12, "output_tokens": 4, "total_tokens": 16}
+    # AG2 reports a single run cost, so the generation carries a total-only cost.
+    assert autogen_generation["cost"] == {"total_cost": 0.0012}
+    assert autogen_generation["currency"] == "USD"
+
+    ollama_generation = next(event for event in stored_events if event["id"] == "generation-ollama-chat")
+    assert ollama_generation["model"] == "llama3.2:1b"
+    assert ollama_generation["usage"] == {"input_tokens": 12, "output_tokens": 6, "total_tokens": 18}
+    # Ollama reports no cost, so the generation carries usage without cost/currency.
+    assert ollama_generation.get("cost") is None
+    assert ollama_generation.get("currency") is None
+
     assert summary_response.status_code == 200
     summary = summary_response.json()
-    assert summary["trace_count"] == 6
-    assert summary["event_count"] == 21
-    assert summary["generation_count"] == 6
+    assert summary["trace_count"] == 8
+    assert summary["event_count"] == 28
+    assert summary["generation_count"] == 8
     assert summary["error_count"] == 0
-    assert summary["total_tokens"] == 91
-    assert summary["total_cost"] == pytest.approx(0.000455)
+    assert summary["total_tokens"] == 125
+    assert summary["total_cost"] == pytest.approx(0.001655)
     assert summary["currency"] == "USD"
     assert summary["models"] == [
         {
             "model": "gpt-4o",
-            "generation_count": 4,
-            "total_tokens": 64,
-            "input_tokens": 43,
-            "output_tokens": 21,
-            "total_cost": pytest.approx(0.00032),
+            "generation_count": 5,
+            "total_tokens": 80,
+            "input_tokens": 55,
+            "output_tokens": 25,
+            "total_cost": pytest.approx(0.00152),
         },
         {
             "model": "gpt-4o-mini-response",
@@ -670,15 +702,23 @@ def test_ingests_representative_sdk_integration_traces(tmp_path: Path) -> None:
             "output_tokens": 9,
             "total_cost": pytest.approx(0.000135),
         },
+        {
+            "model": "llama3.2:1b",
+            "generation_count": 1,
+            "total_tokens": 18,
+            "input_tokens": 12,
+            "output_tokens": 6,
+            "total_cost": 0,
+        },
     ]
     assert summary["providers"] == [
         {
             "provider": "unknown",
-            "generation_count": 5,
-            "total_tokens": 76,
-            "input_tokens": 51,
-            "output_tokens": 25,
-            "total_cost": pytest.approx(0.00038),
+            "generation_count": 7,
+            "total_tokens": 110,
+            "input_tokens": 75,
+            "output_tokens": 35,
+            "total_cost": pytest.approx(0.00158),
         },
         {
             "provider": "openai",
@@ -690,21 +730,28 @@ def test_ingests_representative_sdk_integration_traces(tmp_path: Path) -> None:
         },
     ]
     assert [entry["integration"] for entry in summary["integrations"]] == [
+        "autogen",
         "crewai",
         "dspy",
         "haystack",
         "instructor",
+        "ollama",
         "openai_agents",
         "pydantic_ai",
     ]
     assert {entry["integration"]: entry["total_tokens"] for entry in summary["integrations"]} == {
+        "autogen": 16,
         "crewai": 16,
         "dspy": 15,
         "haystack": 15,
         "instructor": 12,
+        "ollama": 18,
         "openai_agents": 15,
         "pydantic_ai": 18,
     }
+    integration_costs = {entry["integration"]: entry["total_cost"] for entry in summary["integrations"]}
+    assert integration_costs["autogen"] == pytest.approx(0.0012)
+    assert integration_costs["ollama"] == 0
 
 
 def test_event_batch_skips_duplicate_event_ids(tmp_path: Path) -> None:
