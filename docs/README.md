@@ -172,7 +172,9 @@ Implementation and release work for these surfaces belongs in the external
   loaders.
 - The SDK CLI entry point is `bir`, or `python -m bir <command>` when the
   console script is not on `PATH`. Commands include `bir show`, `bir stats`,
-  `bir experiment-show`, and `bir export-otel`.
+  `bir config`, `bir prune`, `bir experiment-show`, `bir experiment-report`,
+  and `bir export-otel`; `bir traces` and `bir stats` accept
+  `--name`/`--status`/`--since`/`--until` filters.
 - Optional integrations include dependency-free provider wrappers, async and
   streaming wrappers, Instructor, DSPy, LangChain, LlamaIndex, OpenAI Agents,
   Pydantic AI, CrewAI, Haystack, and OpenTelemetry/OTLP export.
@@ -411,15 +413,22 @@ anything is sent to this server:
 ```bash
 python -m bir show <trace-id>
 bir show <trace-id>
-bir stats
+bir stats --status error --since 2026-07-01
+bir config
+bir prune --keep-last 500
 bir experiment-show <experiment-id>
+bir experiment-report <experiment-id> --format markdown
 bir export-otel --endpoint http://localhost:4318/v1/traces
 python -m bir stats
 ```
 
-`bir show` and `bir stats` read SDK-written `.bir/traces.jsonl`.
+`bir show` and `bir stats` read SDK-written `.bir/traces.jsonl`, and
+`bir traces` and `bir stats` accept `--name`/`--status`/`--since`/`--until`
+filters. `bir config` prints the resolved SDK configuration without changing
+it. `bir prune` removes old or unwanted traces from the local store.
 `bir experiment-show` reads SDK-written summaries and result rows under
-`.bir/experiments/`. `bir export-otel` reads local traces and forwards them to
+`.bir/experiments/`, and `bir experiment-report` renders one experiment to HTML
+or Markdown. `bir export-otel` reads local traces and forwards them to
 an OTLP endpoint when the SDK's `otel` extra is installed. `python -m bir ...`
 exposes the same command surface when the console script is not on `PATH`.
 
@@ -429,7 +438,9 @@ SDK CLI. For local visual inspection, start the FastAPI server with
 `$BIR_DATA_DIR/traces.jsonl` and `$BIR_DATA_DIR/experiments/` through the normal
 `/v1/traces` and `/v1/experiments` APIs, and the dashboard renders those local
 records in read-only mode. Ingestion and Playground writes are disabled because
-the SDK owns those files.
+the SDK owns those files. `bir prune` rewrites those SDK-owned files atomically
+and the product reads them read-only, so a pruned store simply shows fewer
+traces.
 
 OpenTelemetry/OTLP export stays SDK-owned. Use `bir export-otel` or
 `bir.integrations.otel.export_traces_to_otlp(...)` for forwarding traces to a

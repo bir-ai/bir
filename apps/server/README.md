@@ -5,8 +5,9 @@ Minimal FastAPI ingestion server for Bir trace events.
 The Python SDK is developed and published separately. This repository consumes
 the published `bir-sdk` package as a development dependency for contract tests;
 there is no editable SDK source tree here. SDK CLI commands such as `bir show`,
-`bir stats`, `bir experiment-show`, `bir export-otel`, and `python -m bir ...`
-are provided by the SDK package, not by this server.
+`bir stats`, `bir config`, `bir prune`, `bir experiment-show`,
+`bir experiment-report`, `bir export-otel`, and `python -m bir ...` are
+provided by the SDK package, not by this server.
 
 ## API
 

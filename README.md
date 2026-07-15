@@ -31,7 +31,8 @@ The SDK surface - `@observe(metadata=...)`, spans, generations,
 experiments, `configure(sample_rules=...)`, `configure(model_prices=...)`,
 `bir.logging`, and `bir.testing.capture_traces()` - is **not** in this repo. The
 same boundary applies to SDK CLIs such as `bir show`, `bir stats`,
-`bir experiment-show`, `bir export-otel`, and `python -m bir`.
+`bir config`, `bir prune`, `bir experiment-show`, `bir experiment-report`,
+`bir export-otel`, and `python -m bir`.
 
 Provider wrappers and framework integrations are also SDK-owned: OpenAI,
 Anthropic, Google Gemini, Vertex AI, AWS Bedrock, Mistral, Cohere, LiteLLM,
@@ -49,13 +50,19 @@ local command-line inspection or export:
 ```bash
 python -m bir show <trace-id>
 bir show <trace-id>
-bir stats
+bir stats --since 2026-07-01
+bir config
+bir prune --keep-last 500
 bir experiment-show <experiment-id>
+bir experiment-report <experiment-id>
 bir export-otel --endpoint http://localhost:4318/v1/traces
 ```
 
 Those commands read SDK-owned `.bir` artifacts: trace commands inspect
-`.bir/traces.jsonl`, experiment commands inspect `.bir/experiments/`, and
+`.bir/traces.jsonl` (`bir traces` and `bir stats` accept
+`--name`/`--status`/`--since`/`--until` filters), experiment commands inspect
+`.bir/experiments/`, `bir config` prints the resolved SDK configuration,
+`bir prune` removes old or unwanted traces from the local store, and
 `bir export-otel` forwards local traces to an OTLP endpoint through the SDK's
 optional OpenTelemetry extra.
 
@@ -165,7 +172,10 @@ commands in the instrumented app's environment:
 ```bash
 bir show <trace-id>
 bir stats
+bir config
+bir prune --keep-last 500
 bir experiment-show <experiment-id>
+bir experiment-report <experiment-id>
 bir export-otel --endpoint http://localhost:4318/v1/traces
 python -m bir show <trace-id>  # same CLI when `bir` is not on PATH
 ```
@@ -185,7 +195,9 @@ BIR_DATA_DIR=/path/to/your/project/.bir \
 The server re-reads `traces.jsonl` as the SDK appends to it, and the SDK's
 `run_experiment()` or `run_experiment_async()` results under `.bir/experiments/`
 appear without a separate upload. Because this mode does not own the data files,
-ingestion and Playground endpoints return `403`.
+ingestion and Playground endpoints return `403`. The SDK's `bir prune` rewrites
+those SDK-owned files atomically and the product reads them read-only, so a
+pruned store simply shows fewer traces.
 
 This mode does not invoke or wrap SDK CLI commands; it reads the same artifact
 shapes directly for dashboard/API browsing.
