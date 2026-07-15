@@ -246,7 +246,9 @@ BIR_PLAYGROUND_BASE_URL=http://127.0.0.1:1234 \
 Do not paste secrets into the Playground; chat turns are captured intentionally.
 Playground is disabled in read-only `BIR_DATA_DIR` mode. See
 [apps/server/README.md](apps/server/README.md) and
-[apps/web/README.md](apps/web/README.md) for the full reference.
+[apps/web/README.md](apps/web/README.md) for the full reference. The
+[security policy](SECURITY.md) summarizes the server's redaction posture and how
+to report a vulnerability.
 
 ## Tests
 
