@@ -170,14 +170,21 @@ Implementation and release work for these surfaces belongs in the external
 - `bir.testing.capture_traces()` redirects writes to a temporary trace file for
   instrumentation tests and reads captured events/traces through the public
   loaders.
+- `configure(enabled=False)` (or a truthy `BIR_DISABLED` environment variable)
+  is a master kill switch: wrapped code still runs and exceptions still
+  propagate, but nothing is recorded until recording is re-enabled.
+- `configure(max_value_length=..., max_collection_items=...)` bounds a single
+  captured value; truncation runs after redaction and marks cut values with a
+  visible `…[truncated]` marker.
 - The SDK CLI entry point is `bir`, or `python -m bir <command>` when the
   console script is not on `PATH`. Commands include `bir show`, `bir stats`,
   `bir config`, `bir prune`, `bir experiment-show`, `bir experiment-report`,
   and `bir export-otel`; `bir traces` and `bir stats` accept
   `--name`/`--status`/`--since`/`--until` filters.
-- Optional integrations include dependency-free provider wrappers, async and
-  streaming wrappers, Instructor, DSPy, LangChain, LlamaIndex, OpenAI Agents,
-  Pydantic AI, CrewAI, Haystack, and OpenTelemetry/OTLP export.
+- Optional integrations include dependency-free provider wrappers (including
+  Ollama), async and streaming wrappers, Instructor, DSPy, LangChain,
+  LlamaIndex, OpenAI Agents, Pydantic AI, CrewAI, Haystack, AutoGen (AG2), and
+  OpenTelemetry/OTLP export.
 
 ## Event Contract
 
@@ -453,7 +460,9 @@ Integrations live in the SDK. This product stores and displays the emitted Bir
 events, but it does not import provider SDKs or frameworks.
 
 Provider wrappers cover OpenAI Chat Completions and Responses, Anthropic, Google
-Gemini, Google Vertex AI, AWS Bedrock, Mistral, Cohere, and LiteLLM. Structured
+Gemini, Google Vertex AI, AWS Bedrock, Mistral, Cohere, LiteLLM, and Ollama
+(`trace_ollama_chat` / `trace_ollama_generate` and their async counterparts,
+distinct from the playground's Ollama model-server role). Structured
 and programmatic LLM wrappers include Instructor and DSPy. The SDK includes
 async counterparts such as
 `trace_chat_completion_async`, `trace_messages_async`, `trace_completion_async`,
@@ -462,10 +471,12 @@ through unchanged and record output, model, and usage after the stream is
 consumed.
 
 Framework handlers include LangChain, LlamaIndex, OpenAI Agents, Pydantic AI,
-CrewAI, and Haystack. OpenAI Agents runs are mapped through
+CrewAI, Haystack, and AutoGen (AG2). OpenAI Agents runs are mapped through
 `BirAgentsTracingProcessor`; Pydantic AI uses its OpenTelemetry instrumentation;
 CrewAI events are forwarded through `BirCrewAIHandler.on_event`; Haystack 2.x
-uses `BirHaystackTracer` via `haystack.tracing.enable_tracing(...)`.
+uses `BirHaystackTracer` via `haystack.tracing.enable_tracing(...)`; AutoGen
+runs are recorded through `BirAutoGenHandler` registered with
+`autogen.runtime_logging.start(logger=...)`.
 
 OpenTelemetry/OTLP export is SDK-owned too. Install the SDK's `otel` extra and
 use `bir.integrations.otel.export_traces_to_otlp(...)` or `bir export-otel` to
