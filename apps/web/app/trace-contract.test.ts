@@ -430,6 +430,51 @@ test("extracts prompt metadata from generation events", () => {
   });
 });
 
+test("extracts the render error from prompts whose rendering failed", () => {
+  const generationEvent = contractTrace.events.find((event) => event.type === "generation");
+  assert.ok(generationEvent);
+  // A failed render writes rendered_error instead of rendered (mutually
+  // exclusive in the SDK's PromptRecord.to_metadata()).
+  const failedRenderGeneration: TraceEvent = {
+    ...generationEvent,
+    metadata: {
+      prompt: {
+        name: "answer_question",
+        version: "v1",
+        template_sha256: "abc123",
+        template: "Answer {question} with {literal braces}",
+        variables: { question: "What is Bir?" },
+        rendered_error: "KeyError: 'literal braces'",
+        ignored_numeric_rendered_error: 123,
+      },
+    },
+  };
+
+  const details = getPromptDetails(failedRenderGeneration);
+
+  assert.deepEqual(details, {
+    name: "answer_question",
+    version: "v1",
+    template_sha256: "abc123",
+    template: "Answer {question} with {literal braces}",
+    variables: { question: "What is Bir?" },
+    rendered_error: "KeyError: 'literal braces'",
+  });
+});
+
+test("ignores a non-string rendered_error on prompt metadata", () => {
+  const generationEvent = contractTrace.events.find((event) => event.type === "generation");
+  assert.ok(generationEvent);
+  const nonStringRenderedError: TraceEvent = {
+    ...generationEvent,
+    metadata: {
+      prompt: { name: "answer_question", rendered_error: { message: "boom" } },
+    },
+  };
+
+  assert.deepEqual(getPromptDetails(nonStringRenderedError), { name: "answer_question" });
+});
+
 test("extracts prompt metadata from the shared contract fixture generation", () => {
   const generationEvent = contractTrace.events.find((event) => event.type === "generation");
   assert.ok(generationEvent);

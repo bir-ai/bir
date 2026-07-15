@@ -62,6 +62,7 @@ export function PromptPanel({ details }: { details: PromptDetails }) {
         {details.template ? <Payload title="Template" value={details.template} /> : null}
         {details.variables ? <Payload title="Variables" value={details.variables} /> : null}
         {details.rendered ? <Payload title="Rendered" value={details.rendered} /> : null}
+        {details.rendered_error ? <Payload title="Render error" value={details.rendered_error} /> : null}
         {details.metadata ? <Payload title="Prompt Metadata" value={details.metadata} /> : null}
       </div>
     </section>

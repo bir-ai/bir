@@ -83,6 +83,8 @@ export type PromptDetails = {
   template?: string;
   variables?: Record<string, unknown>;
   rendered?: string;
+  // SDK writes rendered_error instead of rendered when template rendering fails.
+  rendered_error?: string;
   metadata?: Record<string, unknown>;
 };
 
@@ -300,6 +302,9 @@ export function getPromptDetails(event: TraceEvent): PromptDetails | null {
   }
   if (typeof prompt.rendered === "string") {
     details.rendered = prompt.rendered;
+  }
+  if (typeof prompt.rendered_error === "string") {
+    details.rendered_error = prompt.rendered_error;
   }
   if (isRecord(prompt.metadata)) {
     details.metadata = prompt.metadata;
