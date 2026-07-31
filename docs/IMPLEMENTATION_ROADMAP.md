@@ -90,8 +90,8 @@ CI has three jobs:
 
 - Python 3.12 installs `apps/server[dev]` plus `pyright`, runs the complete server
   suite under statement and branch coverage for `apps/server/app`, enforces the
-  92.0% floor and strict resource-warning policy, then runs `pyright` from the
-  repository root.
+  92.0% floor and strict resource-warning policy, and runs Ruff lint/format plus
+  `pyright` from the repository root.
 - Node.js 22 runs `npm ci`, lint, type checking, and web tests in `apps/web`.
 - Python 3.12 runs the shared contract-fixture drift guard.
 
@@ -109,6 +109,8 @@ PYTHONWARNINGS=error::ResourceWarning \
 ../../.venv/bin/python -m coverage report
 
 cd ../..
+.venv/bin/python -m ruff check .
+.venv/bin/python -m ruff format --check .
 .venv/bin/python -m pyright
 .venv/bin/python scripts/fixtures.py check
 
@@ -120,8 +122,9 @@ npm run lint
 
 Only report a check as passing after it succeeds in the current environment.
 No local command in this roadmap builds, tests, or publishes the external SDK.
-Coverage is part of the server's `[dev]` extra; Pyright is not. Install Pyright
-separately and run it from the repository root when reproducing CI locally.
+Coverage and Ruff are part of the server's `[dev]` extra; Pyright is not. Install
+Pyright separately and run all three tools from the repository root when
+reproducing CI locally.
 
 ## Next Minimal Commits
 

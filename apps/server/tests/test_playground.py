@@ -12,12 +12,10 @@ from pathlib import Path
 from threading import Thread
 from typing import Any, Iterator, NoReturn
 
-from fastapi.testclient import TestClient
-
+import pytest
 from app.main import create_app
 from app.playground import PlaygroundClient, PlaygroundUpstreamError, playground_base_url_from_env
-
-import pytest
+from fastapi.testclient import TestClient
 
 PLAYGROUND_READ_ONLY_DETAIL = (
     "The playground is disabled: the server is running in read-only local data mode (BIR_DATA_DIR)"
@@ -137,9 +135,7 @@ def assert_failed_chat_trace(
     assert generation_event["status"] == "error"
     assert generation_event["error"] == root_event["error"]
     assert generation_event["model"] == model
-    assert generation_event["input"] == {
-        "messages": [{"role": "user", "content": expected_message}]
-    }
+    assert generation_event["input"] == {"messages": [{"role": "user", "content": expected_message}]}
     assert generation_event["output"] is None
     assert generation_event["metadata"]["latency_ms"] >= 0
     return trace
@@ -308,9 +304,7 @@ def test_chat_with_retrieval_records_retrieval_tool_call_with_document(tmp_path:
     assert retrieval_event["metadata"]["kind"] == "retrieval"
     assert retrieval_event["input"] == {"query": "Say hello."}
     assert retrieval_event["output"] == {
-        "documents": [
-            {"id": "playground-context", "source": "playground", "text": "Bir stores traces in JSONL."}
-        ]
+        "documents": [{"id": "playground-context", "source": "playground", "text": "Bir stores traces in JSONL."}]
     }
 
 
@@ -464,11 +458,7 @@ def test_chat_returns_502_when_upstream_is_unreachable(tmp_path: Path) -> None:
 
 
 def test_chat_returns_502_with_upstream_error_message(tmp_path: Path) -> None:
-    error_payload = {
-        "error": {
-            "message": 'model "missing-model" not found; authorization: Bearer upstream-secret'
-        }
-    }
+    error_payload = {"error": {"message": 'model "missing-model" not found; authorization: Bearer upstream-secret'}}
     with stub_upstream({("POST", "/v1/chat/completions"): (404, error_payload)}) as (base_url, _):
         client, event_store_path = make_playground_test_client(tmp_path, base_url)
 

@@ -3,10 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
-
 from app.main import create_app
-
+from fastapi.testclient import TestClient
 from test_server import make_event
 
 INDEX_HTML = "<!doctype html><title>Bir</title><h1>Bir dashboard</h1>"
@@ -91,9 +89,7 @@ def test_dashboard_dir_from_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 def test_serves_dashboard_in_read_only_local_mode(tmp_path: Path) -> None:
     data_dir = tmp_path / ".bir"
     data_dir.mkdir()
-    client = TestClient(
-        create_app(local_data_dir=data_dir, dashboard_dir=write_dashboard(tmp_path))
-    )
+    client = TestClient(create_app(local_data_dir=data_dir, dashboard_dir=write_dashboard(tmp_path)))
 
     # The dashboard serves and reads work, but ingestion stays rejected.
     assert client.get("/").text == INDEX_HTML

@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from app.redaction import redact_secret_text, redact_value
 
 ROOT = Path(__file__).resolve().parents[3]

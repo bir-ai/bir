@@ -1,0 +1,25 @@
+extend-exclude = [
+    ".bir",
+    ".cache",
+    ".mypy_cache",
+    ".next",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".test-build",
+    ".tox",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "htmlcov",
+    "node_modules",
+    "out",
+    "site",
+    "venv",
+]
+include = ["*.py", "*.pyi"]
+line-length = 120
+target-version = "py310"
+
+[lint]
+select = ["E4", "E7", "E9", "F", "I"]

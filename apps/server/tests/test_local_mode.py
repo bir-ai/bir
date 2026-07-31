@@ -5,11 +5,9 @@ import shutil
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
-
 from app.main import create_app
 from app.storage import LocalJsonlEventReader
-
+from fastapi.testclient import TestClient
 from test_server import (
     CONTRACT_EVENTS_PATH,
     PRODUCT_INTEGRATION_EVENTS_PATH,

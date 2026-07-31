@@ -4,31 +4,29 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import app.storage as storage
 import pytest
+from app.main import create_app
+from app.redaction import redact_secret_text, redact_value
+from app.schemas import TraceEventPayload, TraceSummaryPayload
+from app.storage import JsonlEventStore
+from bir import configure, generation, load_traces, observe, retrieval, score, span
+from bir._sdk import _reset_config_for_tests, _safe_capture, _safe_error
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[3]
 # bir-sdk is a separate package (declared in apps/server dev dependencies,
-# pinned >=0.2.0,<0.3.0). CI installs it from source until 0.2.0 is published;
-# the SDK source lives in the sibling bir-python repository.
+# pinned >=0.3.0,<0.4.0). The SDK source lives in the sibling bir-python
+# repository.
 CONTRACT_EVENTS_PATH = ROOT / "tests" / "fixtures" / "valid-events.jsonl"
 CONTRACT_SCHEMA_PATH = ROOT / "tests" / "fixtures" / "event-schema-v1.json"
 CONTRACT_EXPERIMENT_PATH = ROOT / "tests" / "fixtures" / "valid-experiment.json"
 PRODUCT_INTEGRATION_EVENTS_PATH = ROOT / "tests" / "product-fixtures" / "integration-events.jsonl"
 
-from bir import configure, generation, load_traces, observe, retrieval, score, span
-
 # Test-only internals: a config reset plus the SDK's redaction helpers, used to
 # compute the exact redacted values the server must reproduce. They are private
-# (bir._sdk), so the dev dependency is bounded to <0.3.0 to keep a major SDK
+# (bir._sdk), so the dev dependency is bounded to <0.4.0 to keep a future SDK
 # release from changing them out from under these tests.
-from bir._sdk import _reset_config_for_tests, _safe_capture, _safe_error
-
-import app.storage as storage
-from app.main import create_app
-from app.redaction import redact_secret_text, redact_value
-from app.schemas import TraceEventPayload, TraceSummaryPayload
-from app.storage import JsonlEventStore
 
 
 def make_event(**overrides: object) -> dict[str, object]:
@@ -102,7 +100,9 @@ def make_experiment_result(**overrides: object) -> dict[str, object]:
     return result
 
 
-def write_experiment(experiment_store_path: Path, *, summary: dict[str, object], results: list[dict[str, object]]) -> None:
+def write_experiment(
+    experiment_store_path: Path, *, summary: dict[str, object], results: list[dict[str, object]]
+) -> None:
     experiment_store_path.mkdir(parents=True, exist_ok=True)
     result_path = experiment_store_path / str(summary["result_path"])
     result_path.write_text(
@@ -119,9 +119,7 @@ def load_contract_events() -> list[dict[str, object]]:
 
 def load_product_integration_events() -> list[dict[str, object]]:
     return [
-        json.loads(line)
-        for line in PRODUCT_INTEGRATION_EVENTS_PATH.read_text(encoding="utf-8").splitlines()
-        if line
+        json.loads(line) for line in PRODUCT_INTEGRATION_EVENTS_PATH.read_text(encoding="utf-8").splitlines() if line
     ]
 
 
@@ -1842,15 +1840,18 @@ def test_pages_recent_traces_before_cursor_after_filters(tmp_path: Path) -> None
 def test_recent_cursor_uses_id_to_break_equal_start_times(tmp_path: Path) -> None:
     client, _ = make_client(tmp_path)
     for trace_id in ["trace-a", "trace-b", "trace-c"]:
-        assert client.post(
-            "/v1/events",
-            json=make_event(
-                id=trace_id,
-                trace_id=trace_id,
-                start_time="2026-01-01T00:00:00+00:00",
-                end_time="2026-01-01T00:00:01+00:00",
-            ),
-        ).status_code == 201
+        assert (
+            client.post(
+                "/v1/events",
+                json=make_event(
+                    id=trace_id,
+                    trace_id=trace_id,
+                    start_time="2026-01-01T00:00:00+00:00",
+                    end_time="2026-01-01T00:00:01+00:00",
+                ),
+            ).status_code
+            == 201
+        )
 
     response = client.get(
         "/v1/traces",
@@ -2152,9 +2153,7 @@ def test_ingests_schema_contract_fixtures(tmp_path: Path) -> None:
         "generation",
         "score",
     ]
-    assert trace["events"][0]["metadata"] == {
-        "service": {"name": "rag-api", "environment": "production"}
-    }
+    assert trace["events"][0]["metadata"] == {"service": {"name": "rag-api", "environment": "production"}}
     assert trace["events"][3]["metadata"] == {
         "provider": "local",
         "prompt": {

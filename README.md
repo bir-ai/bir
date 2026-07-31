@@ -264,7 +264,9 @@ PYTHONWARNINGS=error::ResourceWarning \
 cd ../..
 ./scripts/test-server-local-sdk.sh
 
-# Server types and shared-fixture drift
+# Python lint, formatting, types, and shared-fixture drift (from the repository root)
+.venv/bin/python -m ruff check .
+.venv/bin/python -m ruff format --check .
 .venv/bin/python -m pyright
 .venv/bin/python scripts/fixtures.py check
 

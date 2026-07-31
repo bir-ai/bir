@@ -17,22 +17,22 @@ from fastapi.staticfiles import StaticFiles
 from .experiments import JsonlExperimentStore, LocalExperimentReader
 from .playground import PlaygroundClient, PlaygroundUpstreamError, playground_base_url_from_env, run_chat
 from .schemas import (
+    EventStatus,
+    EventType,
     ExperimentIngestPayload,
     ExperimentSummaryPayload,
     HealthResponse,
     IngestEventBatchResponse,
-    IngestExperimentResponse,
     IngestEventResponse,
+    IngestExperimentResponse,
     LoadedExperiment,
     LoadedTrace,
-    EventStatus,
-    EventType,
-    TraceSort,
     PlaygroundChatRequest,
     PlaygroundChatResponse,
     PlaygroundModelsResponse,
     PlaygroundStatusResponse,
     TraceEventPayload,
+    TraceSort,
     TraceSummaryPayload,
 )
 from .storage import JsonlEventStore, LocalJsonlEventReader, TraceEventReader
@@ -42,9 +42,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_EVENT_STORE_PATH = Path(".bir/server-events.jsonl")
 DEFAULT_EXPERIMENT_STORE_PATH = Path(".bir/experiments")
 DEFAULT_CORS_ORIGINS = ("http://localhost:3000", "http://127.0.0.1:3000")
-READ_ONLY_LOCAL_MODE_DETAIL = (
-    "Ingestion is disabled: the server is running in read-only local data mode (BIR_DATA_DIR)"
-)
+READ_ONLY_LOCAL_MODE_DETAIL = "Ingestion is disabled: the server is running in read-only local data mode (BIR_DATA_DIR)"
 PLAYGROUND_READ_ONLY_DETAIL = (
     "The playground is disabled: the server is running in read-only local data mode (BIR_DATA_DIR)"
 )

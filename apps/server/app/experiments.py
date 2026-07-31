@@ -110,7 +110,8 @@ class JsonlExperimentStore:
                     result_file.write("\n")
 
             summary_path.write_text(
-                json.dumps(summary.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n",
+                json.dumps(summary.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), allow_nan=False)
+                + "\n",
                 encoding="utf-8",
             )
             return True

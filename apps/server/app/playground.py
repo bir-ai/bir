@@ -355,11 +355,7 @@ def _prepare_context(
                 "type": "tool_call",
                 "metadata": {**metadata, "kind": "retrieval"},
                 "input": {"query": _last_user_message(messages)},
-                "output": {
-                    "documents": [
-                        {"id": "playground-context", "source": "playground", "text": context}
-                    ]
-                },
+                "output": {"documents": [{"id": "playground-context", "source": "playground", "text": context}]},
             }
         )
     return events

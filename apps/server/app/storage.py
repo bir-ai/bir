@@ -115,9 +115,7 @@ class TraceEventReader:
         ordered = sorted(traces, key=lambda trace: (trace.start_time, trace.id))
         if before_start_time is not None:
             if before_id is not None:
-                ordered = [
-                    trace for trace in ordered if (trace.start_time, trace.id) < (before_start_time, before_id)
-                ]
+                ordered = [trace for trace in ordered if (trace.start_time, trace.id) < (before_start_time, before_id)]
             else:
                 ordered = [trace for trace in ordered if trace.start_time < before_start_time]
         # The newest traces sort last, so the most recent N are the tail slice.
@@ -403,7 +401,9 @@ def _matches_filters(
         service_name, service_environment = _trace_service(trace)
         if service_filter and (service_name is None or service_filter not in service_name.lower()):
             return False
-        if environment_filter and (service_environment is None or environment_filter not in service_environment.lower()):
+        if environment_filter and (
+            service_environment is None or environment_filter not in service_environment.lower()
+        ):
             return False
     if min_duration_ms is not None:
         duration_ms = (trace.end_time - trace.start_time).total_seconds() * 1000
