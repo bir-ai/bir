@@ -15,7 +15,7 @@ import urllib.error
 import urllib.request
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Protocol
 
 from .redaction import redact_secret_text
 from .schemas import (
@@ -33,6 +33,12 @@ STATUS_TIMEOUT_SECONDS = 3.0
 ANSWER_LENGTH_MIN_CHARS = 1
 ANSWER_LENGTH_MAX_CHARS = 4000
 CONTEXT_PROMPT_PREFIX = "Use the following context to answer the user's question.\n\nContext:\n"
+
+
+class _ReadableResponse(Protocol):
+    def read(self) -> bytes: ...
+
+    def close(self) -> None: ...
 
 
 class PlaygroundUpstreamError(Exception):
@@ -104,8 +110,8 @@ class PlaygroundClient:
             method=method,
         )
         try:
-            with urllib.request.urlopen(upstream_request, timeout=timeout) as response:
-                body = response.read().decode("utf-8")
+            response = urllib.request.urlopen(upstream_request, timeout=timeout)
+            body = _read_and_close_response(response)
         except urllib.error.HTTPError as exc:
             detail = _upstream_error_detail(exc)
             raise PlaygroundUpstreamError(
@@ -453,9 +459,16 @@ def _ollama_model_names(payload: dict[str, Any]) -> list[str]:
     return [entry["name"] for entry in data if isinstance(entry, dict) and isinstance(entry.get("name"), str)]
 
 
+def _read_and_close_response(response: _ReadableResponse) -> str:
+    try:
+        return response.read().decode("utf-8")
+    finally:
+        response.close()
+
+
 def _upstream_error_detail(exc: urllib.error.HTTPError) -> str:
     try:
-        body = exc.read().decode("utf-8")
+        body = _read_and_close_response(exc)
         parsed = json.loads(body)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return ""

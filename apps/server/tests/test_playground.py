@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import json
 import socket
+import urllib.error
+import urllib.request
 from contextlib import contextmanager
+from email.message import Message
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from io import BytesIO
 from pathlib import Path
 from threading import Thread
-from typing import Any, Iterator
+from typing import Any, Iterator, NoReturn
 
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.playground import playground_base_url_from_env
+from app.playground import PlaygroundClient, PlaygroundUpstreamError, playground_base_url_from_env
 
 import pytest
 
@@ -139,6 +143,52 @@ def assert_failed_chat_trace(
     assert generation_event["output"] is None
     assert generation_event["metadata"]["latency_ms"] >= 0
     return trace
+
+
+def test_http_error_body_is_closed_after_detail_is_parsed(monkeypatch: pytest.MonkeyPatch) -> None:
+    error_body = BytesIO(json.dumps({"error": {"message": "model not found"}}).encode("utf-8"))
+    http_error = urllib.error.HTTPError(
+        "http://model.test/v1/chat/completions",
+        404,
+        "Not Found",
+        Message(),
+        error_body,
+    )
+
+    def raise_http_error(*args: object, **kwargs: object) -> NoReturn:
+        raise http_error
+
+    monkeypatch.setattr(urllib.request, "urlopen", raise_http_error)
+
+    with pytest.raises(PlaygroundUpstreamError) as raised:
+        PlaygroundClient("http://model.test").chat_completion({})
+
+    assert str(raised.value) == (
+        "Model server at http://model.test returned HTTP 404 for /v1/chat/completions: model not found"
+    )
+    assert error_body.closed
+
+
+def test_http_error_body_is_closed_when_detail_is_malformed(monkeypatch: pytest.MonkeyPatch) -> None:
+    error_body = BytesIO(b"{malformed")
+    http_error = urllib.error.HTTPError(
+        "http://model.test/v1/chat/completions",
+        502,
+        "Bad Gateway",
+        Message(),
+        error_body,
+    )
+
+    def raise_http_error(*args: object, **kwargs: object) -> NoReturn:
+        raise http_error
+
+    monkeypatch.setattr(urllib.request, "urlopen", raise_http_error)
+
+    with pytest.raises(PlaygroundUpstreamError) as raised:
+        PlaygroundClient("http://model.test").chat_completion({})
+
+    assert str(raised.value) == "Model server at http://model.test returned HTTP 502 for /v1/chat/completions"
+    assert error_body.closed
 
 
 def test_chat_forwards_to_upstream_and_returns_reply_with_stats(tmp_path: Path) -> None:
