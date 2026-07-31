@@ -298,16 +298,22 @@ to an OTLP collector.
 ## Development
 
 ```bash
-# From the repository root, after creating .venv
+# From the repository root, using a Python 3.12 .venv
 cd apps/server
 ../../.venv/bin/python -m pip install -e ".[dev]"
-../../.venv/bin/python -m pytest
+../../.venv/bin/python -m coverage erase
+PYTHONWARNINGS=error::ResourceWarning \
+  ../../.venv/bin/python -m coverage run -m pytest
+../../.venv/bin/python -m coverage report
 ../../.venv/bin/uvicorn app.main:app --reload
 ```
 
-The normal pytest command above uses the published `bir-sdk` resolved by
-`apps/server[dev]`. To test this server against unreleased SDK changes in a
-sibling checkout, run from the repository root:
+The coverage commands above are the canonical server test path used by CI. They
+run the complete suite, measure statements and branches in `app`, enforce the
+92.0% floor, and fail on direct or pytest-captured unraisable resource warnings.
+They use the published `bir-sdk` resolved by `apps/server[dev]`. To test this
+server against unreleased SDK changes in a sibling checkout, run from the
+repository root:
 
 ```bash
 ./scripts/test-server-local-sdk.sh
@@ -318,5 +324,11 @@ The wrapper defaults to `../bir-python` when present, or accepts
 to `PYTHONPATH` for one pytest process and fails with a clear message if the
 checkout is missing or does not look like `bir-python`.
 
-CI also runs `pyright` from the repository root after installing it separately;
-it is not included in the server's `[dev]` extra.
+CI also runs Pyright and the shared-fixture drift guard. Pyright is not included
+in the server's `[dev]` extra; after installing it separately, reproduce both
+checks from the repository root with:
+
+```bash
+.venv/bin/python -m pyright
+.venv/bin/python scripts/fixtures.py check
+```

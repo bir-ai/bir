@@ -255,11 +255,18 @@ to report a vulnerability.
 ```bash
 # Server
 cd apps/server
-../../.venv/bin/python -m pytest
+../../.venv/bin/python -m coverage erase
+PYTHONWARNINGS=error::ResourceWarning \
+  ../../.venv/bin/python -m coverage run -m pytest
+../../.venv/bin/python -m coverage report
 
 # Server against a sibling bir-python checkout
 cd ../..
 ./scripts/test-server-local-sdk.sh
+
+# Server types and shared-fixture drift
+.venv/bin/python -m pyright
+.venv/bin/python scripts/fixtures.py check
 
 # Dashboard
 cd apps/web

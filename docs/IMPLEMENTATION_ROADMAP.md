@@ -86,19 +86,33 @@ truth.
 
 ## CI and Local Checks
 
-CI has two jobs:
+CI has three jobs:
 
-- Python 3.12 installs `apps/server[dev]` plus `pyright`, then runs server tests
-  and runs `pyright` from the repository root.
+- Python 3.12 installs `apps/server[dev]` plus `pyright`, runs the complete server
+  suite under statement and branch coverage for `apps/server/app`, enforces the
+  92.0% floor and strict resource-warning policy, then runs `pyright` from the
+  repository root.
 - Node.js 22 runs `npm ci`, lint, type checking, and web tests in `apps/web`.
+- Python 3.12 runs the shared contract-fixture drift guard.
 
 The repository-local equivalents are:
 
 ```bash
-cd apps/server
-../../.venv/bin/python -m pytest
+# From a clean checkout, create the same interpreter environment as CI
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -e "apps/server[dev]" pyright
 
-cd ../web
+cd apps/server
+../../.venv/bin/python -m coverage erase
+PYTHONWARNINGS=error::ResourceWarning \
+  ../../.venv/bin/python -m coverage run -m pytest
+../../.venv/bin/python -m coverage report
+
+cd ../..
+.venv/bin/python -m pyright
+.venv/bin/python scripts/fixtures.py check
+
+cd apps/web
 npm run test
 npm run typecheck
 npm run lint
@@ -106,8 +120,8 @@ npm run lint
 
 Only report a check as passing after it succeeds in the current environment.
 No local command in this roadmap builds, tests, or publishes the external SDK.
-Pyright is not part of the server's `[dev]` extra; install it separately and run
-`pyright` from the repository root when reproducing that CI check locally.
+Coverage is part of the server's `[dev]` extra; Pyright is not. Install Pyright
+separately and run it from the repository root when reproducing CI locally.
 
 ## Next Minimal Commits
 
