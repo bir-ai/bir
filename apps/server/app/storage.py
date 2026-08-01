@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from collections.abc import Iterator
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from heapq import heappush, heapreplace
 from pathlib import Path
 from threading import Lock
 from typing import TypedDict
@@ -30,6 +33,13 @@ EVENT_SORT_PRIORITY = {
     "tool_call": 1,
     "score": 2,
 }
+EVENT_TYPE_BITS: dict[EventType, int] = {
+    "trace": 1 << 0,
+    "span": 1 << 1,
+    "generation": 1 << 2,
+    "tool_call": 1 << 3,
+    "score": 1 << 4,
+}
 
 
 class _BreakdownTotals(TypedDict):
@@ -40,13 +50,49 @@ class _BreakdownTotals(TypedDict):
     total_cost: int | float
 
 
-class TraceEventReader:
-    """Shared trace queries over a `load_events()` implementation."""
+@dataclass(slots=True)
+class _TraceRootSummary:
+    """Root fields needed for filtering, ordering, and summary aggregation."""
 
-    def load_events(self) -> list[TraceEventPayload]:
-        """Load all available events in file order."""
+    id: str
+    name: str
+    start_time: datetime
+    end_time: datetime
+    status: EventStatus
+    source: str | None
+    service: str | None
+    environment: str | None
+    event_sort_key: tuple[str, int, str, str]
+
+
+@dataclass(slots=True)
+class _TraceSummaryState:
+    """Compact per-trace aggregate that does not retain parsed event models."""
+
+    root: _TraceRootSummary | None = None
+    event_count: int = 0
+    event_type_bits: int = 0
+    generation_count: int = 0
+    total_tokens: int | float = 0
+    total_cost: int | float = 0
+    currencies: set[str] | None = None
+    models: dict[str, _BreakdownTotals] | None = None
+    providers: dict[str, _BreakdownTotals] | None = None
+    integrations: dict[str, _BreakdownTotals] | None = None
+
+
+class TraceEventReader:
+    """Shared trace queries over a lazy internal event iterator."""
+
+    def _iter_events(self) -> Iterator[TraceEventPayload]:
+        """Yield available events in file order without an intermediate list."""
 
         raise NotImplementedError
+
+    def load_events(self) -> list[TraceEventPayload]:
+        """Load all available events in file order for the public list response."""
+
+        return list(self._iter_events())
 
     def load_traces(
         self,
@@ -90,6 +136,20 @@ class TraceEventReader:
         ``limit`` keeps only that many traces after filtering, cursoring, and
         ordering, so the local experience stays usable as the store grows.
         """
+
+        if limit is not None and limit > 0 and event_type is None:
+            return self._load_bounded_traces(
+                status=status,
+                name=name,
+                source=source,
+                service=service,
+                environment=environment,
+                min_duration_ms=min_duration_ms,
+                sort=sort,
+                limit=limit,
+                before_start_time=before_start_time,
+                before_id=before_id,
+            )
 
         traces = self._load_filtered_traces(
             status=status,
@@ -136,17 +196,102 @@ class TraceEventReader:
     ) -> TraceSummaryPayload:
         """Summarize the complete filtered result set without browse limits."""
 
-        return _summarize_traces(
-            self._load_filtered_traces(
-                status=status,
-                name=name,
-                event_type=event_type,
-                source=source,
-                service=service,
-                environment=environment,
-                min_duration_ms=min_duration_ms,
-            )
+        return _summarize_events(
+            self._iter_events(),
+            status=status,
+            name=name,
+            event_type=event_type,
+            source=source,
+            service=service,
+            environment=environment,
+            min_duration_ms=min_duration_ms,
         )
+
+    def _load_bounded_traces(
+        self,
+        *,
+        status: EventStatus | None,
+        name: str | None,
+        source: str | None,
+        service: str | None,
+        environment: str | None,
+        min_duration_ms: float | None,
+        sort: TraceSort,
+        limit: int,
+        before_start_time: datetime | None,
+        before_id: str | None,
+    ) -> list[LoadedTrace]:
+        """Select roots with a bounded heap, then retain events only for them.
+
+        This optimization is used when every active filter can be decided from
+        a root event. ``event_type`` browsing uses the general grouping path
+        because events may be arbitrarily interleaved with their root.
+        """
+
+        name_filter = name.strip().lower() if name is not None else None
+        source_filter = source.strip() if source is not None else None
+        service_filter = service.strip().lower() if service is not None else None
+        environment_filter = environment.strip().lower() if environment is not None else None
+
+        if sort == "slowest":
+            slowest: list[tuple[timedelta, datetime, str]] = []
+            for event in self._iter_events():
+                if not _is_matching_root_event(
+                    event,
+                    status=status,
+                    name_filter=name_filter,
+                    source_filter=source_filter,
+                    service_filter=service_filter,
+                    environment_filter=environment_filter,
+                    min_duration_ms=min_duration_ms,
+                ):
+                    continue
+                candidate = (event.end_time - event.start_time, event.start_time, event.id)
+                if len(slowest) < limit:
+                    heappush(slowest, candidate)
+                elif candidate > slowest[0]:
+                    heapreplace(slowest, candidate)
+            selected_ids = [candidate[2] for candidate in sorted(slowest, reverse=True)]
+        else:
+            recent: list[tuple[datetime, str]] = []
+            for event in self._iter_events():
+                if not _is_matching_root_event(
+                    event,
+                    status=status,
+                    name_filter=name_filter,
+                    source_filter=source_filter,
+                    service_filter=service_filter,
+                    environment_filter=environment_filter,
+                    min_duration_ms=min_duration_ms,
+                ):
+                    continue
+                candidate = (event.start_time, event.id)
+                if before_start_time is not None:
+                    if before_id is not None:
+                        if candidate >= (before_start_time, before_id):
+                            continue
+                    elif event.start_time >= before_start_time:
+                        continue
+                if len(recent) < limit:
+                    heappush(recent, candidate)
+                elif candidate > recent[0]:
+                    heapreplace(recent, candidate)
+            selected_ids = [candidate[1] for candidate in sorted(recent)]
+
+        if not selected_ids:
+            return []
+        events_by_trace_id: dict[str, list[TraceEventPayload]] = {trace_id: [] for trace_id in selected_ids}
+        for event in self._iter_events():
+            trace_events = events_by_trace_id.get(event.trace_id)
+            if trace_events is not None:
+                trace_events.append(event)
+
+        traces_by_id = {
+            trace_id: trace
+            for trace_id, events in events_by_trace_id.items()
+            if (trace := _loaded_trace(trace_id, events)) is not None
+        }
+        return [traces_by_id[trace_id] for trace_id in selected_ids if trace_id in traces_by_id]
 
     def _load_filtered_traces(
         self,
@@ -162,7 +307,7 @@ class TraceEventReader:
         """Reconstruct and filter traces for both browse and aggregate queries."""
 
         events_by_trace_id: dict[str, list[TraceEventPayload]] = {}
-        for event in self.load_events():
+        for event in self._iter_events():
             events_by_trace_id.setdefault(event.trace_id, []).append(event)
 
         name_filter = name.strip().lower() if name is not None else None
@@ -188,22 +333,17 @@ class TraceEventReader:
     def load_trace(self, trace_id: str) -> LoadedTrace | None:
         """Load one complete trace by ID."""
 
-        events = [event for event in self.load_events() if event.trace_id == trace_id]
+        events = [event for event in self._iter_events() if event.trace_id == trace_id]
         return _loaded_trace(trace_id, events)
 
 
 class JsonlEventStore(TraceEventReader):
     """Persist and query validated trace events from a local JSONL file.
 
-    Two in-memory caches keep repeated access cheap, both assuming this process
-    is the only writer of the JSONL file while it runs:
-
-    * Event IDs are indexed after the first duplicate check so each append stays
-      O(1) instead of rescanning the file.
-    * Parsed events are cached behind an ``(st_mtime_ns, st_size)`` signature so a
-      read does no parse/validate work while the file is unchanged. A successful
-      append extends that cache and refreshes the signature in step with the line
-      it wrote. This mirrors ``LocalJsonlEventReader``.
+    The writable server owns this file, so it keeps one parsed-event cache and
+    derives the duplicate-ID index from that same parse. Device/inode metadata
+    is part of the signature so external atomic replacement, deletion, and
+    recreation cannot leave either cache attached to the old file.
     """
 
     def __init__(self, path: str | Path) -> None:
@@ -211,16 +351,17 @@ class JsonlEventStore(TraceEventReader):
 
         self.path = Path(path)
         self._lock = Lock()
-        self._event_ids: set[str] | None = None
-        self._cached_signature: tuple[int, int] | None = None
+        self._cache_initialized = False
+        self._event_ids: set[str] = set()
+        self._cached_signature: tuple[int, int, int, int, int] | None = None
         self._cached_events: list[TraceEventPayload] = []
 
     def append(self, event: TraceEventPayload) -> bool:
         """Append an event unless its ID already exists."""
 
         with self._lock:
-            event_ids = self._load_event_ids()
-            if event.id in event_ids:
+            self._refresh_cache()
+            if event.id in self._event_ids:
                 return False
 
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -233,85 +374,91 @@ class JsonlEventStore(TraceEventReader):
             with self.path.open("a", encoding="utf-8") as events_file:
                 events_file.write(json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False))
                 events_file.write("\n")
-            event_ids.add(event.id)
-            # Keep the parsed-event cache in step with the line we just wrote so a
-            # read that follows this append does not re-parse the whole store. As
-            # the sole writer, appending the validated event and refreshing the
-            # signature matches what a reload would produce. When the cache has not
-            # been populated yet, leave it for the next read to build from scratch.
-            if self._cached_signature is not None:
-                self._cached_events.append(event)
-                self._cached_signature = self._current_signature()
+            self._event_ids.add(event.id)
+            self._cached_events.append(event)
+            self._cached_signature = self._current_signature()
             return True
 
     def has_event(self, event_id: str) -> bool:
         """Return whether the store already contains an event ID."""
 
         with self._lock:
-            return event_id in self._load_event_ids()
+            self._refresh_cache()
+            return event_id in self._event_ids
 
-    def _load_event_ids(self) -> set[str]:
-        if self._event_ids is not None:
-            return self._event_ids
-
-        event_ids: set[str] = set()
-        if self.path.exists():
-            with self.path.open("r", encoding="utf-8") as events_file:
-                for line_number, line in enumerate(events_file, start=1):
-                    stripped = line.strip()
-                    if not stripped:
-                        continue
-                    try:
-                        payload = json.loads(stripped)
-                    except json.JSONDecodeError as exc:
-                        raise ValueError(f"Invalid JSON in event store {self.path} at line {line_number}") from exc
-                    if not isinstance(payload, dict):
-                        raise ValueError(f"Event store {self.path} line {line_number} must contain a JSON object")
-                    event_id = payload.get("id")
-                    if isinstance(event_id, str):
-                        event_ids.add(event_id)
-
-        self._event_ids = event_ids
-        return event_ids
-
-    def load_events(self) -> list[TraceEventPayload]:
-        """Load all persisted events in file order, re-parsing only when the file changed."""
+    def _iter_events(self) -> Iterator[TraceEventPayload]:
+        """Yield cached writable events without making a second event-list copy."""
 
         with self._lock:
+            self._refresh_cache()
+            yield from self._cached_events
+
+    def _current_signature(self) -> tuple[int, int, int, int, int]:
+        stat_result = self.path.stat()
+        return (
+            stat_result.st_dev,
+            stat_result.st_ino,
+            stat_result.st_mtime_ns,
+            stat_result.st_ctime_ns,
+            stat_result.st_size,
+        )
+
+    def _refresh_cache(self) -> None:
+        try:
+            signature = self._current_signature()
+        except FileNotFoundError:
+            self._cache_initialized = True
+            self._cached_signature = None
+            self._cached_events = []
+            self._event_ids = set()
+            return
+
+        if self._cache_initialized and signature == self._cached_signature:
+            return
+
+        # Recheck after parsing. An append or atomic replacement that races the
+        # read must not associate events from one snapshot with another file's
+        # signature; retrying also makes the latest stable snapshot visible now.
+        events: list[TraceEventPayload] = []
+        for _ in range(3):
+            events = self._read_events()
             try:
-                signature = self._current_signature()
+                refreshed_signature = self._current_signature()
             except FileNotFoundError:
+                self._cache_initialized = True
                 self._cached_signature = None
                 self._cached_events = []
-                return []
+                self._event_ids = set()
+                return
+            if refreshed_signature == signature:
+                self._cache_initialized = True
+                self._cached_signature = refreshed_signature
+                self._cached_events = events
+                self._event_ids = {event.id for event in events}
+                return
+            signature = refreshed_signature
 
-            if signature != self._cached_signature:
-                self._cached_events = self._read_events()
-                self._cached_signature = signature
-            return list(self._cached_events)
-
-    def _current_signature(self) -> tuple[int, int]:
-        stat_result = self.path.stat()
-        return (stat_result.st_mtime_ns, stat_result.st_size)
+        # A continuously changing external writer is outside the writable
+        # store's ownership contract. Keep the last complete parse useful, but
+        # force another refresh instead of claiming it matches a stable file.
+        self._cache_initialized = True
+        self._cached_signature = None
+        self._cached_events = events
+        self._event_ids = {event.id for event in events}
 
     def _read_events(self) -> list[TraceEventPayload]:
-        events: list[TraceEventPayload] = []
-        with self.path.open("r", encoding="utf-8") as events_file:
-            for line_number, line in enumerate(events_file, start=1):
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                events.append(_parse_event_line(self.path, line_number, stripped))
-        return events
+        return list(_iter_event_file(self.path, tolerate_torn_tail=False))
 
 
 class LocalJsonlEventReader(TraceEventReader):
     """Read-only view over a trace JSONL file owned by another writer (the SDK).
 
-    The file is re-parsed only when its mtime or size changes. A final line
-    without a trailing newline may be a write still in progress, so an
-    unparseable tail is skipped instead of raising; it surfaces on the next
-    read after the write completes.
+    Parsed events are deliberately not cached: SDK stores can be large, and a
+    process-lifetime Pydantic-object mirror made even bounded browse responses
+    retain the complete store. Each operation opens the current path, so SDK
+    appends, prune's atomic replacement, deletion, and recreation are visible
+    without stale-signature edge cases. A torn final line surfaces once a later
+    operation observes the completed write.
     """
 
     def __init__(self, path: str | Path) -> None:
@@ -319,33 +466,36 @@ class LocalJsonlEventReader(TraceEventReader):
 
         self.path = Path(path)
         self._lock = Lock()
-        self._cached_signature: tuple[int, int] | None = None
-        self._cached_events: list[TraceEventPayload] = []
 
-    def load_events(self) -> list[TraceEventPayload]:
-        """Load all complete events, re-parsing the file only when it changed."""
+    def _iter_events(self) -> Iterator[TraceEventPayload]:
+        """Yield complete SDK events lazily from the file currently at the path."""
 
         with self._lock:
             try:
-                stat_result = self.path.stat()
+                yield from _iter_event_file(self.path, tolerate_torn_tail=True)
             except FileNotFoundError:
-                self._cached_signature = None
-                self._cached_events = []
-                return []
+                return
 
-            # Stat before reading so a write that races the read invalidates
-            # the cache again on the next request instead of going unnoticed.
-            signature = (stat_result.st_mtime_ns, stat_result.st_size)
-            if signature != self._cached_signature:
-                self._cached_events = self._read_events()
-                self._cached_signature = signature
-            return list(self._cached_events)
 
-    def _read_events(self) -> list[TraceEventPayload]:
-        return [
-            _parse_event_line(self.path, line_number, stripped)
-            for line_number, stripped in iter_jsonl_lines_tolerating_torn_tail(self.path)
-        ]
+def _iter_event_file(path: Path, *, tolerate_torn_tail: bool) -> Iterator[TraceEventPayload]:
+    """Yield validated events from one store with the requested tail policy."""
+
+    if tolerate_torn_tail:
+        lines = iter_jsonl_lines_tolerating_torn_tail(path)
+    else:
+        lines = _iter_strict_jsonl_lines(path)
+    for line_number, stripped in lines:
+        yield _parse_event_line(path, line_number, stripped)
+
+
+def _iter_strict_jsonl_lines(path: Path) -> Iterator[tuple[int, str]]:
+    """Yield nonblank text lines, including an invalid unterminated tail."""
+
+    with path.open("r", encoding="utf-8") as events_file:
+        for line_number, line in enumerate(events_file, start=1):
+            stripped = line.strip()
+            if stripped:
+                yield line_number, stripped
 
 
 def _parse_event_line(path: Path, line_number: int, stripped: str) -> TraceEventPayload:
@@ -374,6 +524,85 @@ def _loaded_trace(trace_id: str, events: list[TraceEventPayload]) -> LoadedTrace
         status=root.status,
         events=sorted_events,
     )
+
+
+def _is_matching_root_event(
+    event: TraceEventPayload,
+    *,
+    status: EventStatus | None,
+    name_filter: str | None,
+    source_filter: str | None,
+    service_filter: str | None,
+    environment_filter: str | None,
+    min_duration_ms: float | None,
+) -> bool:
+    if event.type != "trace" or event.id != event.trace_id:
+        return False
+    return _root_matches_filters(
+        _root_summary(event),
+        status=status,
+        name_filter=name_filter,
+        event_type=None,
+        event_type_bits=EVENT_TYPE_BITS["trace"],
+        source_filter=source_filter,
+        service_filter=service_filter,
+        environment_filter=environment_filter,
+        min_duration_ms=min_duration_ms,
+    )
+
+
+def _root_summary(event: TraceEventPayload) -> _TraceRootSummary:
+    source = event.metadata.get("source")
+    service = event.metadata.get("service")
+    service_name: str | None = None
+    service_environment: str | None = None
+    if isinstance(service, dict):
+        raw_name = service.get("name")
+        raw_environment = service.get("environment")
+        service_name = raw_name if isinstance(raw_name, str) else None
+        service_environment = raw_environment if isinstance(raw_environment, str) else None
+    return _TraceRootSummary(
+        id=event.id,
+        name=event.name,
+        start_time=event.start_time,
+        end_time=event.end_time,
+        status=event.status,
+        source=source if isinstance(source, str) else None,
+        service=service_name,
+        environment=service_environment,
+        event_sort_key=_event_sort_key(event),
+    )
+
+
+def _root_matches_filters(
+    root: _TraceRootSummary,
+    *,
+    status: EventStatus | None,
+    name_filter: str | None,
+    event_type: EventType | None,
+    event_type_bits: int,
+    source_filter: str | None,
+    service_filter: str | None,
+    environment_filter: str | None,
+    min_duration_ms: float | None,
+) -> bool:
+    if status is not None and root.status != status:
+        return False
+    if name_filter and name_filter not in root.name.lower():
+        return False
+    if event_type is not None and not event_type_bits & EVENT_TYPE_BITS[event_type]:
+        return False
+    if source_filter and root.source != source_filter:
+        return False
+    if service_filter and (root.service is None or service_filter not in root.service.lower()):
+        return False
+    if environment_filter and (root.environment is None or environment_filter not in root.environment.lower()):
+        return False
+    if min_duration_ms is not None:
+        duration_ms = (root.end_time - root.start_time).total_seconds() * 1000
+        if duration_ms < min_duration_ms:
+            return False
+    return True
 
 
 def _matches_filters(
@@ -435,7 +664,62 @@ def _trace_service(trace: LoadedTrace) -> tuple[str | None, str | None]:
     )
 
 
-def _summarize_traces(traces: list[LoadedTrace]) -> TraceSummaryPayload:
+def _summarize_events(
+    events: Iterator[TraceEventPayload],
+    *,
+    status: EventStatus | None,
+    name: str | None,
+    event_type: EventType | None,
+    source: str | None,
+    service: str | None,
+    environment: str | None,
+    min_duration_ms: float | None,
+) -> TraceSummaryPayload:
+    """Summarize one event stream without constructing complete trace models."""
+
+    states: dict[str, _TraceSummaryState] = {}
+    for event in events:
+        state = states.get(event.trace_id)
+        if state is None:
+            state = _TraceSummaryState()
+            states[event.trace_id] = state
+        state.event_count += 1
+        state.event_type_bits |= EVENT_TYPE_BITS[event.type]
+        if event.type == "trace" and event.id == event.trace_id:
+            root = _root_summary(event)
+            if state.root is None or root.event_sort_key < state.root.event_sort_key:
+                state.root = root
+        if event.type != "generation":
+            continue
+
+        state.generation_count += 1
+        tokens = _generation_tokens(event)
+        input_tokens = _usage_value(event, "input_tokens")
+        output_tokens = _usage_value(event, "output_tokens")
+        cost = _generation_cost(event)
+        state.total_tokens += tokens
+        state.total_cost += cost
+        if event.cost is not None and "total_cost" in event.cost and event.currency:
+            if state.currencies is None:
+                state.currencies = set()
+            state.currencies.add(event.currency)
+        if state.models is None:
+            state.models = {}
+        if state.providers is None:
+            state.providers = {}
+        _add_breakdown(state.models, event.model or "unknown", tokens, input_tokens, output_tokens, cost)
+        _add_breakdown(state.providers, _generation_provider(event), tokens, input_tokens, output_tokens, cost)
+        integration = _generation_integration(event)
+        if integration is not None:
+            if state.integrations is None:
+                state.integrations = {}
+            _add_breakdown(state.integrations, integration, tokens, input_tokens, output_tokens, cost)
+
+    name_filter = name.strip().lower() if name is not None else None
+    source_filter = source.strip() if source is not None else None
+    service_filter = service.strip().lower() if service is not None else None
+    environment_filter = environment.strip().lower() if environment is not None else None
+    trace_count = 0
     event_count = 0
     generation_count = 0
     error_count = 0
@@ -447,27 +731,35 @@ def _summarize_traces(traces: list[LoadedTrace]) -> TraceSummaryPayload:
     providers: dict[str, _BreakdownTotals] = {}
     integrations: dict[str, _BreakdownTotals] = {}
 
-    for trace in traces:
-        event_count += len(trace.events)
-        error_count += trace.status == "error"
-        durations_ms.append((trace.end_time - trace.start_time).total_seconds() * 1000)
-        for event in trace.events:
-            if event.type != "generation":
-                continue
-            generation_count += 1
-            tokens = _generation_tokens(event)
-            input_tokens = _usage_value(event, "input_tokens")
-            output_tokens = _usage_value(event, "output_tokens")
-            cost = _generation_cost(event)
-            total_tokens += tokens
-            total_cost += cost
-            if event.cost is not None and "total_cost" in event.cost and event.currency:
-                currencies.add(event.currency)
-            _add_breakdown(models, event.model or "unknown", tokens, input_tokens, output_tokens, cost)
-            _add_breakdown(providers, _generation_provider(event), tokens, input_tokens, output_tokens, cost)
-            integration = _generation_integration(event)
-            if integration is not None:
-                _add_breakdown(integrations, integration, tokens, input_tokens, output_tokens, cost)
+    for state in states.values():
+        root = state.root
+        if root is None or not _root_matches_filters(
+            root,
+            status=status,
+            name_filter=name_filter,
+            event_type=event_type,
+            event_type_bits=state.event_type_bits,
+            source_filter=source_filter,
+            service_filter=service_filter,
+            environment_filter=environment_filter,
+            min_duration_ms=min_duration_ms,
+        ):
+            continue
+        trace_count += 1
+        event_count += state.event_count
+        generation_count += state.generation_count
+        error_count += root.status == "error"
+        total_tokens += state.total_tokens
+        total_cost += state.total_cost
+        if state.currencies is not None:
+            currencies.update(state.currencies)
+        durations_ms.append((root.end_time - root.start_time).total_seconds() * 1000)
+        if state.models is not None:
+            _merge_breakdowns(models, state.models)
+        if state.providers is not None:
+            _merge_breakdowns(providers, state.providers)
+        if state.integrations is not None:
+            _merge_breakdowns(integrations, state.integrations)
 
     durations_ms.sort()
     model_payloads = [
@@ -483,7 +775,7 @@ def _summarize_traces(traces: list[LoadedTrace]) -> TraceSummaryPayload:
         for key, values in sorted(integrations.items(), key=lambda item: (-item[1]["generation_count"], item[0]))
     ]
     return TraceSummaryPayload(
-        trace_count=len(traces),
+        trace_count=trace_count,
         event_count=event_count,
         generation_count=generation_count,
         error_count=error_count,
@@ -496,6 +788,25 @@ def _summarize_traces(traces: list[LoadedTrace]) -> TraceSummaryPayload:
         providers=provider_payloads,
         integrations=integration_payloads,
     )
+
+
+def _merge_breakdowns(target: dict[str, _BreakdownTotals], source: dict[str, _BreakdownTotals]) -> None:
+    for key, values in source.items():
+        bucket = target.setdefault(
+            key,
+            {
+                "generation_count": 0,
+                "total_tokens": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_cost": 0,
+            },
+        )
+        bucket["generation_count"] += values["generation_count"]
+        bucket["total_tokens"] += values["total_tokens"]
+        bucket["input_tokens"] += values["input_tokens"]
+        bucket["output_tokens"] += values["output_tokens"]
+        bucket["total_cost"] += values["total_cost"]
 
 
 def _usage_value(event: TraceEventPayload, key: str) -> int | float:

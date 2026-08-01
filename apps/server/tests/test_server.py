@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -1015,9 +1016,12 @@ def test_new_store_instance_detects_duplicates_in_existing_file(tmp_path: Path) 
 
 
 def test_load_events_caches_parsed_events_for_unchanged_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    store = JsonlEventStore(tmp_path / "events.jsonl")
-    store.append(TraceEventPayload.model_validate(make_event()))
-    store.append(TraceEventPayload.model_validate(make_event(id="span-1", type="span", parent_id="trace-1")))
+    path = tmp_path / "events.jsonl"
+    path.write_text(
+        json.dumps(make_event()) + "\n" + json.dumps(make_event(id="span-1", type="span", parent_id="trace-1")) + "\n",
+        encoding="utf-8",
+    )
+    store = JsonlEventStore(path)
 
     parse_calls = 0
     original_parse = storage._parse_event_line
@@ -1029,15 +1033,65 @@ def test_load_events_caches_parsed_events_for_unchanged_file(tmp_path: Path, mon
 
     monkeypatch.setattr(storage, "_parse_event_line", counting_parse)
 
+    assert store.has_event("trace-1") is True
+    parses_after_duplicate_index = parse_calls
     first = store.load_events()
     parses_after_first = parse_calls
     second = store.load_events()
 
     assert [event.id for event in first] == ["trace-1", "span-1"]
     assert [event.id for event in second] == ["trace-1", "span-1"]
-    # The first load parses each line once; the unchanged second load reuses the cache.
+    # The duplicate-ID index and event reads share one parse; unchanged reads
+    # then iterate that cache without making another parsed-event list.
+    assert parses_after_duplicate_index == 2
     assert parses_after_first == 2
     assert parse_calls == parses_after_first
+
+
+def test_writable_event_cache_invalidates_for_external_append(tmp_path: Path) -> None:
+    path = tmp_path / "events.jsonl"
+    path.write_text(json.dumps(make_event()) + "\n", encoding="utf-8")
+    store = JsonlEventStore(path)
+    assert [event.id for event in store.load_events()] == ["trace-1"]
+
+    with path.open("a", encoding="utf-8") as events_file:
+        events_file.write(json.dumps(make_event(id="trace-2", trace_id="trace-2")) + "\n")
+
+    assert [event.id for event in store.load_events()] == ["trace-1", "trace-2"]
+    assert store.has_event("trace-2") is True
+
+
+def test_writable_event_cache_invalidates_for_atomic_replacement(tmp_path: Path) -> None:
+    path = tmp_path / "events.jsonl"
+    replacement = tmp_path / "replacement.jsonl"
+    path.write_text(json.dumps(make_event()) + "\n", encoding="utf-8")
+    store = JsonlEventStore(path)
+    assert [event.id for event in store.load_events()] == ["trace-1"]
+
+    original_stat = path.stat()
+    replacement.write_text(json.dumps(make_event(id="trace-2", trace_id="trace-2")) + "\n", encoding="utf-8")
+    assert replacement.stat().st_size == original_stat.st_size
+    os.utime(replacement, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+    replacement.replace(path)
+
+    assert [event.id for event in store.load_events()] == ["trace-2"]
+    assert store.has_event("trace-1") is False
+    assert store.has_event("trace-2") is True
+
+
+def test_writable_event_cache_invalidates_for_delete_and_recreation(tmp_path: Path) -> None:
+    path = tmp_path / "events.jsonl"
+    path.write_text(json.dumps(make_event()) + "\n", encoding="utf-8")
+    store = JsonlEventStore(path)
+    assert [event.id for event in store.load_events()] == ["trace-1"]
+
+    path.unlink()
+    assert store.load_events() == []
+    path.write_text(json.dumps(make_event(id="trace-2", trace_id="trace-2")) + "\n", encoding="utf-8")
+
+    assert [event.id for event in store.load_events()] == ["trace-2"]
+    assert store.has_event("trace-1") is False
+    assert store.has_event("trace-2") is True
 
 
 def test_load_events_reflects_appends_and_stays_idempotent(tmp_path: Path) -> None:

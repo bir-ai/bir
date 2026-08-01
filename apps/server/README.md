@@ -79,6 +79,32 @@ by start time (the trace root first), or `404` when no trace with that id exists
 curl http://127.0.0.1:8000/v1/traces/<trace-id>
 ```
 
+### Trace-store memory behavior
+
+JSONL files are read one binary line at a time; the local-data reader does not
+keep a process-lifetime cache of every parsed SDK event. This removes the former
+whole-file byte buffer and parsed-event/list copies from ordinary local browsing.
+The writable server store still keeps one parsed cache because that process owns
+the file and reuses the same parse for its duplicate-ID index; its cache signature
+includes file identity so append, atomic replacement, deletion, and recreation
+invalidate it.
+
+For `GET /v1/traces?limit=N` without `event_type`, the server makes two streaming
+passes: a size-`N` heap selects roots, then only those traces' events are retained
+for the response. Root filters, recent cursors, and both sort modes use this path.
+`GET /v1/traces/{trace_id}` similarly retains only the requested trace while it
+validates the store. Exact summaries make one pass and retain compact per-trace
+aggregates plus the latency values required for exact p50/p95 calculation, not
+complete event models.
+
+Some endpoints necessarily still materialize data. `GET /v1/events` returns every
+event, unbounded `GET /v1/traces` returns every matching trace, and experiment
+detail returns every result row. A limited trace browse with `event_type` also
+uses complete trace grouping because a matching child may occur anywhere relative
+to its root. These paths are not bounded-memory; callers should use `limit` without
+`event_type` for the memory-conscious local browse path when that filter is not
+needed.
+
 Events are validated with Pydantic and persisted as JSONL. By default, the
 server writes to `.bir/server-events.jsonl`. Override that path with:
 

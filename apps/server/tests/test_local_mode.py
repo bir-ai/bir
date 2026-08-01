@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 
 import pytest
+from app import storage
 from app.main import create_app
 from app.storage import LocalJsonlEventReader
 from fastapi.testclient import TestClient
@@ -219,6 +221,15 @@ def test_local_mode_includes_complete_final_line_without_newline(tmp_path: Path)
     assert [trace["id"] for trace in response.json()] == ["trace-1", "trace-2"]
 
 
+def test_local_reader_skips_invalid_unterminated_json_tail(tmp_path: Path) -> None:
+    traces_path = tmp_path / "traces.jsonl"
+    traces_path.write_text(event_line() + "not json", encoding="utf-8")
+
+    events = LocalJsonlEventReader(traces_path).load_events()
+
+    assert [event.id for event in events] == ["trace-1"]
+
+
 def test_local_reader_skips_torn_multibyte_tail(tmp_path: Path) -> None:
     traces_path = tmp_path / "traces.jsonl"
     traces_path.write_bytes(event_line().encode("utf-8") + '{"name":"café'.encode("utf-8")[:-1])
@@ -241,18 +252,91 @@ def test_local_reader_raises_for_malformed_complete_lines(tmp_path: Path) -> Non
         LocalJsonlEventReader(last_path).load_events()
 
 
-def test_local_reader_does_not_reparse_unchanged_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_local_reader_preserves_blank_line_numbers_for_corruption(tmp_path: Path) -> None:
+    traces_path = tmp_path / "traces.jsonl"
+    traces_path.write_text("\n  \nnot json\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"Invalid JSON in event store .* at line 3"):
+        LocalJsonlEventReader(traces_path).load_events()
+
+
+def test_local_reader_raises_for_invalid_utf8_in_complete_line(tmp_path: Path) -> None:
+    traces_path = tmp_path / "traces.jsonl"
+    traces_path.write_bytes(event_line().encode("utf-8") + b'{"name":"\xff"}\n')
+
+    with pytest.raises(UnicodeDecodeError):
+        LocalJsonlEventReader(traces_path).load_events()
+
+
+def test_local_reader_does_not_cache_parsed_events(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     traces_path = tmp_path / "traces.jsonl"
     append_text(traces_path, event_line())
     reader = LocalJsonlEventReader(traces_path)
+    parse_calls = 0
+    original_parse = storage._parse_event_line
+
+    def counting_parse(path: Path, line_number: int, stripped: str):
+        nonlocal parse_calls
+        parse_calls += 1
+        return original_parse(path, line_number, stripped)
+
+    monkeypatch.setattr(storage, "_parse_event_line", counting_parse)
+
+    assert [event.id for event in reader.load_events()] == ["trace-1"]
+    assert [event.id for event in reader.load_events()] == ["trace-1"]
+    assert parse_calls == 2
+    assert not hasattr(reader, "_cached_events")
+
+
+def test_local_reader_sees_append_that_races_a_read(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    traces_path = tmp_path / "traces.jsonl"
+    append_text(traces_path, event_line())
+    reader = LocalJsonlEventReader(traces_path)
+    appended = False
+    original_parse = storage._parse_event_line
+
+    def append_during_first_parse(path: Path, line_number: int, stripped: str):
+        nonlocal appended
+        event = original_parse(path, line_number, stripped)
+        if not appended:
+            appended = True
+            append_text(traces_path, event_line(id="trace-2", trace_id="trace-2", name="second"))
+        return event
+
+    monkeypatch.setattr(storage, "_parse_event_line", append_during_first_parse)
+
+    reader.load_events()
+
+    assert [event.id for event in reader.load_events()] == ["trace-1", "trace-2"]
+
+
+def test_local_reader_sees_atomic_replacement_with_same_size_and_mtime(tmp_path: Path) -> None:
+    traces_path = tmp_path / "traces.jsonl"
+    replacement_path = tmp_path / "replacement.jsonl"
+    traces_path.write_text(event_line(), encoding="utf-8")
+    reader = LocalJsonlEventReader(traces_path)
     assert [event.id for event in reader.load_events()] == ["trace-1"]
 
-    def fail_read() -> list[object]:
-        raise AssertionError("unchanged file must not be re-parsed")
+    original_stat = traces_path.stat()
+    replacement_path.write_text(event_line(id="trace-2", trace_id="trace-2"), encoding="utf-8")
+    assert replacement_path.stat().st_size == original_stat.st_size
+    os.utime(replacement_path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+    replacement_path.replace(traces_path)
 
-    monkeypatch.setattr(reader, "_read_events", fail_read)
+    assert [event.id for event in reader.load_events()] == ["trace-2"]
 
+
+def test_local_reader_sees_delete_and_recreation(tmp_path: Path) -> None:
+    traces_path = tmp_path / "traces.jsonl"
+    traces_path.write_text(event_line(), encoding="utf-8")
+    reader = LocalJsonlEventReader(traces_path)
     assert [event.id for event in reader.load_events()] == ["trace-1"]
+
+    traces_path.unlink()
+    assert reader.load_events() == []
+    traces_path.write_text(event_line(id="trace-2", trace_id="trace-2"), encoding="utf-8")
+
+    assert [event.id for event in reader.load_events()] == ["trace-2"]
 
 
 def test_local_mode_trace_filters(tmp_path: Path) -> None:
