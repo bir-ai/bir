@@ -483,7 +483,12 @@ def test_experiment_upload_redacts_secret_like_values_before_persisting(tmp_path
     uploaded_result = detail_response.json()["results"][0]
     assert uploaded_result["input"] == {"api_key": "[redacted]"}
     assert uploaded_result["expected"] == "token=[redacted]"
-    assert uploaded_result["output"] == {"text": "authorization: [redacted] [redacted]"}
+    # The scheme survives. Redaction runs over this value more than once, and it
+    # used to consume ``Bearer`` on the second pass -- the optional scheme group
+    # backtracked past the already-redacted guard -- leaving
+    # ``authorization: [redacted] [redacted]``. The secret was gone either way;
+    # what is fixed is that the record still says which authentication was used.
+    assert uploaded_result["output"] == {"text": "authorization: Bearer [redacted]"}
     assert uploaded_result["scores"][0]["metadata"] == {"client_secret": "[redacted]"}
     assert uploaded_result["error"] == "provider failed password=[redacted]"
 
